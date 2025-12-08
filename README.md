@@ -1,6 +1,8 @@
 # job-intelligence-engine
 # Job Intelligence Engine (JIE)
 
+# Job Intelligence Engine (JIE)
+
 An AI-powered job intelligence system that monitors frontier AI company careers pages, classifies roles, matches them to a candidate profile, and generates insights and alerts.
 
 ## Status
@@ -19,11 +21,11 @@ Early development. Architecture and project plan in progress.
 
 High level:
 
-- Provider-agnostic scraper layer
-- Embedding + classification pipeline (OpenAI API)
-- Matching engine (fit + gaps)
-- Insight generator (weekly / monthly pulse)
-- Notification & dashboard layer
+- Provider-agnostic scraper layer  
+- Embedding + classification pipeline (OpenAI API)  
+- Matching engine (fit + gaps)  
+- Insight generator (weekly / monthly pulse)  
+- Notification & dashboard layer  
 
 ```mermaid
 flowchart TD
@@ -92,7 +94,6 @@ flowchart TD
     MONTHLY --> DASH
     MATCH --> DASH
 
-
 AI-Assisted Development
 
 This project is intentionally built using AI pair programming:
@@ -116,54 +117,3 @@ Sprint 3: Matching engine + Discord alerts
 Sprint 4: Insights + Streamlit dashboard
 
 Sprint 5: Add additional providers (Anthropic, etc.)
-
-
-
-That makes the repo look serious even before code lands.
-
----
-
-## 9️⃣ (Optional but smart) Add `candidate_profile.json`
-
-In a new folder `config/` (you can create it in the root), add:
-
-- `candidate_profile.json`
-
-With:
-
-```json
-{
-  "name": "Chris",
-  "target_roles": ["ai_deployment_cs", "solutions_architecture", "value_realization"],
-  "skills": {
-    "customer_success_leadership": 5,
-    "kubernetes": 4,
-    "ai_workflows": 4,
-    "program_management": 4,
-    "value_realization": 5,
-    "enterprise_accounts": 5
-  },
-  "technical": {
-    "python": 2,
-    "javascript": 1,
-    "rest_apis": 3,
-    "cloud_infra": 3
-  },
-  "domains": [
-    "infra",
-    "customer_success",
-    "ai_adoption"
-  ],
-  "seniority_target": "Manager",
-  "location_preferences": [
-    "New York",
-    "San Francisco",
-    "Remote"
-  ],
-  "weights": {
-    "cluster_match": 0.4,
-    "skill_match": 0.3,
-    "seniority_match": 0.2,
-    "location_match": 0.1
-  }
-}
