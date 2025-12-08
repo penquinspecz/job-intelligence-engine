@@ -90,6 +90,7 @@ flowchart TD
 
     MONTHLY --> DASH
     MATCH --> DASH
+    ```
 
 
 ## AI-Assisted Development
