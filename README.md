@@ -1,6 +1,3 @@
-# job-intelligence-engine
-# Job Intelligence Engine (JIE)
-
 # Job Intelligence Engine (JIE)
 
 An AI-powered job intelligence system that monitors frontier AI company careers pages, classifies roles, matches them to a candidate profile, and generates insights and alerts.
