@@ -1,0 +1,9 @@
+---Use Python 3.9 syntax.  
+Use type hints everywhere.  
+Use dataclasses or Pydantic as appropriate.  
+Never introduce async, SQLAlchemy, FastAPI, Django, or heavy frameworks unless explicitly requested.  
+Avoid circular imports; prefer dependency injection.  
+Preserve readability and small functions over cleverness.
+
+alwaysApply: true
+---

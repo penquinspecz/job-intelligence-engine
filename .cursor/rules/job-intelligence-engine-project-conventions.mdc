@@ -1,0 +1,23 @@
+---This project is called Job Intelligence Engine (JIE). It is a modular Python 3.9 codebase using a .venv virtual environment located at the project root.
+
+Key architectural conventions:
+- All source code lives under src/ji_engine/.
+- Providers (OpenAI, Anthropic, etc.) must inherit from BaseJobProvider in providers/base.py.
+- ScraperManager in scraper.py functions ONLY as an orchestrator and should not contain scraping logic.
+- The scraping flow is SNAPSHOT-first, LIVE-second. Do not remove snapshot mode.
+- RawJobPosting (models.py) is the provider output for Sprint 1. Higher-level Pydantic models may wrap it later.
+- data/ contains snapshots, intermediate JSON, and candidate_profile.json.
+- Maintain clean imports using the src directory as PYTHONPATH.
+- Avoid unnecessary dependencies; prefer stdlib unless a library is explicitly approved.
+
+AI should follow:
+- Clean, modular design.
+- Type hints everywhere.
+- Functions should be short, testable, and separated by responsibility.
+- Never rewrite architecture without explicit instruction.
+- Never delete snapshot logic or the RawJobPosting model.
+
+This rule defines the project's ground truth. When modifying files, follow these conventions.
+
+alwaysApply: true
+---

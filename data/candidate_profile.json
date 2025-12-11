@@ -1,0 +1,81 @@
+{
+    "basics": {
+      "name": "Chris Menendez",
+      "current_role": "Senior Manager, Technical Customer Success (Kubernetes / AI)",
+      "years_experience": 11,
+      "current_company": "SUSE"
+    },
+    "preferences": {
+      "target_companies": [
+        "OpenAI",
+        "Anthropic",
+        "Google DeepMind",
+        "SUSE",
+        "Meta",
+        "Microsoft"
+      ],
+      "target_locations": [
+        "Remote",
+        "Hybrid - US East",
+        "New York",
+        "San Francisco Bay Area"
+      ],
+      "target_roles": [
+        "AI Customer Success Lead",
+        "AI Solutions Architect",
+        "AI Deployment / Implementation Lead",
+        "Technical Program Manager (AI / Platform)",
+        "Principal Customer Success Manager",
+        "Forward Deployed Engineer (Customer-facing)"
+      ],
+      "anti_patterns": [
+        "Pure quota-carrying sales roles",
+        "Entry-level support roles",
+        "Non-technical account management",
+        "Pure people-management roles with no technical IC component"
+      ],
+      "seniority_level": "Senior / Principal / Manager"
+    },
+    "skills": {
+      "technical_core": [
+        "Kubernetes",
+        "Rancher",
+        "Container Orchestration",
+        "Linux (Enterprise)",
+        "Cloud Architecture (AWS / Azure / GCP)",
+        "Python (scripting, automation)",
+        "Docker",
+        "Networking fundamentals"
+      ],
+      "ai_specific": [
+        "LLM workflow design",
+        "Prompt engineering",
+        "RAG and retrieval-focused architectures",
+        "NotebookLM and multi-agent workflows",
+        "Using LLMs for customer success tooling and automation"
+      ],
+      "customer_success": [
+        "Enterprise CS leadership",
+        "Customer onboarding design",
+        "Success planning & QBRs",
+        "Renewal risk management",
+        "Escalation and incident management",
+        "Program management for CS tooling & processes",
+        "Training & field enablement"
+      ],
+      "domain_knowledge": [
+        "Open-source business models",
+        "Enterprise infrastructure buyers",
+        "Cloud-native ecosystems",
+        "Security and compliance conversations"
+      ]
+    },
+    "constraints": {
+      "willing_to_travel_percent": 25,
+      "team_size_min": 0,
+      "team_size_max": 15,
+      "prefers_hands_on_technical": true
+    },
+    "narrative_bio": "Technical customer success leader and hands-on Kubernetes practitioner. I run a regional CS team at SUSE while still owning a strategic book of business, bridging enterprise relationship management with deep technical conversations around Rancher, Linux, and cloud-native platforms. I am pivoting increasingly toward applied AI: designing LLM workflows, using multi-model systems for customer insights, and building automation to make CS more efficient and data-driven."
+  }
+  
