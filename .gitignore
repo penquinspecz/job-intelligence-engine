@@ -48,3 +48,9 @@ data/state/
 
 # local config overrides (if any)
 config/*.local.*
+
+# local secrets
+.env
+
+# allow template env file
+!.env.example
