@@ -34,3 +34,17 @@ data/openai_shortlist*.md
 __pycache__/
 *.pyc
 .venv/
+
+# local secrets
+.env
+
+# generated job data
+data/openai_*.json
+data/openai_*.csv
+data/openai_*.md
+
+# state
+data/state/
+
+# local config overrides (if any)
+config/*.local.*

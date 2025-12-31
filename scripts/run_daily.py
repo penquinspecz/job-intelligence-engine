@@ -7,6 +7,7 @@ Designed to run locally now and on AWS later (cron/EventBridge).
 
 Examples:
   python scripts/run_daily.py --profile cs --us_only --no_post
+  python scripts/run_daily.py --profiles cs,tam,se --us_only --min_alert_score 85 --no_post
   DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/..." python scripts/run_daily.py --profile cs --us_only
 """
 
@@ -77,7 +78,10 @@ def _hash_job(job: Dict[str, Any]) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def _diff(prev: List[Dict[str, Any]], curr: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+def _diff(
+    prev: List[Dict[str, Any]],
+    curr: List[Dict[str, Any]],
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     prev_map = {_job_key(j): (j, _hash_job(j)) for j in prev}
     curr_map = {_job_key(j): (j, _hash_job(j)) for j in curr}
 
@@ -96,10 +100,6 @@ def _diff(prev: List[Dict[str, Any]], curr: List[Dict[str, Any]]) -> Tuple[List[
     changed_jobs.sort(key=lambda x: x.get("score", 0), reverse=True)
     return new_jobs, changed_jobs
 
-
-import json
-import urllib.request
-import urllib.error
 
 def _post_discord(webhook_url: str, message: str) -> None:
     if not webhook_url or "discord.com/api/webhooks/" not in webhook_url:
@@ -131,15 +131,53 @@ def _post_discord(webhook_url: str, message: str) -> None:
         raise
 
 
+def _resolve_profiles(args: argparse.Namespace) -> List[str]:
+    """
+    Backward-compatible:
+      - If --profiles is provided (default "cs"), run those.
+      - Else fall back to --profile.
+
+    We keep --profile because you already use it and it's convenient.
+    """
+    profiles_arg = (args.profiles or "").strip()
+    if profiles_arg:
+        profiles = [p.strip() for p in profiles_arg.split(",") if p.strip()]
+    else:
+        profiles = [args.profile.strip()]
+
+    # de-dupe while preserving order
+    seen = set()
+    out: List[str] = []
+    for p in profiles:
+        if p not in seen:
+            seen.add(p)
+            out.append(p)
+
+    if not out:
+        raise SystemExit("No profiles provided.")
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
+
+    # Keep existing single-profile flag
     ap.add_argument("--profile", default="cs", help="Scoring profile name (cs|tam|se)")
+
+    # Add multi-profile runner (comma-separated)
+    ap.add_argument(
+        "--profiles",
+        default="",
+        help="Comma-separated profiles to run (e.g. cs or cs,tam,se). If set, overrides --profile.",
+    )
+
     ap.add_argument("--us_only", action="store_true")
     ap.add_argument("--min_alert_score", type=int, default=85)
     ap.add_argument("--no_post", action="store_true", help="Run pipeline but do not send Discord webhook")
     ap.add_argument("--test_post", action="store_true", help="Send a test message to Discord and exit")
     args = ap.parse_args()
 
+    # Test post mode
     if args.test_post:
         webhook = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
         if not webhook:
@@ -148,84 +186,90 @@ def main() -> int:
         print("✅ test_post sent")
         return 0
 
-    profile = args.profile
+    profiles = _resolve_profiles(args)
     us_only_flag = ["--us_only"] if args.us_only else []
 
-    # 1) Run pipeline stages
+    # 1) Run pipeline stages ONCE
     _run([sys.executable, "scripts/run_scrape.py"])
     _run([sys.executable, "scripts/run_classify.py"])
     _run([sys.executable, "-m", "scripts.enrich_jobs"])
 
-    # 2) Score
-    ranked_json = Path(f"data/openai_ranked_jobs.{profile}.json")
-    ranked_csv = Path(f"data/openai_ranked_jobs.{profile}.csv")
-    shortlist_md = Path(f"data/openai_shortlist.{profile}.md")
-
-    cmd = [
-        sys.executable, "scripts/score_jobs.py",
-        "--profile", profile,
-        "--out_json", str(ranked_json),
-        "--out_csv", str(ranked_csv),
-        "--out_md", str(shortlist_md),
-    ] + us_only_flag
-    _run(cmd)
-
-    # 3) Diff vs previous
-    state_path = STATE_DIR / f"last_ranked.{profile}.json"
-    curr = _read_json(ranked_json)
-    prev = _read_json(state_path) if state_path.exists() else []
-    new_jobs, changed_jobs = _diff(prev, curr)
-
-    # 4) Save state
-    _write_json(state_path, curr)
-
-    # 5) Alert rules
-    interesting_new = [j for j in new_jobs if j.get("score", 0) >= args.min_alert_score]
-    interesting_changed = [j for j in changed_jobs if j.get("score", 0) >= args.min_alert_score]
-
+    # 2–5) For each profile: score -> diff -> state -> optional alert
     webhook = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
-    if not webhook:
-        print(f"ℹ️ No alerts (new={len(new_jobs)}, changed={len(changed_jobs)}; webhook=unset).")
-        print(f"Done. Ranked outputs:\n - {ranked_json}\n - {ranked_csv}\n - {shortlist_md}")
-        return 0
 
-    if not (interesting_new or interesting_changed):
-        print(f"ℹ️ No alerts (new={len(new_jobs)}, changed={len(changed_jobs)}; webhook=set).")
-        print(f"Done. Ranked outputs:\n - {ranked_json}\n - {ranked_csv}\n - {shortlist_md}")
-        return 0
+    for profile in profiles:
+        ranked_json = Path(f"data/openai_ranked_jobs.{profile}.json")
+        ranked_csv = Path(f"data/openai_ranked_jobs.{profile}.csv")
+        shortlist_md = Path(f"data/openai_shortlist.{profile}.md")
 
-    lines = [f"**Job alerts ({profile})** — {_utcnow_iso()}"]
-    if args.us_only:
-        lines.append("_US-only filter: ON_")
-    lines.append("")
+        cmd = [
+            sys.executable,
+            "scripts/score_jobs.py",
+            "--profile",
+            profile,
+            "--out_json",
+            str(ranked_json),
+            "--out_csv",
+            str(ranked_csv),
+            "--out_md",
+            str(shortlist_md),
+        ] + us_only_flag
 
-    if interesting_new:
-        lines.append(f"🆕 **New high-scoring jobs (>= {args.min_alert_score})**")
-        for j in interesting_new[:8]:
-            loc = j.get("location") or j.get("locationName") or ""
-            lines.append(f"- **{j.get('score')}** [{j.get('role_band')}] {j.get('title')} ({loc})")
-            if j.get("apply_url"):
-                lines.append(f"  {j['apply_url']}")
+        _run(cmd)
+
+        state_path = STATE_DIR / f"last_ranked.{profile}.json"
+        curr = _read_json(ranked_json)
+        prev = _read_json(state_path) if state_path.exists() else []
+        new_jobs, changed_jobs = _diff(prev, curr)
+
+        _write_json(state_path, curr)
+
+        interesting_new = [j for j in new_jobs if j.get("score", 0) >= args.min_alert_score]
+        interesting_changed = [j for j in changed_jobs if j.get("score", 0) >= args.min_alert_score]
+
+        if not webhook:
+            print(f"ℹ️ No alerts ({profile}) (new={len(new_jobs)}, changed={len(changed_jobs)}; webhook=unset).")
+            print(f"Done ({profile}). Ranked outputs:\n - {ranked_json}\n - {ranked_csv}\n - {shortlist_md}")
+            continue
+
+        if not (interesting_new or interesting_changed):
+            print(f"ℹ️ No alerts ({profile}) (new={len(new_jobs)}, changed={len(changed_jobs)}; webhook=set).")
+            print(f"Done ({profile}). Ranked outputs:\n - {ranked_json}\n - {ranked_csv}\n - {shortlist_md}")
+            continue
+
+        lines = [f"**Job alerts ({profile})** — {_utcnow_iso()}"]
+        if args.us_only:
+            lines.append("_US-only filter: ON_")
         lines.append("")
 
-    if interesting_changed:
-        lines.append(f"♻️ **Changed high-scoring jobs (>= {args.min_alert_score})**")
-        for j in interesting_changed[:8]:
-            loc = j.get("location") or j.get("locationName") or ""
-            lines.append(f"- **{j.get('score')}** [{j.get('role_band')}] {j.get('title')} ({loc})")
-            if j.get("apply_url"):
-                lines.append(f"  {j['apply_url']}")
-        lines.append("")
+        if interesting_new:
+            lines.append(f"🆕 **New high-scoring jobs (>= {args.min_alert_score})**")
+            for j in interesting_new[:8]:
+                loc = j.get("location") or j.get("locationName") or ""
+                lines.append(f"- **{j.get('score')}** [{j.get('role_band')}] {j.get('title')} ({loc})")
+                if j.get("apply_url"):
+                    lines.append(f"  {j['apply_url']}")
+            lines.append("")
 
-    msg = "\n".join(lines)
-    if args.no_post:
-        print("Skipping Discord post (--no_post). Message would have been:\n")
-        print(msg)
-    else:
-        _post_discord(webhook, msg)
-        print("✅ Discord alert sent.")
+        if interesting_changed:
+            lines.append(f"♻️ **Changed high-scoring jobs (>= {args.min_alert_score})**")
+            for j in interesting_changed[:8]:
+                loc = j.get("location") or j.get("locationName") or ""
+                lines.append(f"- **{j.get('score')}** [{j.get('role_band')}] {j.get('title')} ({loc})")
+                if j.get("apply_url"):
+                    lines.append(f"  {j['apply_url']}")
+            lines.append("")
 
-    print(f"Done. Ranked outputs:\n - {ranked_json}\n - {ranked_csv}\n - {shortlist_md}")
+        msg = "\n".join(lines)
+        if args.no_post:
+            print(f"Skipping Discord post (--no_post). Message for {profile} would have been:\n")
+            print(msg)
+        else:
+            _post_discord(webhook, msg)
+            print(f"✅ Discord alert sent ({profile}).")
+
+        print(f"Done ({profile}). Ranked outputs:\n - {ranked_json}\n - {ranked_csv}\n - {shortlist_md}")
+
     return 0
 
 
