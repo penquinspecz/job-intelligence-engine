@@ -1,29 +1,29 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
+import argparse
+import os
+from ji_engine.scraper import ScraperManager
 
-"""
-Entry point to run the raw scraping pipeline.
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--mode", choices=["SNAPSHOT", "LIVE", "AUTO"], default=os.getenv("CAREERS_MODE", "AUTO"))
+    args = ap.parse_args()
 
-Usage (from repo root, with venv active):
-
-    python scripts/run_scrape.py
-"""
-
-import sys
-from pathlib import Path
-
-# Add <repo_root>/src to sys.path so `import ji_engine` works
-ROOT = Path(__file__).resolve().parents[1]
-SRC_PATH = ROOT / "src"
-if str(SRC_PATH) not in sys.path:
-    sys.path.insert(0, str(SRC_PATH))
-
-from ji_engine.scraper import ScraperManager  # noqa: E402
-
-
-def main() -> None:
     manager = ScraperManager(output_dir="data")
-    manager.run_all(mode="SNAPSHOT")  # <- key change
 
+    if args.mode == "SNAPSHOT":
+        manager.run_all(mode="SNAPSHOT")
+        return
+
+    if args.mode == "LIVE":
+        manager.run_all(mode="LIVE")
+        return
+
+    # AUTO: try LIVE, fall back to SNAPSHOT
+    try:
+        manager.run_all(mode="LIVE")
+    except Exception as e:
+        print(f"[run_scrape] LIVE failed ({e!r}) → falling back to SNAPSHOT")
+        manager.run_all(mode="SNAPSHOT")
 
 if __name__ == "__main__":
     main()

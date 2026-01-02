@@ -470,6 +470,8 @@ def is_us_or_remote_us(job: Dict[str, Any]) -> bool:
 # Main
 # ------------------------------------------------------------
 
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--in", dest="in_path", default="data/openai_enriched_jobs.json")
@@ -481,6 +483,7 @@ def main() -> int:
     ap.add_argument("--us_only", action="store_true", help="Only keep US locations or Remote - US")
     ap.add_argument("--profile", default="cs", help="Scoring profile (cs|tam|se)")
     ap.add_argument("--profiles", default="config/profiles.json", help="Path to profiles.json")
+    
     args = ap.parse_args()
     profiles = load_profiles(args.profiles)
     apply_profile(args.profile, profiles)

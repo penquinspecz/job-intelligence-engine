@@ -29,24 +29,34 @@ class OpenAICareersProvider(BaseJobProvider):
     to be a page you manually saved from your browser.
     """
 
+    def fetch_jobs(self) -> List[RawJobPosting]:
+        """
+        Use snapshot mode when requested; in LIVE mode fetch HTML, persist a
+        snapshot, then parse.
+        """
+        if self.mode == "SNAPSHOT":
+            return self.load_from_snapshot()
+
+        # LIVE path: best effort fetch, then persist snapshot for reuse
+        try:
+            html = self._fetch_live_html()
+        except Exception as e:
+            print(f"[OpenAICareersProvider] LIVE blocked ({e}). Using snapshot.")
+            return self.load_from_snapshot()
+
+        SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+        SNAPSHOT_FILE.write_text(html, encoding="utf-8")
+        return self._parse_html(html)
+
     def scrape_live(self) -> List[RawJobPosting]:
         """
-        Attempt a live HTTP scrape.
-
-        This will likely hit 403 due to WAF. We keep it simple and let the
-        BaseJobProvider handle fallback to snapshot.
+        Attempt a live HTTP scrape, saving the HTML snapshot for reuse.
         """
-        headers = {
-            "User-Agent": "job-intelligence-engine/0.1 (+personal project)",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-        }
-        resp = requests.get(CAREERS_SEARCH_URL, headers=headers, timeout=20)
-        if resp.status_code != 200:
-            raise RuntimeError(
-                f"Live scrape failed with status {resp.status_code} at {CAREERS_SEARCH_URL}"
-            )
-        html = resp.text
+        html = self._fetch_live_html()
+
+        SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+        SNAPSHOT_FILE.write_text(html, encoding="utf-8")
+
         return self._parse_html(html)
 
     def load_from_snapshot(self) -> List[RawJobPosting]:
@@ -63,6 +73,22 @@ class OpenAICareersProvider(BaseJobProvider):
         print(f"[OpenAICareersProvider] 📂 Using snapshot {SNAPSHOT_FILE}")
         html = SNAPSHOT_FILE.read_text(encoding="utf-8")
         return self._parse_html(html)
+
+    def _fetch_live_html(self) -> str:
+        """
+        Fetch the careers page HTML from the live site.
+        """
+        headers = {
+            "User-Agent": "job-intelligence-engine/0.1 (+personal project)",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        resp = requests.get(CAREERS_SEARCH_URL, headers=headers, timeout=20)
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"Live scrape failed with status {resp.status_code} at {CAREERS_SEARCH_URL}"
+            )
+        return resp.text
 
     # ---------- Core HTML parsing ----------
 

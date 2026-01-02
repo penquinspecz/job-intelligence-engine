@@ -13,8 +13,18 @@ Examples:
 
 from __future__ import annotations
 
+# --- silence urllib3 LibreSSL warning on macOS system Python ---
+import warnings
+try:
+    from urllib3.exceptions import NotOpenSSLWarning
+    warnings.filterwarnings("ignore", category=NotOpenSSLWarning)
+except Exception:
+    pass
+# --------------------------------------------------------------
+
 from _bootstrap import ensure_src_on_path
 ensure_src_on_path()
+
 
 import argparse
 import hashlib
@@ -200,7 +210,7 @@ def main() -> int:
     us_only_flag = ["--us_only"] if args.us_only else []
 
     # 1) Run pipeline stages ONCE
-    _run([sys.executable, "scripts/run_scrape.py"])
+    _run([sys.executable, "scripts/run_scrape.py", "--mode", "AUTO"])
     _run([sys.executable, "scripts/run_classify.py"])
     _run([sys.executable, "-m", "scripts.enrich_jobs"])
 
