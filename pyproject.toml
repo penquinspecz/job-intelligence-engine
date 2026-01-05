@@ -1,16 +1,17 @@
 [build-system]
-requires = ["setuptools>=61", "wheel"]
+requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "job-intelligence-engine"
-version = "0.0.0"
-description = "Job intelligence engine"
+version = "0.1.0"
+description = "Local job scraping + enrichment + scoring pipeline"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = []
 
+[tool.setuptools]
+package-dir = {"" = "src"}
+
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["ji_engine*"]
-

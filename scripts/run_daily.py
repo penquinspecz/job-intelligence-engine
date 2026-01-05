@@ -13,9 +13,6 @@ Examples:
 
 from __future__ import annotations
 
-from _bootstrap import ensure_src_on_path
-ensure_src_on_path()
-
 import argparse
 import atexit
 import hashlib
@@ -31,13 +28,17 @@ import urllib.error
 import urllib.request
 
 from ji_engine.utils.dotenv import load_dotenv
+from ji_engine.config import (
+    STATE_DIR,
+    LOCK_PATH,
+    ranked_jobs_json,
+    ranked_jobs_csv,
+    shortlist_md as shortlist_md_path,
+    state_last_ranked,
+)
 
 load_dotenv()  # loads .env if present; won't override exported env vars
-
-STATE_DIR = Path("data/state")
 STATE_DIR.mkdir(parents=True, exist_ok=True)
-
-LOCK_PATH = STATE_DIR / "run_daily.lock"
 
 
 def _utcnow_iso() -> str:
@@ -205,9 +206,10 @@ def _post_discord(webhook_url: str, message: str) -> bool:
 
 
 def _post_failure(webhook_url: str, stage: str, error: str) -> None:
-    """Best-effort failure notification; never raises."""
+    """Best-effort failure notification. Never raises."""
     if not webhook_url:
         return
+
     msg = (
         "**🚨 Job Pipeline FAILED**\n"
         f"Stage: `{stage}`\n"
@@ -218,11 +220,7 @@ def _post_failure(webhook_url: str, stage: str, error: str) -> None:
 
 
 def _resolve_profiles(args: argparse.Namespace) -> List[str]:
-    """
-    Backward-compatible:
-      - If --profiles is provided (comma-separated), run those.
-      - Else fall back to --profile.
-    """
+    """Resolve --profiles (comma-separated) else fallback to --profile."""
     profiles_arg = (args.profiles or "").strip()
     if profiles_arg:
         profiles = [p.strip() for p in profiles_arg.split(",") if p.strip()]
@@ -251,13 +249,12 @@ def main() -> int:
         default="",
         help="Comma-separated profiles to run (e.g. cs or cs,tam,se). If set, overrides --profile.",
     )
-
     ap.add_argument("--us_only", action="store_true")
     ap.add_argument("--min_alert_score", type=int, default=85)
     ap.add_argument("--no_post", action="store_true", help="Run pipeline but do not send Discord webhook")
     ap.add_argument("--test_post", action="store_true", help="Send a test message to Discord and exit")
-    args = ap.parse_args()
 
+    args = ap.parse_args()
     webhook = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
 
     if args.test_post:
@@ -279,11 +276,11 @@ def main() -> int:
         _run([sys.executable, "scripts/run_classify.py"])
         _run([sys.executable, "-m", "scripts.enrich_jobs"])
 
-        # 2–5) Per-profile scoring + diff + alert
+        # 2–5) For each profile: score -> diff -> state -> optional alert
         for profile in profiles:
-            ranked_json = Path(f"data/openai_ranked_jobs.{profile}.json")
-            ranked_csv = Path(f"data/openai_ranked_jobs.{profile}.csv")
-            shortlist_md = Path(f"data/openai_shortlist.{profile}.md")
+            ranked_json = ranked_jobs_json(profile)
+            ranked_csv = ranked_jobs_csv(profile)
+            shortlist_md = shortlist_md_path(profile)
 
             cmd = [
                 sys.executable,
@@ -300,7 +297,7 @@ def main() -> int:
 
             _run(cmd)
 
-            state_path = STATE_DIR / f"last_ranked.{profile}.json"
+            state_path = state_last_ranked(profile)
             curr = _read_json(ranked_json)
             prev = _read_json(state_path) if state_path.exists() else []
             new_jobs, changed_jobs = _diff(prev, curr)
@@ -311,12 +308,16 @@ def main() -> int:
             interesting_changed = [j for j in changed_jobs if j.get("score", 0) >= args.min_alert_score]
 
             if not webhook:
-                print(f"ℹ️ No alerts ({profile}) (new={len(new_jobs)}, changed={len(changed_jobs)}; webhook=unset).")
+                print(
+                    f"ℹ️ No alerts ({profile}) (new={len(new_jobs)}, changed={len(changed_jobs)}; webhook=unset)."
+                )
                 print(f"Done ({profile}). Ranked outputs:\n - {ranked_json}\n - {ranked_csv}\n - {shortlist_md}")
                 continue
 
             if not (interesting_new or interesting_changed):
-                print(f"ℹ️ No alerts ({profile}) (new={len(new_jobs)}, changed={len(changed_jobs)}; webhook=set).")
+                print(
+                    f"ℹ️ No alerts ({profile}) (new={len(new_jobs)}, changed={len(changed_jobs)}; webhook=set)."
+                )
                 print(f"Done ({profile}). Ranked outputs:\n - {ranked_json}\n - {ranked_csv}\n - {shortlist_md}")
                 continue
 
@@ -349,17 +350,15 @@ def main() -> int:
                 print(msg)
             else:
                 ok = _post_discord(webhook, msg)
-                if ok:
-                    print(f"✅ Discord alert sent ({profile}).")
-                else:
-                    print("⚠️ Discord alert NOT sent (pipeline still completed).")
+                print(f"✅ Discord alert sent ({profile})." if ok else "⚠️ Discord alert NOT sent (pipeline still completed).")
 
             print(f"Done ({profile}). Ranked outputs:\n - {ranked_json}\n - {ranked_csv}\n - {shortlist_md}")
 
         return 0
 
     except subprocess.CalledProcessError as e:
-        _post_failure(webhook, stage="subprocess", error=f"{e}\ncmd={e.cmd!r}")
+        cmd_str = " ".join(e.cmd) if isinstance(e.cmd, (list, tuple)) else str(e.cmd)
+        _post_failure(webhook, stage="subprocess", error=f"{e}\ncmd={cmd_str}")
         return 1
     except Exception as e:
         _post_failure(webhook, stage="unexpected", error=repr(e))
