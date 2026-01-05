@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.chris.jobintel</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/christophermenendez/Projects/job-intelligence-engine/.venv/bin/python</string>
+        <string>scripts/run_daily.py</string>
+        <string>--profiles</string>
+        <string>cs,tam,se</string>
+        <string>--us_only</string>
+        <string>--min_alert_score</string>
+        <string>85</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/christophermenendez/Projects/job-intelligence-engine</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>CAREERS_MODE</key>
+        <string>AUTO</string>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>PYTHONPATH</key>
+        <string>/Users/christophermenendez/Projects/job-intelligence-engine/src</string>
+        <key>PYTHONWARNINGS</key>
+        <string>ignore:urllib3 v2 only supports OpenSSL 1.1.1+:urllib3.exceptions.NotOpenSSLWarning</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>9</integer>
+        <key>Minute</key>
+        <integer>5</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/jobintel.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/jobintel.err.log</string>
+</dict>
+</plist>
+
