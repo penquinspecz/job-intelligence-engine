@@ -1,38 +1,53 @@
 {
-    "cs": {
-      "role_band_multipliers": {"CS_CORE": 1.35, "CS_ADJACENT": 1.20, "SOLUTIONS": 1.00, "OTHER": 0.85},
-      "profile_weights": {
-        "boost_cs_core": 12,
-        "boost_cs_adjacent": 6,
-        "boost_solutions": 0,
-        "penalty_research_heavy": -8,
-        "penalty_low_level": -5,
-        "penalty_strong_swe_only": -4,
-        "pin_manager_ai_deployment": 30
-      }
+  "cs": {
+    "role_band_multipliers": {
+      "CS_CORE": 1.25,
+      "CS_ADJACENT": 1.15,
+      "SOLUTIONS": 1.05,
+      "OTHER": 0.95
     },
-    "tam": {
-      "role_band_multipliers": {"CS_CORE": 1.25, "CS_ADJACENT": 1.15, "SOLUTIONS": 1.10, "OTHER": 0.90},
-      "profile_weights": {
-        "boost_cs_core": 8,
-        "boost_cs_adjacent": 4,
-        "boost_solutions": 4,
-        "penalty_research_heavy": -6,
-        "penalty_low_level": -4,
-        "penalty_strong_swe_only": -3,
-        "pin_manager_ai_deployment": 10
-      }
+    "profile_weights": {
+      "boost_cs_core": 15,
+      "boost_cs_adjacent": 5,
+      "boost_solutions": 2,
+      "penalty_research_heavy": -8,
+      "penalty_low_level": -5,
+      "penalty_strong_swe_only": -4,
+      "pin_manager_ai_deployment": 30
+    }
+  },
+  "tam": {
+    "role_band_multipliers": {
+      "CS_CORE": 1.25,
+      "CS_ADJACENT": 1.20,
+      "SOLUTIONS": 1.00,
+      "OTHER": 0.90
     },
-    "se": {
-      "role_band_multipliers": {"CS_CORE": 1.10, "CS_ADJACENT": 1.05, "SOLUTIONS": 1.30, "OTHER": 0.90},
-      "profile_weights": {
-        "boost_cs_core": 2,
-        "boost_cs_adjacent": 2,
-        "boost_solutions": 10,
-        "penalty_research_heavy": -6,
-        "penalty_low_level": -4,
-        "penalty_strong_swe_only": -3,
-        "pin_manager_ai_deployment": 0
-      }
+    "profile_weights": {
+      "boost_cs_core": 14,
+      "boost_cs_adjacent": 8,
+      "boost_solutions": 1,
+      "penalty_research_heavy": -8,
+      "penalty_low_level": -5,
+      "penalty_strong_swe_only": -4,
+      "pin_manager_ai_deployment": 15
+    }
+  },
+  "se": {
+    "role_band_multipliers": {
+      "CS_CORE": 1.10,
+      "CS_ADJACENT": 1.05,
+      "SOLUTIONS": 1.20,
+      "OTHER": 0.95
+    },
+    "profile_weights": {
+      "boost_cs_core": 8,
+      "boost_cs_adjacent": 4,
+      "boost_solutions": 10,
+      "penalty_research_heavy": -8,
+      "penalty_low_level": -5,
+      "penalty_strong_swe_only": -4,
+      "pin_manager_ai_deployment": 10
     }
   }
+}

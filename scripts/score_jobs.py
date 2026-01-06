@@ -474,17 +474,33 @@ def is_us_or_remote_us(job: Dict[str, Any]) -> bool:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--in", dest="in_path", default="data/openai_enriched_jobs.json")
-    ap.add_argument("--out_json", default="data/openai_ranked_jobs.json")
-    ap.add_argument("--out_csv", default="data/openai_ranked_jobs.csv")
+
+    ap.add_argument("--profile", default="cs")
+    ap.add_argument("--profiles", default="config/profiles.json")
+    ap.add_argument("--in_path", default="data/openai_enriched_jobs.json")
+
+    ap.add_argument("--out_json", default="data/openai_ranked_jobs.cs.json")
+    ap.add_argument("--out_csv", default="data/openai_ranked_jobs.cs.csv")
     ap.add_argument("--out_families", default="data/openai_ranked_families.json")
-    ap.add_argument("--out_md", default="data/openai_shortlist.md")
+    ap.add_argument("--out_md", default="data/openai_shortlist.cs.md")
+
     ap.add_argument("--shortlist_score", type=int, default=70)
-    ap.add_argument("--us_only", action="store_true", help="Only keep US locations or Remote - US")
-    ap.add_argument("--profile", default="cs", help="Scoring profile (cs|tam|se)")
-    ap.add_argument("--profiles", default="config/profiles.json", help="Path to profiles.json")
-    
+    ap.add_argument("--us_only", action="store_true")
     args = ap.parse_args()
+
+    # ---- HARDEN OUTPUT PATHS ----
+    out_json = Path(args.out_json)
+    out_csv = Path(args.out_csv)
+    out_families = Path(args.out_families)
+    out_md = Path(args.out_md)
+
+    for p in [out_json, out_csv, out_families, out_md]:
+        if "<function " in str(p):
+            raise SystemExit(f"Refusing invalid output path (looks like function repr): {p}")
+
+    out_json.parent.mkdir(parents=True, exist_ok=True)
+    # ----------------------------
+
     profiles = load_profiles(args.profiles)
     apply_profile(args.profile, profiles)
 
@@ -505,46 +521,26 @@ def main() -> int:
     scored = [score_job(j, pos_rules, neg_rules) for j in jobs]
     scored.sort(key=lambda x: x.get("score", 0), reverse=True)
 
-    # Write ranked JSON
-    Path(args.out_json).write_text(
-        json.dumps(scored, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    out_json.write_text(json.dumps(scored, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    # Write CSV
     rows = to_csv_rows(scored)
-    out_csv = Path(args.out_csv)
     with out_csv.open("w", encoding="utf-8", newline="") as f:
         if rows:
             w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
             w.writeheader()
             w.writerows(rows)
 
-    # Write families (Step 5)
     families = build_families(scored)
-    Path(args.out_families).write_text(
-        json.dumps(families, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    out_families.write_text(json.dumps(families, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    # Write shortlist (Step 8)
-    write_shortlist_md(scored, Path(args.out_md), min_score=args.shortlist_score)
+    write_shortlist_md(scored, out_md, min_score=args.shortlist_score)
 
-    enriched = sum(1 for j in scored if (j.get("enrich_status") != "unavailable") and (j.get("jd_text_chars", 0) > 0))
-    unavailable = sum(1 for j in scored if j.get("enrich_status") == "unavailable")
-
-    print(f"Wrote ranked JSON     : {args.out_json}")
-    print(f"Wrote ranked CSV      : {args.out_csv}")
-    print(f"Wrote ranked families : {args.out_families}")
-    print(f"Wrote shortlist MD    : {args.out_md} (score >= {args.shortlist_score})")
-    print(f"Jobs: {len(scored)} | enriched-ish: {enriched} | unavailable: {unavailable}")
-    print("Top 5:")
-    for j in scored[:5]:
-        loc = j.get("location") or j.get("locationName") or ""
-        print(f"  {j.get('score', 0):>4} [{j.get('role_band')}] {j.get('title')} ({loc})")
+    print(f"Wrote ranked JSON     : {out_json}")
+    print(f"Wrote ranked CSV      : {out_csv}")
+    print(f"Wrote ranked families : {out_families}")
+    print(f"Wrote shortlist MD    : {out_md} (score >= {args.shortlist_score})")
 
     return 0
-
 
 
 if __name__ == "__main__":
