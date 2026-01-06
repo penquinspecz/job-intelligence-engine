@@ -8,7 +8,15 @@ version = "0.1.0"
 description = "Local job scraping + enrichment + scoring pipeline"
 readme = "README.md"
 requires-python = ">=3.9"
-dependencies = []
+dependencies = [
+    "requests",
+    "beautifulsoup4",
+    "python-dotenv",
+    "pydantic",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}

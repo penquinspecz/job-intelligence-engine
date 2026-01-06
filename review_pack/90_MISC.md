@@ -1,3 +1,74 @@
+# Misc & Docs
+Included: `README.md`, `docs/ARCH_REVIEW_GEMINI.md` (status doc). Why: top-level description and architecture review context.
+
+Omitted: none (full contents below).
+
+## README.md
+```
+# Job Intelligence Engine (JIE)
+
+An AI-powered job intelligence system that monitors frontier AI company careers pages, classifies roles, matches them to a candidate profile, and generates insights and alerts.
+
+## Status
+
+Early development. Architecture and project plan in progress.
+
+## Goals
+
+- Continuously scrape OpenAI careers (later: Anthropic, Google, etc.)
+- Classify roles by function (Solutions Architecture, AI Deployment, CS, etc.)
+- Compute a fit score and gap analysis against a structured candidate profile
+- Generate weekly hiring trend summaries and real-time alerts for high-fit roles
+- Demonstrate practical use of LLMs, embeddings, and workflow automation
+
+## Architecture
+
+High level:
+
+- Provider-agnostic scraper layer  
+- Embedding + classification pipeline (OpenAI API)  
+- Matching engine (fit + gaps)  
+- Insight generator (weekly / monthly pulse)  
+- Notification & dashboard layer  
+
+## AI-Assisted Development
+
+This project is intentionally built using AI pair programming:
+
+GPT-5 is used for design, code generation, and refactoring.
+
+A second model (e.g. Gemini) is used as a cross-model reviewer for critical modules (scraper, matching engine, etc.).
+
+The goal is to demonstrate practical, safe use of multi-model workflows for software engineering.
+
+## Local setup (editable install)
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -e .
+# Example run (no Discord post):
+python scripts/run_daily.py --profiles cs --us_only --no_post
+```
+
+## Roadmap
+
+Sprint 0: Repo setup, models, and basic scraper skeleton
+
+Sprint 1: Raw scraping of OpenAI careers → JSON
+
+Sprint 2: Embeddings + basic classification
+
+Sprint 3: Matching engine + Discord alerts
+
+Sprint 4: Insights + Streamlit dashboard
+
+Sprint 5: Add additional providers (Anthropic, etc.)
+```
+
+## docs/ARCH_REVIEW_GEMINI.md
+```
 # Architecture Review (Gemini) – Implementation Status (as of 2026-01-06)
 
 This document tracks Gemini’s recommendations and architecture-area critiques.
@@ -96,29 +167,5 @@ Legend:
 - Status: ⏳ PARTIAL  
 - DONE: scoring golden master test.  
 - Remaining: full-pipeline golden master using snapshot HTML → ranked outputs.
-
-
-
-## Gemini Review Status (as of 2026-01-06)
-
-### DONE
-- Failure alerting with stage context (run_daily.py)
-- Remove sys.path bootstrap hacks; use editable install (pip install -e .)
-- Centralize pipeline paths in ji_engine.config
-- Structured logging across pipeline scripts
-- Consistent BeautifulSoup HTML-to-text extraction
-- Golden master scoring test (fixture + top-N expectations)
-
-### PARTIAL (implemented but needs hardening)
-- Failure alerts include stage, but subprocess stderr/stdout capture is not yet included (“blind alerts”)
-- Repo-root/CWD safety: some scripts still assume CWD is repo root (needs absolute paths anchored to config REPO_ROOT)
-- Split-brain risk: ensure scripts/ has no duplicate implementations (scripts should import from src/ji_engine)
-
-### DEFERRED / ROADMAP (not implemented yet)
-- Dockerfile + container-first deploy path (target: AWS-ready)
-- Atomic writes for all JSON outputs + cache writes
-- Ashby GraphQL “200 OK but null jobPosting” guard
-- Parallelize enrichment with bounded concurrency
-- Remove scoring global state mutation (profile config passed through)
-- Expand negative-path tests (null job, corrupted JSON, end-to-end smoke)
+```
 

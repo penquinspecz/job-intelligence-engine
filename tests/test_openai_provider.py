@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import sys
+import pytest
 
 # Add src to path
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,9 +22,7 @@ def test_titles_not_concatenated_with_metadata():
 
     snapshot_file = Path("data") / "openai_snapshots" / "index.html"
     if not snapshot_file.exists():
-        print("⚠️  Snapshot file not found, skipping test")
-        print(f"   Expected: {snapshot_file}")
-        return
+        pytest.skip(f"Snapshot file not found: {snapshot_file}")
 
     html = snapshot_file.read_text(encoding="utf-8")
     jobs = provider._parse_html(html)

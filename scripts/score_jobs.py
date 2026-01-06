@@ -26,11 +26,18 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import logging
 import re
+import io
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from ji_engine.ai.schema import ensure_ai_payload
+from ji_engine.ai.provider import StubProvider, OpenAIProvider, AIProvider
+from ji_engine.ai.augment import compute_content_hash
+from ji_engine.ai.cache import FileSystemAICache
 from ji_engine.config import (
     ENRICHED_JOBS_JSON,
     LABELED_JOBS_JSON,
@@ -39,6 +46,9 @@ from ji_engine.config import (
     ranked_jobs_json,
     shortlist_md,
 )
+from ji_engine.utils.atomic_write import atomic_write_text, atomic_write_with
+
+logger = logging.getLogger(__name__)
 
 def load_profiles(path: str) -> Dict[str, Any]:
     p = Path(path)
@@ -54,6 +64,7 @@ def apply_profile(profile_name: str, profiles: Dict[str, Any]) -> None:
     """
     Overwrite global ROLE_BAND_MULTIPLIERS + PROFILE_WEIGHTS with selected profile settings.
     """
+    global AI_BLEND_WEIGHT
     if profile_name not in profiles:
         raise SystemExit(f"Unknown profile '{profile_name}'. Available: {', '.join(sorted(profiles.keys()))}")
 
@@ -70,6 +81,18 @@ def apply_profile(profile_name: str, profiles: Dict[str, Any]) -> None:
 
     PROFILE_WEIGHTS.clear()
     PROFILE_WEIGHTS.update({str(k): int(v) for k, v in pw.items()})
+
+    AI_BLEND_WEIGHT = float(cfg.get("ai_match_weight", AI_BLEND_WEIGHT))
+
+
+def _select_ai_provider(ai_live: bool) -> AIProvider:
+    if ai_live:
+        key = os.environ.get("OPENAI_API_KEY", "").strip()
+        if key:
+            logger.info("Using OpenAIProvider for application kit.")
+            return OpenAIProvider(api_key=key)
+        logger.warning("ai_live requested but OPENAI_API_KEY not set; falling back to StubProvider.")
+    return StubProvider()
 
 
 
@@ -102,6 +125,8 @@ PROFILE_WEIGHTS = {
     # was 6 — increase so it outranks Partner Solutions Architect
     "pin_manager_ai_deployment": 30,
 }
+# Weight to blend heuristic score with AI match_score (0-1). Can be overridden by profile.
+AI_BLEND_WEIGHT: float = 0.35
 
 
 # ------------------------------------------------------------
@@ -181,6 +206,17 @@ def _count_matches(pattern: re.Pattern, s: str) -> int:
         return 0
     matches = list(pattern.finditer(s))
     return min(len(matches), 5)
+
+
+def _blend_with_ai(heuristic_score: int, ai_payload: Optional[Dict[str, Any]]) -> int:
+    """
+    Blend heuristic score with AI match score when available.
+    """
+    if not ai_payload:
+        return heuristic_score
+    ai = ensure_ai_payload(ai_payload)
+    ai_score = int(ai.get("match_score", 0))
+    return int(round((1 - AI_BLEND_WEIGHT) * heuristic_score + AI_BLEND_WEIGHT * ai_score))
 
 
 def _classify_role_band(job: Dict[str, Any]) -> str:
@@ -329,7 +365,8 @@ def score_job(job: Dict[str, Any], pos_rules: List[Rule], neg_rules: List[Rule])
     if re.search(r"\bC\+\+\b|\brust\b|\boperating systems\b|\bkernel\b", blob, re.I):
         profile_delta += PROFILE_WEIGHTS["penalty_strong_swe_only"]
 
-    score = int(round((base_score + profile_delta) * mult))
+    heuristic_score = int(round((base_score + profile_delta) * mult))
+    final_score = _blend_with_ai(heuristic_score, job.get("ai"))
 
     fit_signals = _signals(blob, FIT_PATTERNS)
     risk_signals = _signals(blob, RISK_PATTERNS)
@@ -337,7 +374,9 @@ def score_job(job: Dict[str, Any], pos_rules: List[Rule], neg_rules: List[Rule])
     out = dict(job)
     out["base_score"] = base_score
     out["profile_delta"] = profile_delta
-    out["score"] = score
+    out["heuristic_score"] = heuristic_score
+    out["final_score"] = final_score
+    out["score"] = final_score  # backward compatibility
     out["role_band"] = role_band
     out["score_hits"] = sorted(hits, key=lambda x: abs(x["delta"]), reverse=True)
     out["fit_signals"] = fit_signals
@@ -355,6 +394,8 @@ def to_csv_rows(scored: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         top3 = ", ".join([f"{h['rule']}({h['delta']})" for h in top_hits[:3]])
         rows.append({
             "score": j.get("score", 0),
+            "heuristic_score": j.get("heuristic_score", j.get("score", 0)),
+            "final_score": j.get("final_score", j.get("score", 0)),
             "base_score": j.get("base_score", 0),
             "profile_delta": j.get("profile_delta", 0),
             "role_band": _norm(j.get("role_band")),
@@ -453,6 +494,96 @@ def write_shortlist_md(scored: List[Dict[str, Any]], out_path: Path, min_score: 
 
     out_path.write_text("\n".join(lines), encoding="utf-8")
 
+
+def write_shortlist_ai_md(scored: List[Dict[str, Any]], out_path: Path, min_score: int) -> None:
+    shortlist = [
+        j for j in scored
+        if j.get("score", 0) >= min_score and j.get("enrich_status") != "unavailable"
+    ]
+
+    lines: List[str] = ["# OpenAI Shortlist (AI Insights)", f"", f"Min score: **{min_score}**", ""]
+    for job in shortlist:
+        title = _norm(job.get("title")) or "Untitled"
+        score = job.get("score", 0)
+        final_score = job.get("final_score", score)
+        heuristic_score = job.get("heuristic_score", score)
+        role_band = _norm(job.get("role_band"))
+        apply_url = _norm(job.get("apply_url"))
+
+        lines.append(f"## {title} — {final_score} [heuristic={heuristic_score}] [{role_band}]")
+        if apply_url:
+            lines.append(f"[Apply link]({apply_url})")
+
+        ai_payload = ensure_ai_payload(job.get("ai") or {})
+        lines.append(f"- Match score: {ai_payload.get('match_score', 0)}")
+
+        skills_required = ", ".join(ai_payload.get("skills_required") or [])
+        skills_preferred = ", ".join(ai_payload.get("skills_preferred") or [])
+        lines.append(f"- Skills required: {skills_required or '—'}")
+        lines.append(f"- Skills preferred: {skills_preferred or '—'}")
+
+        red_flags = ai_payload.get("red_flags") or []
+        if red_flags:
+            lines.append("- Red flags:")
+            for rf in red_flags:
+                lines.append(f"  - {rf}")
+
+        notes = ai_payload.get("notes")
+        if notes:
+            lines.append(f"- Notes: {notes}")
+
+        lines.append("")
+
+    out_path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def write_application_kit_md(
+    shortlist: List[Dict[str, Any]],
+    out_path: Path,
+    provider: AIProvider,
+    cache: FileSystemAICache,
+) -> None:
+    lines: List[str] = ["# Application Kit", ""]
+    for job in shortlist:
+        title = _norm(job.get("title")) or "Untitled"
+        job_id = job.get("apply_url") or job.get("id") or job.get("applyId") or title
+        chash = compute_content_hash(job)
+        cached = cache.get(job_id, chash)
+        payload = None
+        if cached and isinstance(cached, dict) and cached.get("application_kit"):
+            payload = cached.get("application_kit")
+        if payload is None:
+            try:
+                payload = provider.application_kit(job)
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning("application kit generation failed: %s", exc)
+                payload = {
+                    "resume_bullets": [f"Generation failed: {exc}"],
+                    "cover_letter_points": [],
+                    "interview_prompts": [],
+                    "gap_plan": [],
+                }
+            cache.put(job_id, chash, {"application_kit": payload, "content_hash": chash})
+
+        lines.append(f"## {title}")
+        lines.append(f"- Apply URL: {job.get('apply_url','')}")
+
+        def _list_block(header: str, items: Any) -> None:
+            vals = items or []
+            if not isinstance(vals, list):
+                vals = [vals]
+            lines.append(f"- {header}:")
+            for v in vals:
+                lines.append(f"  - {v}")
+
+        _list_block("Resume bullets", payload.get("resume_bullets"))
+        _list_block("Cover letter points", payload.get("cover_letter_points"))
+        _list_block("Interview prompts", payload.get("interview_prompts"))
+        _list_block("2-week gap plan", payload.get("gap_plan"))
+        lines.append("")
+
+    out_path.write_text("\n".join(lines), encoding="utf-8")
+
 def is_us_or_remote_us(job: Dict[str, Any]) -> bool:
     loc = (job.get("location") or job.get("locationName") or "").strip().lower()
 
@@ -482,6 +613,13 @@ def is_us_or_remote_us(job: Dict[str, Any]) -> bool:
 
 
 def main() -> int:
+    if not logging.getLogger().hasHandlers():
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s %(levelname)s %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+
     ap = argparse.ArgumentParser()
 
     ap.add_argument("--profile", default="cs")
@@ -492,9 +630,21 @@ def main() -> int:
     ap.add_argument("--out_csv", default=str(ranked_jobs_csv("cs")))
     ap.add_argument("--out_families", default=str(ranked_families_json("cs")))
     ap.add_argument("--out_md", default=str(shortlist_md("cs")))
+    ap.add_argument(
+        "--out_md_ai",
+        default=str(shortlist_md("cs").with_name(shortlist_md("cs").stem + "_ai.md")),
+        help="AI-aware shortlist markdown output",
+    )
+    ap.add_argument(
+        "--out_app_kit",
+        default=str(shortlist_md("cs").with_name("openai_application_kit.cs.md")),
+        help="Application kit markdown output",
+    )
 
     ap.add_argument("--shortlist_score", type=int, default=70)
     ap.add_argument("--us_only", action="store_true")
+    ap.add_argument("--app_kit", action="store_true", help="Generate application kit for shortlisted jobs.")
+    ap.add_argument("--ai_live", action="store_true", help="Use live AI provider for application kit (requires OPENAI_API_KEY).")
     args = ap.parse_args()
 
     # ---- HARDEN OUTPUT PATHS ----
@@ -502,8 +652,10 @@ def main() -> int:
     out_csv = Path(args.out_csv)
     out_families = Path(args.out_families)
     out_md = Path(args.out_md)
+    out_md_ai = Path(args.out_md_ai) if args.out_md_ai else None
+    out_app_kit = Path(args.out_app_kit) if args.out_app_kit else None
 
-    for p in [out_json, out_csv, out_families, out_md]:
+    for p in [out_json, out_csv, out_families, out_md] + ([out_md_ai] if out_md_ai else []) + ([out_app_kit] if out_app_kit else []):
         if "<function " in str(p):
             raise SystemExit(f"Refusing invalid output path (looks like function repr): {p}")
 
@@ -524,30 +676,78 @@ def main() -> int:
     if args.us_only:
         before = len(jobs)
         jobs = [j for j in jobs if is_us_or_remote_us(j)]
-        print(f"US-only filter: {before} -> {len(jobs)} jobs")
+        logger.info(f"US-only filter: {before} -> {len(jobs)} jobs")
 
     pos_rules, neg_rules = _compile_rules()
     scored = [score_job(j, pos_rules, neg_rules) for j in jobs]
     scored.sort(key=lambda x: x.get("score", 0), reverse=True)
 
-    out_json.write_text(json.dumps(scored, ensure_ascii=False, indent=2), encoding="utf-8")
+    atomic_write_text(out_json, json.dumps(scored, ensure_ascii=False, indent=2))
 
     rows = to_csv_rows(scored)
-    with out_csv.open("w", encoding="utf-8", newline="") as f:
-        if rows:
-            w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
-            w.writeheader()
-            w.writerows(rows)
+    def _write_csv(tmp_path: Path) -> None:
+        with tmp_path.open("w", encoding="utf-8", newline="") as f:
+            if rows:
+                w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+                w.writeheader()
+                w.writerows(rows)
+    atomic_write_with(out_csv, _write_csv)
 
     families = build_families(scored)
-    out_families.write_text(json.dumps(families, ensure_ascii=False, indent=2), encoding="utf-8")
+    atomic_write_text(out_families, json.dumps(families, ensure_ascii=False, indent=2))
 
-    write_shortlist_md(scored, out_md, min_score=args.shortlist_score)
+    shortlist_content: str
+    shortlist_buffer = io.StringIO()
+    shortlist = [
+        j for j in scored
+        if j.get("score", 0) >= args.shortlist_score and j.get("enrich_status") != "unavailable"
+    ]
 
-    print(f"Wrote ranked JSON     : {out_json}")
-    print(f"Wrote ranked CSV      : {out_csv}")
-    print(f"Wrote ranked families : {out_families}")
-    print(f"Wrote shortlist MD    : {out_md} (score >= {args.shortlist_score})")
+    lines: List[str] = ["# OpenAI Shortlist", f"", f"Min score: **{args.shortlist_score}**", ""]
+    for job in shortlist:
+        title = _norm(job.get("title")) or "Untitled"
+        score = job.get("score", 0)
+        role_band = _norm(job.get("role_band"))
+        apply_url = _norm(job.get("apply_url"))
+
+        lines.append(f"## {title} — {score} [{role_band}]")
+        if apply_url:
+            lines.append(f"[Apply link]({apply_url})")
+
+        fit = job.get("fit_signals") or []
+        risk = job.get("risk_signals") or []
+        if fit:
+            lines.append("**Fit signals:** " + ", ".join(fit))
+        if risk:
+            lines.append("**Risk signals:** " + ", ".join(risk))
+
+        hits = job.get("score_hits") or []
+        reasons = [h.get("rule") for h in hits[:5] if h.get("rule")]
+        if reasons:
+            lines.append("**Top rules:** " + ", ".join(reasons))
+
+        jd = _norm(job.get("jd_text"))
+        if jd:
+            excerpt = jd[:700] + ("…" if len(jd) > 700 else "")
+            lines.append("")
+            lines.append(excerpt)
+
+        lines.append("")
+
+    shortlist_content = "\n".join(lines)
+    atomic_write_text(out_md, shortlist_content)
+
+    if out_md_ai:
+        write_shortlist_ai_md(scored, out_md_ai, args.shortlist_score)
+    if args.app_kit and out_app_kit:
+        provider = _select_ai_provider(args.ai_live)
+        cache = FileSystemAICache()
+        write_application_kit_md(shortlist, out_app_kit, provider, cache)
+
+    logger.info(f"Wrote ranked JSON     : {out_json}")
+    logger.info(f"Wrote ranked CSV      : {out_csv}")
+    logger.info(f"Wrote ranked families : {out_families}")
+    logger.info(f"Wrote shortlist MD    : {out_md} (score >= {args.shortlist_score})")
 
     return 0
 

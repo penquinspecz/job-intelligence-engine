@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.git/
+tests/
+docs/_build/
+data/*
+!data/openai_snapshots/**
+!data/candidate_profile.json
+*.pyc
+*.pyo
+*.swp
+.DS_Store
+

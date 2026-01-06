@@ -45,6 +45,54 @@ pip install -e .
 python scripts/run_daily.py --profiles cs --us_only --no_post
 ```
 
+## Docker (AWS-ready)
+
+Build and run locally (expects ./data mounted to /app/data):
+
+```bash
+docker build -t jobintel:local .
+docker run --rm -v "$PWD/data:/app/data" --env-file .env jobintel:local \
+  # defaults: --profiles cs --us_only --no_post
+
+# override defaults as needed:
+docker run --rm -v "$PWD/data:/app/data" --env-file .env jobintel:local \
+  --profiles cs,tam,se --us_only --no_post
+
+# run with AI augment stage
+docker run --rm -v "$PWD/data:/app/data" --env-file .env jobintel:local \
+  --profiles cs --us_only --no_post --ai
+```
+
+Compose convenience (also mounts ./data):
+
+```bash
+docker-compose up --build
+```
+
+Notes:
+- Container is suitable for ECS/Fargate or cron on EC2; mount /app/data as a volume.
+- No secrets are baked into the image; use env vars or task/env files.
+- Snapshots under `data/openai_snapshots/` can be baked into the image; other data is excluded.
+
+Canonical entrypoint:
+- Use `scripts/run_daily.py` for the pipeline. Legacy runners (`run_full_pipeline.py`, `run_openai_pipeline.py`) are deprecated and exit non-zero with a message.
+
+Verification snippet (stderr/stdout captured in logs; exit code propagated):
+```bash
+docker run --rm -v "$PWD/data:/app/data" jobintel:local --profiles cs --us_only --no_post ; echo exit=$?
+```
+
+## Runtime contract
+- Volume: mount `./data` → `/app/data` (holds snapshots, cache, outputs).
+- Env vars:
+  - `DISCORD_WEBHOOK_URL` (optional; if unset, alerts are skipped)
+  - `CAREERS_MODE` (optional; defaults to AUTO)
+  - Any profile/flag overrides via CLI args to `scripts/run_daily.py`.
+- Example ECS/Fargate usage (high-level):
+  - Build/push image.
+  - Task definition: command `python scripts/run_daily.py --profiles cs,tam,se --us_only --no_post`; mount EFS/S3-backed volume to `/app/data`; supply env (e.g., webhook) via task env/Secrets Manager.
+  - Schedule via EventBridge to trigger the task on your cadence.
+
 ## Roadmap
 
 Sprint 0: Repo setup, models, and basic scraper skeleton

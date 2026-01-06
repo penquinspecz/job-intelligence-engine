@@ -9,15 +9,27 @@ Usage (from repo root, with venv active):
 from __future__ import annotations
 
 import json
+import logging
 import sys
+import os
 from datetime import datetime
 from pathlib import Path
-from typing import List
+from typing import List, Dict, Any
 
-from ji_engine.config import LABELED_JOBS_JSON, RAW_JOBS_JSON
+from ji_engine.config import LABELED_JOBS_JSON, RAW_JOBS_JSON, EMBED_CACHE_JSON
 from ji_engine.models import JobSource, RawJobPosting
 from ji_engine.profile_loader import load_candidate_profile
 from ji_engine.pipeline.classifier import label_jobs
+from ji_engine.embeddings.simple import (
+    build_profile_text,
+    cosine_similarity,
+    load_cache,
+    save_cache,
+    text_hash,
+)
+from ji_engine.embeddings.provider import EmbeddingProvider, StubEmbeddingProvider, OpenAIEmbeddingProvider
+
+logger = logging.getLogger(__name__)
 
 
 def _load_raw_jobs(path: Path) -> List[RawJobPosting]:
@@ -36,32 +48,94 @@ def _load_raw_jobs(path: Path) -> List[RawJobPosting]:
     return jobs
 
 
+def _select_provider(kind: str, api_key: str | None = None) -> EmbeddingProvider:
+    if kind == "openai":
+        if not api_key:
+            raise SystemExit("OPENAI_API_KEY required for openai embedding provider")
+        return OpenAIEmbeddingProvider(api_key=api_key)
+    return StubEmbeddingProvider()
+
+
+def _reclassify_maybe(
+    jobs: List[RawJobPosting],
+    labeled: List[Dict[str, Any]],
+    profile_vec: List[float],
+    provider: EmbeddingProvider,
+    cache_path: Path,
+    threshold: float = 0.30,
+) -> None:
+    if not profile_vec:
+        return
+
+    cache = load_cache(cache_path)
+    job_cache = cache.setdefault("job", {})
+    changed = False
+
+    for job, labeled_result in zip(jobs, labeled):
+        if labeled_result.get("relevance") != "MAYBE":
+            continue
+        text = job.raw_text or job.title or ""
+        h = text_hash(text)
+        vec = job_cache.get(h)
+        if vec is None:
+            vec = provider.embed(text)
+            job_cache[h] = vec
+            changed = True
+        sim = cosine_similarity(profile_vec, vec)
+        if sim >= threshold:
+            labeled_result["relevance"] = "RELEVANT"
+    if changed:
+        save_cache(cache_path, cache)
+
+
 def main() -> int:
+    if not logging.getLogger().hasHandlers():
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s %(levelname)s %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+
     profile = load_candidate_profile()
+    provider_kind = os.getenv("EMBED_PROVIDER", "stub").strip().lower()
+    api_key = os.getenv("OPENAI_API_KEY", "").strip() or None
+    provider = _select_provider(provider_kind, api_key)
 
     try:
         jobs = _load_raw_jobs(RAW_JOBS_JSON)
     except FileNotFoundError as e:
-        print(f"Error: {e}")
+        logger.error(f"Error: {e}")
         return 1
 
     labeled = label_jobs(jobs, profile)
+
+    cache = load_cache(EMBED_CACHE_JSON)
+    profile_cache = cache.setdefault("profile", {})
+    profile_text = build_profile_text(profile)
+    p_hash = text_hash(profile_text)
+    profile_vec = profile_cache.get(p_hash)
+    if profile_vec is None:
+        profile_vec = provider.embed(profile_text)
+        profile_cache[p_hash] = profile_vec
+        save_cache(EMBED_CACHE_JSON, cache)
+
+    _reclassify_maybe(jobs, labeled, profile_vec, provider, EMBED_CACHE_JSON)
 
     counts = {"RELEVANT": 0, "MAYBE": 0, "IRRELEVANT": 0}
     for result in labeled:
         counts[result["relevance"]] += 1
 
-    print("\nClassification Summary:")
-    print(f"  RELEVANT:   {counts['RELEVANT']}")
-    print(f"  MAYBE:      {counts['MAYBE']}")
-    print(f"  IRRELEVANT: {counts['IRRELEVANT']}")
-    print(f"  Total:      {len(labeled)}")
+    logger.info("\nClassification Summary:")
+    logger.info(f"  RELEVANT:   {counts['RELEVANT']}")
+    logger.info(f"  MAYBE:      {counts['MAYBE']}")
+    logger.info(f"  IRRELEVANT: {counts['IRRELEVANT']}")
+    logger.info(f"  Total:      {len(labeled)}")
 
     relevant_jobs = [r for r in labeled if r["relevance"] == "RELEVANT"]
-    print(f"\nFirst {min(10, len(relevant_jobs))} RELEVANT jobs:")
+    logger.info(f"\nFirst {min(10, len(relevant_jobs))} RELEVANT jobs:")
     for i, job in enumerate(relevant_jobs[:10], 1):
-        print(f"\n{i}. {job['title']}")
-        print(f"   {job['apply_url']}")
+        logger.info(f"\n{i}. {job['title']}")
+        logger.info(f"   {job['apply_url']}")
 
     # Write labeled jobs to JSON file
     output_data = []
@@ -83,7 +157,7 @@ def main() -> int:
         encoding="utf-8",
     )
 
-    print(f"\nWrote labeled jobs to {LABELED_JOBS_JSON}")
+    logger.info(f"\nWrote labeled jobs to {LABELED_JOBS_JSON}")
     return 0
 
 

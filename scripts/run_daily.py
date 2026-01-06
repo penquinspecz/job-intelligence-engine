@@ -17,13 +17,16 @@ import argparse
 import atexit
 import hashlib
 import json
+import logging
 import os
 import subprocess
 import sys
 import time
+import runpy
+import importlib
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Optional
 import urllib.error
 import urllib.request
 
@@ -36,10 +39,43 @@ from ji_engine.config import (
     ranked_families_json,
     shortlist_md as shortlist_md_path,
     state_last_ranked,
+    ensure_dirs,
+    REPO_ROOT,
+    SNAPSHOT_DIR,
+    ENRICHED_JOBS_JSON,
+    RAW_JOBS_JSON,
+    LABELED_JOBS_JSON,
 )
+def _unavailable_summary() -> str:
+    try:
+        data = json.loads(ENRICHED_JOBS_JSON.read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+    reasons: Dict[str, int] = {}
+    for j in data if isinstance(data, list) else []:
+        if j.get("enrich_status") == "unavailable":
+            r = j.get("enrich_reason") or "unavailable"
+            reasons[r] = reasons.get(r, 0) + 1
+    if not reasons:
+        return ""
+    return ", ".join(f"{k}={v}" for k, v in sorted(reasons.items()))
+
+logger = logging.getLogger(__name__)
+USE_SUBPROCESS = True
+LAST_RUN_JSON = STATE_DIR / "last_run.json"
+
+
+class JsonFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:  # type: ignore[override]
+        payload = {
+            "time": datetime.utcnow().isoformat(),
+            "level": record.levelname,
+            "msg": record.getMessage(),
+        }
+        return json.dumps(payload, ensure_ascii=False)
 
 load_dotenv()  # loads .env if present; won't override exported env vars
-STATE_DIR.mkdir(parents=True, exist_ok=True)
+ensure_dirs()
 
 
 def _utcnow_iso() -> str:
@@ -84,7 +120,7 @@ def _acquire_lock(timeout_sec: int = 0) -> None:
                 existing_pid = 0
 
             if existing_pid and not _pid_alive(existing_pid):
-                print(f"⚠️ Stale lock detected (pid={existing_pid}). Removing {LOCK_PATH}.")
+                logger.warning(f"⚠️ Stale lock detected (pid={existing_pid}). Removing {LOCK_PATH}.")
                 try:
                     LOCK_PATH.unlink(missing_ok=True)
                 except Exception:
@@ -106,9 +142,59 @@ def _acquire_lock(timeout_sec: int = 0) -> None:
     atexit.register(_cleanup)
 
 
-def _run(cmd: List[str]) -> None:
-    print("\n$ " + " ".join(cmd))
-    subprocess.run(cmd, check=True)
+def _run(cmd: List[str], *, stage: str) -> None:
+    logger.info("\n$ " + " ".join(cmd))
+    if USE_SUBPROCESS:
+        result = subprocess.run(
+            cmd,
+            cwd=str(REPO_ROOT),
+            text=True,
+            capture_output=True,
+        )
+
+        stdout_tail = (result.stdout or "")[-4000:]
+        stderr_tail = (result.stderr or "")[-4000:]
+
+        if stdout_tail:
+            logger.info(stdout_tail.rstrip())
+        if stderr_tail:
+            logger.info(stderr_tail.rstrip())
+
+        if result.returncode != 0:
+            raise subprocess.CalledProcessError(
+                result.returncode,
+                cmd,
+                output=stdout_tail,
+                stderr=stderr_tail,
+            )
+        return
+
+    # In-process fallback: attempt to run module/script directly
+    argv = cmd[1:] if cmd and cmd[0] == sys.executable else cmd
+    if argv and argv[0] == "-m":
+        module_name = argv[1]
+        args = argv[2:]
+        old_argv = sys.argv
+        sys.argv = [module_name, *args]
+        try:
+            mod = importlib.import_module(module_name)
+            if hasattr(mod, "main"):
+                rc = mod.main()
+                if rc not in (None, 0):
+                    raise SystemExit(rc)
+            else:
+                raise SystemExit(f"Module {module_name} has no main()")
+        finally:
+            sys.argv = old_argv
+    else:
+        script_path = argv[0]
+        args = argv[1:]
+        old_argv = sys.argv
+        sys.argv = [script_path, *args]
+        try:
+            runpy.run_path(script_path, run_name="__main__")
+        finally:
+            sys.argv = old_argv
 
 
 def _read_json(path: Path) -> Any:
@@ -118,6 +204,61 @@ def _read_json(path: Path) -> Any:
 def _write_json(path: Path, obj: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _hash_file(path: Path) -> Optional[str]:
+    if not path.exists():
+        return None
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except Exception:
+        return None
+
+
+def _safe_len(path: Path) -> int:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, list):
+            return len(data)
+    except Exception:
+        return 0
+    return 0
+
+
+def _load_last_run() -> Dict[str, Any]:
+    if not LAST_RUN_JSON.exists():
+        return {}
+    try:
+        return json.loads(LAST_RUN_JSON.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _write_last_run(payload: Dict[str, Any]) -> None:
+    _write_json(LAST_RUN_JSON, payload)
+
+
+def _setup_logging(json_mode: bool) -> None:
+    if not logging.getLogger().hasHandlers() or json_mode:
+        handlers = []
+        if json_mode:
+            h = logging.StreamHandler()
+            h.setFormatter(JsonFormatter())
+            handlers.append(h)
+            logging.basicConfig(level=logging.INFO, handlers=handlers, force=True)
+        else:
+            logging.basicConfig(
+                level=logging.INFO,
+                format="%(asctime)s %(levelname)s %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
+
+
+def _should_short_circuit(prev_hashes: Dict[str, Any], curr_hashes: Dict[str, Any]) -> bool:
+    return all(
+        curr_hashes.get(k) is not None and curr_hashes.get(k) == prev_hashes.get(k)
+        for k in ("raw", "labeled", "enriched")
+    )
 
 
 def _job_key(job: Dict[str, Any]) -> str:
@@ -173,7 +314,7 @@ def _post_discord(webhook_url: str, message: str) -> bool:
     Never raises (so your pipeline still completes).
     """
     if not webhook_url or "discord.com/api/webhooks/" not in webhook_url:
-        print("⚠️ DISCORD_WEBHOOK_URL missing or doesn't look like a Discord webhook URL. Skipping post.")
+        logger.warning("⚠️ DISCORD_WEBHOOK_URL missing or doesn't look like a Discord webhook URL. Skipping post.")
         return False
 
     payload = {"content": message}
@@ -196,26 +337,31 @@ def _post_discord(webhook_url: str, message: str) -> bool:
         return True
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")
-        print(f"Discord webhook POST failed: {e.code}")
-        print(body[:2000])
+        logger.error(f"Discord webhook POST failed: {e.code}")
+        logger.error(body[:2000])
         if e.code == 404 and "10015" in body:
-            print("⚠️ Discord says: Unknown Webhook (rotated/deleted/wrong URL). Update DISCORD_WEBHOOK_URL in .env.")
+            logger.warning("⚠️ Discord says: Unknown Webhook (rotated/deleted/wrong URL). Update DISCORD_WEBHOOK_URL in .env.")
         return False
     except Exception as e:
-        print(f"Discord webhook POST failed: {e!r}")
+        logger.error(f"Discord webhook POST failed: {e!r}")
         return False
 
 
-def _post_failure(webhook_url: str, stage: str, error: str, no_post: bool) -> None:
+def _post_failure(webhook_url: str, stage: str, error: str, no_post: bool, *, stdout: str = "", stderr: str = "") -> None:
     """Best-effort failure notification. Never raises."""
     if no_post or not webhook_url:
         return
+
+    stdout_tail = (stdout or "")[-1800:]
+    stderr_tail = (stderr or "")[-1800:]
 
     msg = (
         "**🚨 Job Pipeline FAILED**\n"
         f"Stage: `{stage}`\n"
         f"Time: `{_utcnow_iso()}`\n"
         f"Error:\n```{error[-1800:]}```"
+        f"\n\n**stderr (tail)**:\n```{stderr_tail}```"
+        f"\n\n**stdout (tail)**:\n```{stdout_tail}```"
     )
     _post_discord(webhook_url, msg)
 
@@ -254,33 +400,107 @@ def main() -> int:
     ap.add_argument("--min_alert_score", type=int, default=85)
     ap.add_argument("--no_post", action="store_true", help="Run pipeline but do not send Discord webhook")
     ap.add_argument("--test_post", action="store_true", help="Send a test message to Discord and exit")
+    ap.add_argument("--ai", action="store_true", help="Run AI augment stage after enrichment")
+    ap.add_argument("--ai_only", action="store_true", help="Run enrich + AI augment only (no scoring/alerts)")
+    ap.add_argument(
+        "--no_subprocess",
+        action="store_true",
+        help="Run stages in-process (library mode). Default uses subprocesses.",
+    )
+    ap.add_argument("--log_json", action="store_true", help="Emit JSON logs for aggregation systems")
 
     args = ap.parse_args()
+    global USE_SUBPROCESS
+    USE_SUBPROCESS = not args.no_subprocess
+    _setup_logging(args.log_json)
     webhook = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
 
     if args.test_post:
         if not webhook:
             raise SystemExit("DISCORD_WEBHOOK_URL not set (check .env and export).")
         ok = _post_discord(webhook, "test_post ✅ (run_daily)")
-        print("✅ test_post sent" if ok else "⚠️ test_post failed")
+        logger.info("✅ test_post sent" if ok else "⚠️ test_post failed")
         return 0
 
     _acquire_lock(timeout_sec=0)
-    print(f"===== jobintel start {_utcnow_iso()} pid={os.getpid()} =====")
+    logger.info(f"===== jobintel start {_utcnow_iso()} pid={os.getpid()} =====")
+
+    telemetry: Dict[str, Any] = {"started_at": _utcnow_iso(), "status": "started", "stages": {}}
+    prev_hashes = _load_last_run().get("hashes", {}) if _load_last_run() else {}
+    curr_hashes = {
+        "raw": _hash_file(RAW_JOBS_JSON),
+        "labeled": _hash_file(LABELED_JOBS_JSON),
+        "enriched": _hash_file(ENRICHED_JOBS_JSON),
+    }
+
+    def _finalize(status: str, extra: Optional[Dict[str, Any]] = None) -> None:
+        telemetry["status"] = status
+        telemetry["hashes"] = {
+            "raw": _hash_file(RAW_JOBS_JSON),
+            "labeled": _hash_file(LABELED_JOBS_JSON),
+            "enriched": _hash_file(ENRICHED_JOBS_JSON),
+        }
+        telemetry["counts"] = {
+            "raw": _safe_len(RAW_JOBS_JSON),
+            "labeled": _safe_len(LABELED_JOBS_JSON),
+            "enriched": _safe_len(ENRICHED_JOBS_JSON),
+        }
+        telemetry["ended_at"] = _utcnow_iso()
+        if extra:
+            telemetry.update(extra)
+        _write_last_run(telemetry)
+
+    if _should_short_circuit(prev_hashes, curr_hashes):
+        telemetry["hashes"] = curr_hashes
+        telemetry["counts"] = {
+            "raw": _safe_len(RAW_JOBS_JSON),
+            "labeled": _safe_len(LABELED_JOBS_JSON),
+            "enriched": _safe_len(ENRICHED_JOBS_JSON),
+        }
+        telemetry["stages"] = {"short_circuit": {"duration_sec": 0.0}}
+        _finalize("short_circuit")
+        logger.info("No changes detected (raw/labeled/enriched). Short-circuiting downstream stages.")
+        return 0
 
     current_stage = "startup"
+
+    def record_stage(name: str, fn) -> Any:
+        t0 = time.time()
+        result = fn()
+        telemetry["stages"][name] = {"duration_sec": round(time.time() - t0, 3)}
+        return result
 
     try:
         profiles = _resolve_profiles(args)
         us_only_flag = ["--us_only"] if args.us_only else []
 
+        # Snapshot presence check (fail fast with alert if missing and needed)
+        snapshot_path = SNAPSHOT_DIR / "index.html"
+        if not snapshot_path.exists():
+            msg = (
+                f"Snapshot not found at {snapshot_path}. "
+                "Save https://openai.com/careers/search/ to data/openai_snapshots/index.html or switch mode."
+            )
+            raise RuntimeError(msg)
+
         # 1) Run pipeline stages ONCE
         current_stage = "scrape"
-        _run([sys.executable, "scripts/run_scrape.py", "--mode", "AUTO"])
+        record_stage(current_stage, lambda: _run([sys.executable, str(REPO_ROOT / "scripts" / "run_scrape.py"), "--mode", "AUTO"], stage=current_stage))
         current_stage = "classify"
-        _run([sys.executable, "scripts/run_classify.py"])
+        record_stage(current_stage, lambda: _run([sys.executable, str(REPO_ROOT / "scripts" / "run_classify.py")], stage=current_stage))
         current_stage = "enrich"
-        _run([sys.executable, "-m", "scripts.enrich_jobs"])
+        record_stage(current_stage, lambda: _run([sys.executable, "-m", "scripts.enrich_jobs"], stage=current_stage))
+
+        # Optional AI augment stage
+        if args.ai:
+            current_stage = "ai_augment"
+            record_stage(current_stage, lambda: _run([sys.executable, str(REPO_ROOT / "scripts" / "run_ai_augment.py")], stage=current_stage))
+
+        if args.ai_only:
+            _finalize("success")
+            return 0
+
+        unavailable_summary = _unavailable_summary()
 
         # 2–5) For each profile: score -> diff -> state -> optional alert
         for profile in profiles:
@@ -288,13 +508,18 @@ def main() -> int:
             ranked_csv = ranked_jobs_csv(profile)
             ranked_families = ranked_families_json(profile)
             shortlist_md = shortlist_md_path(profile)
+            # Prefer AI-enriched input if present
+            enriched_ai = ENRICHED_JOBS_JSON.with_name("openai_enriched_jobs_ai.json")
+            in_path = enriched_ai if enriched_ai.exists() else ENRICHED_JOBS_JSON
 
             current_stage = f"score:{profile}"
             cmd = [
                 sys.executable,
-                "scripts/score_jobs.py",
+                str(REPO_ROOT / "scripts" / "score_jobs.py"),
                 "--profile",
                 profile,
+                "--in_path",
+                str(in_path),
                 "--out_json",
                 str(ranked_json),
                 "--out_csv",
@@ -305,7 +530,7 @@ def main() -> int:
                 str(shortlist_md),
             ] + us_only_flag
 
-            _run(cmd)
+            record_stage(current_stage, lambda cmd=cmd: _run(cmd, stage=current_stage))
 
             state_path = state_last_ranked(profile)
             curr = _read_json(ranked_json)
@@ -318,17 +543,21 @@ def main() -> int:
             interesting_changed = [j for j in changed_jobs if j.get("score", 0) >= args.min_alert_score]
 
             if not webhook:
-                print(
+                logger.info(
                     f"ℹ️ No alerts ({profile}) (new={len(new_jobs)}, changed={len(changed_jobs)}; webhook=unset)."
                 )
-                print(f"Done ({profile}). Ranked outputs:\n - {ranked_json}\n - {ranked_csv}\n - {shortlist_md}")
+                if unavailable_summary:
+                    logger.info(f"Unavailable reasons: {unavailable_summary}")
+                logger.info(f"Done ({profile}). Ranked outputs:\n - {ranked_json}\n - {ranked_csv}\n - {shortlist_md}")
                 continue
 
             if not (interesting_new or interesting_changed):
-                print(
+                logger.info(
                     f"ℹ️ No alerts ({profile}) (new={len(new_jobs)}, changed={len(changed_jobs)}; webhook=set)."
                 )
-                print(f"Done ({profile}). Ranked outputs:\n - {ranked_json}\n - {ranked_csv}\n - {shortlist_md}")
+                if unavailable_summary:
+                    logger.info(f"Unavailable reasons: {unavailable_summary}")
+                logger.info(f"Done ({profile}). Ranked outputs:\n - {ranked_json}\n - {ranked_csv}\n - {shortlist_md}")
                 continue
 
             lines = [f"**Job alerts ({profile})** — {_utcnow_iso()}"]
@@ -356,25 +585,52 @@ def main() -> int:
 
             msg = "\n".join(lines)
             if args.no_post:
-                print(f"Skipping Discord post (--no_post). Message for {profile} would have been:\n")
-                print(msg)
+                logger.info(f"Skipping Discord post (--no_post). Message for {profile} would have been:\n")
+                logger.info(msg)
             else:
+                if unavailable_summary:
+                    lines.append(f"Unavailable reasons: {unavailable_summary}")
                 ok = _post_discord(webhook, msg)
-                print(f"✅ Discord alert sent ({profile})." if ok else "⚠️ Discord alert NOT sent (pipeline still completed).")
+                logger.info(
+                    f"✅ Discord alert sent ({profile})." if ok else "⚠️ Discord alert NOT sent (pipeline still completed)."
+                )
 
-            print(f"Done ({profile}). Ranked outputs:\n - {ranked_json}\n - {ranked_csv}\n - {shortlist_md}")
+            if unavailable_summary:
+                logger.info(f"Unavailable reasons: {unavailable_summary}")
+            logger.info(f"Done ({profile}). Ranked outputs:\n - {ranked_json}\n - {ranked_csv}\n - {shortlist_md}")
 
+        _finalize("success")
         return 0
 
     except subprocess.CalledProcessError as e:
         cmd_str = " ".join(e.cmd) if isinstance(e.cmd, (list, tuple)) else str(e.cmd)
-        _post_failure(webhook, stage=current_stage, error=f"{e}\ncmd={cmd_str}", no_post=args.no_post)
+        logger.error(
+            f"Stage '{current_stage}' failed (returncode={e.returncode}) cmd={cmd_str}\n"
+            f"stdout_tail:\n{(getattr(e, 'output', '') or '')[-4000:]}\n"
+            f"stderr_tail:\n{(getattr(e, 'stderr', '') or '')[-4000:]}"
+        )
+        _post_failure(
+            webhook,
+            stage=current_stage,
+            error=f"{e}\ncmd={cmd_str}",
+            no_post=args.no_post,
+            stdout=getattr(e, "output", "") or "",
+            stderr=getattr(e, "stderr", "") or "",
+        )
+        _finalize("error", {"error": str(e), "failed_stage": current_stage})
         return 1
     except Exception as e:
-        _post_failure(webhook, stage=current_stage or "unexpected", error=repr(e), no_post=args.no_post)
+        logger.error(f"Stage '{current_stage}' failed unexpectedly: {e!r}")
+        _post_failure(
+            webhook,
+            stage=current_stage or "unexpected",
+            error=repr(e),
+            no_post=args.no_post,
+        )
+        _finalize("error", {"error": repr(e), "failed_stage": current_stage})
         return 1
     finally:
-        print(f"===== jobintel end {_utcnow_iso()} =====")
+        logger.info(f"===== jobintel end {_utcnow_iso()} =====")
 
 
 if __name__ == "__main__":

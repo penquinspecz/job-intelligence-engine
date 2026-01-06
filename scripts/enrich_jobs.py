@@ -13,12 +13,14 @@ Usage:
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 from bs4 import BeautifulSoup
@@ -26,6 +28,10 @@ from bs4 import BeautifulSoup
 from ji_engine.config import ASHBY_CACHE_DIR, ENRICHED_JOBS_JSON, LABELED_JOBS_JSON
 from ji_engine.integrations.ashby_graphql import fetch_job_posting
 from ji_engine.integrations.html_to_text import html_to_text
+from ji_engine.utils.atomic_write import atomic_write_text
+from collections import Counter
+
+logger = logging.getLogger(__name__)
 
 DEBUG = os.getenv("JI_DEBUG") == "1"
 
@@ -66,7 +72,7 @@ def _fetch_html_fallback(url: str) -> Optional[str]:
             return None
         return html
     except Exception as e:
-        print(f" ⚠️ HTML fallback fetch failed: {e}")
+        logger.info(f" ⚠️ HTML fallback fetch failed: {e}")
         return None
 
 
@@ -145,115 +151,166 @@ def _apply_api_response(
             return updated, False
         else:
             if DEBUG:
-                print(" descriptionHtml converted to empty text - falling back to HTML")
-            updated["enrich_status"] = "failed"
-            updated["enrich_reason"] = "description_html_empty_text"
+                print(" descriptionHtml converted to empty text - treating as unavailable")
+            updated["enrich_status"] = "unavailable"
+            updated["enrich_reason"] = "empty_description"
             updated.update({"title": clean_title, "location": location, "team": team, "jd_text": None})
-            return updated, True
+            return updated, False
 
     if DEBUG:
-        print(" descriptionHtml missing/empty; falling back to HTML base page")
-        print(f" fallback_url: {fallback_url}")
-    updated["enrich_status"] = "failed"
-    updated["enrich_reason"] = "description_html_missing"
+        logger.info(" descriptionHtml missing/empty; treating as unavailable")
+        logger.info(f" fallback_url: {fallback_url}")
+    updated["enrich_status"] = "unavailable"
+    updated["enrich_reason"] = "empty_description"
     updated.update({"title": clean_title, "location": location, "team": team, "jd_text": None})
-    return updated, True
+    return updated, False
+
+
+def _enrich_single(
+    job: Dict[str, Any],
+    index: int,
+    total: int,
+    fetch_func=fetch_job_posting,
+) -> Tuple[Dict[str, Any], Optional[str], str]:
+    """
+    Enrich a single job. Returns (updated_job, unavailable_reason, status_key)
+    status_key in {"enriched", "unavailable", "failed"} for stats aggregation.
+    """
+    apply_url = job.get("apply_url", "")
+    if not apply_url:
+        logger.info(f" [{index}/{total}] Skipping - no apply_url")
+        updated_job = {**job, "jd_text": None, "fetched_at": None}
+        return updated_job, None, "failed"
+
+    logger.info(f" [{index}/{total}] Processing: {job.get('title', 'Unknown')}")
+
+    job_id = _extract_job_id_from_url(apply_url)
+    if not job_id:
+        logger.info(" ⚠️ Cannot extract jobPostingId from URL - not enrichable")
+        logger.info(f" URL: {apply_url}")
+        updated_job = {**job, "jd_text": None, "fetched_at": None}
+        return updated_job, None, "failed"
+
+    fallback_url = _derive_fallback_url(apply_url)
+
+    try:
+        api_data = fetch_func(org=ORG, job_id=job_id, cache_dir=CACHE_DIR)
+    except Exception as e:
+        logger.info(f" ❌ API fetch failed: {e}")
+        api_data = None
+
+    updated_job, fallback_needed = _apply_api_response(job, api_data, fallback_url)
+    jd_text = updated_job.get("jd_text")
+    unavailable_reason: Optional[str] = None
+
+    if fallback_needed:
+        logger.info(" ⚠️ Falling back to HTML parsing")
+        if DEBUG:
+            logger.info(f" fallback_url: {fallback_url}")
+        html = _fetch_html_fallback(fallback_url)
+        if html:
+            jd_text = _extract_jd_from_html(html)
+            if jd_text:
+                logger.info(f" ✅ Extracted from HTML: {len(jd_text)} chars")
+                updated_job["jd_text"] = jd_text
+                updated_job["enrich_status"] = "enriched"
+                updated_job["enrich_reason"] = updated_job.get("enrich_reason") or "html_fallback"
+            else:
+                logger.info(" ❌ HTML extraction failed (empty text)")
+                updated_job["enrich_status"] = "unavailable"
+                updated_job["enrich_reason"] = "empty_description"
+        else:
+            logger.info(" ❌ HTML fetch failed")
+            updated_job["enrich_status"] = updated_job.get("enrich_status") or "failed"
+            updated_job["enrich_reason"] = updated_job.get("enrich_reason") or "html_fetch_failed"
+
+    if updated_job.get("enrich_status") == "unavailable":
+        jd_text = None
+        unavailable_reason = updated_job.get("enrich_reason") or "unavailable"
+
+    updated_job["fetched_at"] = datetime.utcnow().isoformat()
+
+    if jd_text:
+        logger.info(f" ✅ Final JD length: {len(jd_text)} chars")
+        status_key = "enriched"
+    else:
+        status = updated_job.get("enrich_status")
+        if status == "unavailable":
+            status_key = "unavailable"
+        else:
+            status_key = "failed"
+        logger.info(" ❌ No JD text extracted")
+
+    return updated_job, unavailable_reason, status_key
 
 
 def main() -> int:
+    if not logging.getLogger().hasHandlers():
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s %(levelname)s %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+
+    import argparse
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--max_workers", type=int, default=4, help="Max threads for enrichment")
+    args = ap.parse_args()
+
     if not LABELED_JOBS_JSON.exists():
-        print(f"Error: Input file not found: {LABELED_JOBS_JSON}")
+        logger.error(f"Error: Input file not found: {LABELED_JOBS_JSON}")
         return 1
 
     jobs = json.loads(LABELED_JOBS_JSON.read_text(encoding="utf-8"))
     enriched: List[Dict[str, Any]] = []
     stats = {"enriched": 0, "unavailable": 0, "failed": 0}
+    unavailable_reasons: Counter[str] = Counter()
 
     filtered_jobs = [j for j in jobs if j.get("relevance") in ("RELEVANT", "MAYBE")]
 
-    print(f"Loaded {len(jobs)} labeled jobs")
-    print(f"Filtering for RELEVANT/MAYBE: {len(filtered_jobs)} jobs to enrich\n")
+    logger.info(f"Loaded {len(jobs)} labeled jobs")
+    logger.info(f"Filtering for RELEVANT/MAYBE: {len(filtered_jobs)} jobs to enrich\n")
 
-    for i, job in enumerate(filtered_jobs, 1):
-        apply_url = job.get("apply_url", "")
-        if not apply_url:
-            print(f" [{i}/{len(filtered_jobs)}] Skipping - no apply_url")
-            enriched.append({**job, "jd_text": None, "fetched_at": None})
-            continue
+    with ThreadPoolExecutor(max_workers=max(1, args.max_workers)) as pool:
+        futures = []
+        for i, job in enumerate(filtered_jobs, 1):
+            futures.append((i, pool.submit(_enrich_single, job, i, len(filtered_jobs), fetch_job_posting)))
 
-        print(f" [{i}/{len(filtered_jobs)}] Processing: {job.get('title', 'Unknown')}")
+        # preserve deterministic ordering by index
+        results: List[Tuple[int, Dict[str, Any], Optional[str], str]] = []
+        for i, fut in futures:
+            updated_job, unavailable_reason, status_key = fut.result()
+            results.append((i, updated_job, unavailable_reason, status_key))
 
-        job_id = _extract_job_id_from_url(apply_url)
-        if not job_id:
-            print(" ⚠️ Cannot extract jobPostingId from URL - not enrichable")
-            print(f" URL: {apply_url}")
-            enriched.append({**job, "jd_text": None, "fetched_at": None})
-            continue
-
-        fallback_url = _derive_fallback_url(apply_url)
-
-        try:
-            api_data = fetch_job_posting(org=ORG, job_id=job_id, cache_dir=CACHE_DIR)
-        except Exception as e:
-            print(f" ❌ API fetch failed: {e}")
-            api_data = None
-
-        updated_job, fallback_needed = _apply_api_response(job, api_data, fallback_url)
-        jd_text = updated_job.get("jd_text")
-
-        if fallback_needed:
-            print(" ⚠️ Falling back to HTML parsing")
-            if DEBUG:
-                print(f" fallback_url: {fallback_url}")
-            html = _fetch_html_fallback(fallback_url)
-            if html:
-                jd_text = _extract_jd_from_html(html)
-                if jd_text:
-                    print(f" ✅ Extracted from HTML: {len(jd_text)} chars")
-                    updated_job["jd_text"] = jd_text
-                    updated_job["enrich_status"] = "enriched"
-                    updated_job["enrich_reason"] = updated_job.get("enrich_reason") or "html_fallback"
-                else:
-                    print(" ❌ HTML extraction failed")
-                    updated_job["enrich_status"] = updated_job.get("enrich_status") or "failed"
-                    updated_job["enrich_reason"] = updated_job.get("enrich_reason") or "html_extraction_failed"
-            else:
-                print(" ❌ HTML fetch failed")
-                updated_job["enrich_status"] = updated_job.get("enrich_status") or "failed"
-                updated_job["enrich_reason"] = updated_job.get("enrich_reason") or "html_fetch_failed"
-
-        if updated_job.get("enrich_status") == "unavailable":
-            jd_text = None
-
-        updated_job["fetched_at"] = datetime.utcnow().isoformat()
-
-        if jd_text:
-            print(f" ✅ Final JD length: {len(jd_text)} chars")
+    results.sort(key=lambda x: x[0])
+    for _, updated_job, unavailable_reason, status_key in results:
+        if status_key == "enriched":
             stats["enriched"] += 1
+        elif status_key == "unavailable":
+            stats["unavailable"] += 1
         else:
-            status = updated_job.get("enrich_status")
-            if status == "unavailable":
-                stats["unavailable"] += 1
-            else:
-                stats["failed"] += 1
-            print(" ❌ No JD text extracted")
+            stats["failed"] += 1
+
+        if unavailable_reason:
+            unavailable_reasons[unavailable_reason] += 1
 
         enriched.append(updated_job)
 
     ENRICHED_JOBS_JSON.parent.mkdir(parents=True, exist_ok=True)
-    ENRICHED_JOBS_JSON.write_text(
-        json.dumps(enriched, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    atomic_write_text(ENRICHED_JOBS_JSON, json.dumps(enriched, ensure_ascii=False, indent=2))
 
-    print("\n" + "=" * 60)
-    print("Enrichment Summary:")
-    print(f" Total processed: {len(enriched)}")
-    print(f" Enriched: {stats['enriched']}")
-    print(f" Unavailable: {stats['unavailable']}")
-    print(f" Failed: {stats['failed']}")
-    print(f" Output: {ENRICHED_JOBS_JSON}")
-    print("=" * 60)
+    logger.info("\n" + "=" * 60)
+    logger.info("Enrichment Summary:")
+    logger.info(f" Total processed: {len(enriched)}")
+    logger.info(f" Enriched: {stats['enriched']}")
+    logger.info(f" Unavailable: {stats['unavailable']}")
+    logger.info(f" Failed: {stats['failed']}")
+    if unavailable_reasons:
+        reason_str = ", ".join([f"{k}={v}" for k, v in sorted(unavailable_reasons.items())])
+        logger.info(f" Unavailable reasons: {reason_str}")
+    logger.info(f" Output: {ENRICHED_JOBS_JSON}")
+    logger.info("=" * 60)
 
     return 0
 

@@ -1,9 +1,49 @@
-# scripts/ashby_graphql.py
+# Integrations
+Included files: `src/ji_engine/integrations/html_to_text.py`, `src/ji_engine/integrations/ashby_graphql.py`
+
+Why they matter: HTML-to-text normalization and Ashby GraphQL fetching power enrichment; integrations live under `src/ji_engine/integrations`.
+
+Omitted sections: None (full contents below).
+
+## src/ji_engine/integrations/html_to_text.py
+```
 from __future__ import annotations
+
+import re
+from bs4 import BeautifulSoup
+
+
+def html_to_text(html: str) -> str:
+    """
+    Convert HTML to plain text using BeautifulSoup, keeping light structure.
+    """
+    if not html:
+        return ""
+
+    soup = BeautifulSoup(html, "html.parser")
+    text = soup.get_text(separator="\n", strip=True)
+
+    # Normalize excessive whitespace similar to previous regex approach
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    return text.strip()
+
+
+__all__ = ["html_to_text"]
+```
+
+## src/ji_engine/integrations/ashby_graphql.py
+```
+from __future__ import annotations
+
 import json
 import time
 from pathlib import Path
+from typing import Any, Dict, Optional
+
 import requests
+
+from ji_engine.utils.atomic_write import atomic_write_text
 
 API_URL = "https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiJobPosting"
 
@@ -27,7 +67,8 @@ query ApiJobPosting($organizationHostedJobsPageName: String!, $jobPostingId: Str
 }
 """
 
-def fetch_job_posting(org: str, job_id: str, cache_dir: Path, *, force: bool = False) -> dict:
+
+def fetch_job_posting(org: str, job_id: str, cache_dir: Path, *, force: bool = False) -> Optional[Dict[str, Any]]:
     cache_dir.mkdir(parents=True, exist_ok=True)
     cache_path = cache_dir / f"{job_id}.json"
     if cache_path.exists() and not force:
@@ -55,7 +96,11 @@ def fetch_job_posting(org: str, job_id: str, cache_dir: Path, *, force: bool = F
         r = requests.post(API_URL, headers=headers, json=payload, timeout=30)
         if r.status_code == 200:
             data = r.json()
-            cache_path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            jp = (data.get("data") or {}).get("jobPosting") if isinstance(data, dict) else None
+            if jp is None:
+                # Treat null jobPosting as unavailable; do not cache
+                return None
+            atomic_write_text(cache_path, json.dumps(data, ensure_ascii=False))
             return data
         if r.status_code in (429, 500, 502, 503, 504):
             time.sleep(1.5 * (attempt + 1))
@@ -64,3 +109,8 @@ def fetch_job_posting(org: str, job_id: str, cache_dir: Path, *, force: bool = F
 
     r.raise_for_status()
     raise RuntimeError("Unreachable")
+
+
+__all__ = ["fetch_job_posting"]
+```
+

@@ -13,29 +13,21 @@ Assumes existing scripts:
 - scripts/score_jobs.py
 """
 
-from __future__ import annotations
-import subprocess
 import sys
+import textwrap
 
-def run(cmd: list[str]) -> None:
-    print("\n$ " + " ".join(cmd))
-    subprocess.check_call(cmd)
 
 def main() -> int:
-    # Use the venv python to ensure deps resolve
-    py = sys.executable
+    msg = textwrap.dedent(
+        """
+        DEPRECATED: Use scripts/run_daily.py instead.
+        Example:
+          python scripts/run_daily.py --profiles cs --us_only --no_post
+        """
+    ).strip()
+    print(msg)
+    return 1
 
-    run([py, "scripts/run_scrape.py"])
-    run([py, "scripts/run_classify.py"])
-    run([py, "-m", "scripts.enrich_jobs"])
-    run([py, "scripts/score_jobs.py"])
-
-    print("\n✅ Pipeline complete.")
-    print("Outputs:")
-    print(" - data/openai_enriched_jobs.json")
-    print(" - data/openai_ranked_jobs.json")
-    print(" - data/openai_ranked_jobs.csv")
-    return 0
 
 if __name__ == "__main__":
     raise SystemExit(main())

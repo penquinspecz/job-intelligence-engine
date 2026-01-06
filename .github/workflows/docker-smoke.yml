@@ -1,0 +1,21 @@
+name: Docker Smoke
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t jobintel:ci .
+
+      - name: Smoke test run_daily (no webhook)
+        run: |
+          docker run --rm jobintel:ci --profiles cs --us_only --no_post
+
