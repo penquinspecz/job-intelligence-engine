@@ -37,7 +37,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from ji_engine.ai.schema import ensure_ai_payload
 from ji_engine.ai.provider import StubProvider, OpenAIProvider, AIProvider
 from ji_engine.ai.augment import compute_content_hash
-from ji_engine.ai.cache import FileSystemAICache
+from ji_engine.ai.cache import AICache, FileSystemAICache, S3AICache
+from ji_engine.profile_loader import load_candidate_profile
 from ji_engine.config import (
     ENRICHED_JOBS_JSON,
     LABELED_JOBS_JSON,
@@ -49,6 +50,81 @@ from ji_engine.config import (
 from ji_engine.utils.atomic_write import atomic_write_text, atomic_write_with
 
 logger = logging.getLogger(__name__)
+
+def _candidate_skill_set() -> set[str]:
+    """
+    Best-effort load of candidate_profile.json for explanation-only overlap/gap reporting.
+    Does not affect scoring.
+    """
+    try:
+        profile = load_candidate_profile()
+    except Exception:
+        return set()
+
+    skills: List[str] = []
+    try:
+        s = profile.skills
+        skills = list(s.technical_core or []) + list(s.ai_specific or []) + list(s.customer_success or []) + list(s.domain_knowledge or [])
+    except Exception:
+        skills = []
+    return {str(x).strip().lower() for x in skills if str(x).strip()}
+
+
+def _build_explanation(job: Dict[str, Any], candidate_skills: set[str]) -> Dict[str, Any]:
+    heuristic_score = int(job.get("heuristic_score", job.get("score", 0)) or 0)
+    final_score = int(job.get("final_score", job.get("score", 0)) or 0)
+
+    hits = job.get("score_hits") or []
+    top3_reasons: List[str] = []
+    for h in hits[:3]:
+        rule = h.get("rule")
+        delta = h.get("delta")
+        if rule:
+            top3_reasons.append(f"{rule}({delta})")
+
+    ai = ensure_ai_payload(job.get("ai") or {}) if job.get("ai") else ensure_ai_payload({})
+    match_score = int(ai.get("match_score", 0))
+    skills_required = [str(s) for s in (ai.get("skills_required") or [])]
+    skills_preferred = [str(s) for s in (ai.get("skills_preferred") or [])]
+
+    req_overlap = sum(1 for s in skills_required if s.strip().lower() in candidate_skills) if candidate_skills else 0
+    pref_overlap = sum(1 for s in skills_preferred if s.strip().lower() in candidate_skills) if candidate_skills else 0
+    role_family = str(ai.get("role_family") or "")
+    seniority = str(ai.get("seniority") or "")
+
+    match_bits = [
+        f"required_overlap={req_overlap}/{len(skills_required)}",
+        f"preferred_overlap={pref_overlap}/{len(skills_preferred)}",
+    ]
+    if role_family:
+        match_bits.append(f"role_family={role_family}")
+    if seniority:
+        match_bits.append(f"seniority={seniority}")
+    match_rationale = ", ".join(match_bits)
+
+    missing_required = []
+    if candidate_skills and skills_required:
+        missing_required = [s for s in skills_required if s.strip().lower() not in candidate_skills]
+    missing_required = missing_required[:5]
+
+    blend_weight_used = AI_BLEND_WEIGHT if job.get("ai") else 0.0
+
+    explanation_summary = (
+        f"final={final_score} (heur={heuristic_score}, ai={match_score}, w={blend_weight_used}); "
+        f"top={','.join(top3_reasons) or '—'}; "
+        f"missing_req={','.join(missing_required) or '—'}"
+    )
+
+    return {
+        "heuristic_score": heuristic_score,
+        "heuristic_reasons_top3": top3_reasons,
+        "match_score": match_score,
+        "match_rationale": match_rationale,
+        "final_score": final_score,
+        "blend_weight_used": blend_weight_used,
+        "missing_required_skills": missing_required,
+        "explanation_summary": explanation_summary,
+    }
 
 def load_profiles(path: str) -> Dict[str, Any]:
     p = Path(path)
@@ -93,6 +169,17 @@ def _select_ai_provider(ai_live: bool) -> AIProvider:
             return OpenAIProvider(api_key=key)
         logger.warning("ai_live requested but OPENAI_API_KEY not set; falling back to StubProvider.")
     return StubProvider()
+
+
+def _select_ai_cache() -> AICache:
+    bucket = os.getenv("JOBINTEL_S3_BUCKET", "").strip()
+    prefix = os.getenv("JOBINTEL_S3_PREFIX", "").strip()
+    if bucket:
+        try:
+            return S3AICache(bucket=bucket, prefix=prefix)
+        except Exception as exc:
+            logger.warning("S3AICache unavailable (%s); falling back to filesystem cache.", exc)
+    return FileSystemAICache()
 
 
 
@@ -392,10 +479,13 @@ def to_csv_rows(scored: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     for j in scored:
         top_hits = j.get("score_hits") or []
         top3 = ", ".join([f"{h['rule']}({h['delta']})" for h in top_hits[:3]])
+        expl = j.get("explanation") or {}
+        expl_summary = _norm(expl.get("explanation_summary") or "")
         rows.append({
             "score": j.get("score", 0),
             "heuristic_score": j.get("heuristic_score", j.get("score", 0)),
             "final_score": j.get("final_score", j.get("score", 0)),
+            "explanation_summary": expl_summary,
             "base_score": j.get("base_score", 0),
             "profile_delta": j.get("profile_delta", 0),
             "role_band": _norm(j.get("role_band")),
@@ -462,7 +552,7 @@ def write_shortlist_md(scored: List[Dict[str, Any]], out_path: Path, min_score: 
     ]
 
     lines: List[str] = ["# OpenAI Shortlist", f"", f"Min score: **{min_score}**", ""]
-    for job in shortlist:
+    for idx, job in enumerate(shortlist):
         title = _norm(job.get("title")) or "Untitled"
         score = job.get("score", 0)
         role_band = _norm(job.get("role_band"))
@@ -484,6 +574,12 @@ def write_shortlist_md(scored: List[Dict[str, Any]], out_path: Path, min_score: 
         if reasons:
             lines.append("**Top rules:** " + ", ".join(reasons))
 
+        if idx < 10:
+            expl = job.get("explanation") or {}
+            expl_summary = _norm(expl.get("explanation_summary") or "")
+            if expl_summary:
+                lines.append(f"**Explanation:** {expl_summary}")
+
         jd = _norm(job.get("jd_text"))
         if jd:
             excerpt = jd[:700] + ("…" if len(jd) > 700 else "")
@@ -502,7 +598,7 @@ def write_shortlist_ai_md(scored: List[Dict[str, Any]], out_path: Path, min_scor
     ]
 
     lines: List[str] = ["# OpenAI Shortlist (AI Insights)", f"", f"Min score: **{min_score}**", ""]
-    for job in shortlist:
+    for idx, job in enumerate(shortlist):
         title = _norm(job.get("title")) or "Untitled"
         score = job.get("score", 0)
         final_score = job.get("final_score", score)
@@ -532,6 +628,17 @@ def write_shortlist_ai_md(scored: List[Dict[str, Any]], out_path: Path, min_scor
         if notes:
             lines.append(f"- Notes: {notes}")
 
+        # Add compact explanation block for the top items (deterministic)
+        if idx < 10:
+            expl = job.get("explanation") or {}
+            if expl:
+                lines.append("- Explanation:")
+                lines.append(f"  - final_score={expl.get('final_score')} (heuristic={expl.get('heuristic_score')}, w={expl.get('blend_weight_used')})")
+                lines.append(f"  - heuristic_top3={', '.join(expl.get('heuristic_reasons_top3') or []) or '—'}")
+                lines.append(f"  - match_rationale={expl.get('match_rationale') or '—'}")
+                miss = expl.get('missing_required_skills') or []
+                lines.append(f"  - missing_required={', '.join(miss) if miss else '—'}")
+
         lines.append("")
 
     out_path.write_text("\n".join(lines), encoding="utf-8")
@@ -541,7 +648,7 @@ def write_application_kit_md(
     shortlist: List[Dict[str, Any]],
     out_path: Path,
     provider: AIProvider,
-    cache: FileSystemAICache,
+    cache: AICache,
 ) -> None:
     lines: List[str] = ["# Application Kit", ""]
     for job in shortlist:
@@ -561,25 +668,121 @@ def write_application_kit_md(
                     "resume_bullets": [f"Generation failed: {exc}"],
                     "cover_letter_points": [],
                     "interview_prompts": [],
+                    "star_prompts": [],
                     "gap_plan": [],
                 }
             cache.put(job_id, chash, {"application_kit": payload, "content_hash": chash})
 
+        ai_payload = ensure_ai_payload(job.get("ai") or {})
+        match_score = ai_payload.get("match_score", 0)
+        summary_bullets = ai_payload.get("summary_bullets") or []
+        skills_required = ai_payload.get("skills_required") or []
+        skills_preferred = ai_payload.get("skills_preferred") or []
+
+        def _take(items: List[str], n: int) -> List[str]:
+            return [x for x in items if x][:n]
+
+        def _fallback_why() -> List[str]:
+            return [
+                f"Relevant domain alignment for {title}.",
+                "Experience collaborating with product/eng and customers.",
+                "Ability to ship demos and measure value quickly.",
+            ]
+
+        why_bullets = _take(summary_bullets, 3) or _fallback_why()
+
+        def _gap_suggestions(skills: List[str]) -> List[str]:
+            take = _take(skills, 3)
+            if not take:
+                take = ["Advanced system design", "Performance tuning", "Security hardening"]
+            out: List[str] = []
+            for s in take:
+                out.append(f"{s}: show via a small demo or write-up proving proficiency.")
+            return out
+
+        gap_lines = _gap_suggestions(skills_required)
+
+        resume_bullets = payload.get("resume_bullets") or [
+            f"Quantify impact aligning to {title}; highlight shipped work.",
+            "Show customer-facing collaboration and iterative delivery.",
+            "Emphasize measurable outcomes (latency, adoption, reliability).",
+        ]
+
+        interview_prompts = payload.get("interview_prompts") or [
+            "Walk through a project where you balanced speed vs quality.",
+            "Describe how you debugged a hard production issue.",
+            "Explain a time you aligned stakeholders with competing goals.",
+            "Share how you validated impact post-launch.",
+            "Describe how you handled a security or privacy concern.",
+        ]
+
+        star_prompts = payload.get("star_prompts") or [
+            "S/T: adoption gap; A: build demo + enablement; R: usage up.",
+            "S/T: reliability issue; A: root-cause, fix, rollback plan; R: errors down.",
+            "S/T: unclear scope; A: align, define MVP; R: on-time delivery.",
+            "S/T: performance pain; A: profile/optimize; R: latency down.",
+            "S/T: security risk; A: coordinate mitigation; R: risk reduced.",
+        ]
+
+        plan = payload.get("gap_plan") or [
+            "Day 1: Review team charter, top risks, recent postmortems.",
+            "Day 2: Map required skills vs strengths; pick top 3 gaps.",
+            "Day 3: Build small demo targeting gap #1; capture baseline.",
+            "Day 4: Pair review demo; apply feedback.",
+            "Day 5: Add metrics/logging; draft runbook snippet.",
+            "Day 6: Study gap #2; apply a fix or improvement.",
+            "Day 7: Polish demo UX; rehearse walkthrough.",
+            "Day 8: Add second scenario; compare metrics.",
+            "Day 9: Write short retro; list next steps.",
+            "Day 10: Mock customer conversation; log objections.",
+            "Day 11: Address objections; update docs.",
+            "Day 12: Study gap #3; integrate into demo.",
+            "Day 13: Finalize artifacts (screenshots/docs).",
+            "Day 14: Share internally; collect feedback.",
+        ]
+
+        location = _norm(job.get("location") or job.get("locationName") or "")
+        team = _norm(job.get("team") or job.get("department") or "")
+
         lines.append(f"## {title}")
         lines.append(f"- Apply URL: {job.get('apply_url','')}")
-
-        def _list_block(header: str, items: Any) -> None:
-            vals = items or []
-            if not isinstance(vals, list):
-                vals = [vals]
-            lines.append(f"- {header}:")
-            for v in vals:
-                lines.append(f"  - {v}")
-
-        _list_block("Resume bullets", payload.get("resume_bullets"))
-        _list_block("Cover letter points", payload.get("cover_letter_points"))
-        _list_block("Interview prompts", payload.get("interview_prompts"))
-        _list_block("2-week gap plan", payload.get("gap_plan"))
+        lines.append("")
+        lines.append("### Role snapshot")
+        lines.append(f"- Title: {title}")
+        lines.append(f"- Location: {location or '—'}")
+        lines.append(f"- Team: {team or '—'}")
+        lines.append("")
+        lines.append("### Match summary")
+        lines.append(f"- Match score: {match_score}")
+        for b in why_bullets:
+            lines.append(f"- Why: {b}")
+        lines.append("")
+        lines.append("### Skill gaps (top 3)")
+        for g in gap_lines:
+            lines.append(f"- {g}")
+        lines.append("")
+        lines.append("### Resume bullets (tailored)")
+        for b in _take(resume_bullets, 5):
+            lines.append(f"- {b}")
+        lines.append("")
+        lines.append("### Interview prep")
+        lines.append("- Questions:")
+        for q in _take(interview_prompts, 5):
+            lines.append(f"  - {q}")
+        lines.append("- STAR prompts:")
+        for sp in _take(star_prompts, 5):
+            lines.append(f"  - {sp}")
+        lines.append("")
+        lines.append("### 2-week plan (daily)")
+        for day_idx, step in enumerate(plan[:14], start=1):
+            text = str(step)
+            # Remove any existing "Day X:" prefix to avoid duplication.
+            if ":" in text and text.lower().startswith("day"):
+                try:
+                    text = text.split(":", 1)[1].strip()
+                except Exception:
+                    text = text
+            lines.append(f"- Day {day_idx}: {text}")
         lines.append("")
 
     out_path.write_text("\n".join(lines), encoding="utf-8")
@@ -665,7 +868,13 @@ def main() -> int:
     profiles = load_profiles(args.profiles)
     apply_profile(args.profile, profiles)
 
-    in_path = Path(args.in_path)
+    ai_input = ENRICHED_JOBS_JSON.with_name("openai_enriched_jobs_ai.json")
+    requested_in = Path(args.in_path)
+    if ai_input.exists() and requested_in == ENRICHED_JOBS_JSON:
+        in_path = ai_input
+        logger.info("Using AI-enriched input %s", in_path)
+    else:
+        in_path = requested_in
     if not in_path.exists():
         raise SystemExit(f"Input not found: {in_path}")
 
@@ -680,6 +889,9 @@ def main() -> int:
 
     pos_rules, neg_rules = _compile_rules()
     scored = [score_job(j, pos_rules, neg_rules) for j in jobs]
+    candidate_skills = _candidate_skill_set()
+    for j in scored:
+        j["explanation"] = _build_explanation(j, candidate_skills)
     scored.sort(key=lambda x: x.get("score", 0), reverse=True)
 
     atomic_write_text(out_json, json.dumps(scored, ensure_ascii=False, indent=2))
@@ -741,7 +953,7 @@ def main() -> int:
         write_shortlist_ai_md(scored, out_md_ai, args.shortlist_score)
     if args.app_kit and out_app_kit:
         provider = _select_ai_provider(args.ai_live)
-        cache = FileSystemAICache()
+        cache = _select_ai_cache()
         write_application_kit_md(shortlist, out_app_kit, provider, cache)
 
     logger.info(f"Wrote ranked JSON     : {out_json}")

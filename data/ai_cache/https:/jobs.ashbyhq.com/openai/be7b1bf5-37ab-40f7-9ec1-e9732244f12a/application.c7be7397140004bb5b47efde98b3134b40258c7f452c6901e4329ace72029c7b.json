@@ -1,0 +1,22 @@
+{
+  "summary": "Stub summary for Solutions Architect, Gov",
+  "confidence": 0.0,
+  "notes": "required_match:0/1; preferred_match:0/2; role_bonus:0; seniority_bonus:0 | required_match:0/1; preferred_match:0/2; role_bonus:0; seniority_bonus:0 | required_match:0/1; preferred_match:0/2; role_bonus:0; seniority_bonus:0 | required_match:0/2; preferred_match:0/3; role_bonus:0; seniority_bonus:0 | required_match:0/2; preferred_match:0/2; role_bonus:0; seniority_bonus:0 | required_match:0/2; preferred_match:0/2; role_bonus:0; seniority_bonus:0",
+  "skills_required": [
+    "Test Automation",
+    "APIs"
+  ],
+  "skills_preferred": [
+    "Python",
+    "Security"
+  ],
+  "role_family": "Solutions Architect",
+  "seniority": "IC",
+  "match_score": 0,
+  "summary_bullets": [],
+  "red_flags": [
+    "Security clearance required",
+    "Relocation required"
+  ],
+  "rules_version": "2025-01-AI-EXTRACT-3"
+}

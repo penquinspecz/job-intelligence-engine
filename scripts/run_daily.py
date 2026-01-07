@@ -238,6 +238,20 @@ def _write_last_run(payload: Dict[str, Any]) -> None:
     _write_json(LAST_RUN_JSON, payload)
 
 
+def _file_mtime(path: Path) -> Optional[float]:
+    try:
+        return path.stat().st_mtime
+    except Exception:
+        return None
+
+
+def _file_mtime_iso(path: Path) -> Optional[str]:
+    ts = _file_mtime(path)
+    if ts is None:
+        return None
+    return datetime.fromtimestamp(ts, timezone.utc).isoformat()
+
+
 def _setup_logging(json_mode: bool) -> None:
     if not logging.getLogger().hasHandlers() or json_mode:
         handlers = []
@@ -425,13 +439,24 @@ def main() -> int:
     _acquire_lock(timeout_sec=0)
     logger.info(f"===== jobintel start {_utcnow_iso()} pid={os.getpid()} =====")
 
-    telemetry: Dict[str, Any] = {"started_at": _utcnow_iso(), "status": "started", "stages": {}}
-    prev_hashes = _load_last_run().get("hashes", {}) if _load_last_run() else {}
+    telemetry: Dict[str, Any] = {
+        "started_at": _utcnow_iso(),
+        "status": "started",
+        "stages": {},
+        "ai_requested": bool(args.ai),
+        "ai_ran": False,
+    }
+    prev_run = _load_last_run()
+    prev_hashes = prev_run.get("hashes", {}) if prev_run else {}
+    prev_ai = prev_run.get("ai", {}) if prev_run else {}
     curr_hashes = {
         "raw": _hash_file(RAW_JOBS_JSON),
         "labeled": _hash_file(LABELED_JOBS_JSON),
         "enriched": _hash_file(ENRICHED_JOBS_JSON),
     }
+    ai_path = ENRICHED_JOBS_JSON.with_name("openai_enriched_jobs_ai.json")
+    ai_hash = _hash_file(ai_path)
+    ai_mtime = _file_mtime(ai_path)
 
     def _finalize(status: str, extra: Optional[Dict[str, Any]] = None) -> None:
         telemetry["status"] = status
@@ -445,22 +470,21 @@ def main() -> int:
             "labeled": _safe_len(LABELED_JOBS_JSON),
             "enriched": _safe_len(ENRICHED_JOBS_JSON),
         }
+        # First-class AI telemetry (even on short-circuit runs).
+        telemetry["ai_requested"] = bool(telemetry.get("ai_requested", False))
+        telemetry["ai_ran"] = bool(telemetry.get("ai_ran", False))
+        telemetry["ai_output_hash"] = _hash_file(ai_path)
+        telemetry["ai_output_mtime"] = _file_mtime_iso(ai_path)
+        # Back-compat nested structure (keep for existing readers).
+        telemetry["ai"] = {
+            "ran": telemetry["ai_ran"],
+            "output_hash": telemetry["ai_output_hash"],
+            "output_mtime": telemetry["ai_output_mtime"],
+        }
         telemetry["ended_at"] = _utcnow_iso()
         if extra:
             telemetry.update(extra)
         _write_last_run(telemetry)
-
-    if _should_short_circuit(prev_hashes, curr_hashes):
-        telemetry["hashes"] = curr_hashes
-        telemetry["counts"] = {
-            "raw": _safe_len(RAW_JOBS_JSON),
-            "labeled": _safe_len(LABELED_JOBS_JSON),
-            "enriched": _safe_len(ENRICHED_JOBS_JSON),
-        }
-        telemetry["stages"] = {"short_circuit": {"duration_sec": 0.0}}
-        _finalize("short_circuit")
-        logger.info("No changes detected (raw/labeled/enriched). Short-circuiting downstream stages.")
-        return 0
 
     current_stage = "startup"
 
@@ -473,6 +497,7 @@ def main() -> int:
     try:
         profiles = _resolve_profiles(args)
         us_only_flag = ["--us_only"] if args.us_only else []
+        ai_required = args.ai
 
         # Snapshot presence check (fail fast with alert if missing and needed)
         snapshot_path = SNAPSHOT_DIR / "index.html"
@@ -482,6 +507,125 @@ def main() -> int:
                 "Save https://openai.com/careers/search/ to data/openai_snapshots/index.html or switch mode."
             )
             raise RuntimeError(msg)
+
+        # Short-circuit check (ai-aware)
+        base_short = _should_short_circuit(prev_hashes, curr_hashes)
+
+        def _ranked_up_to_date() -> bool:
+            if ai_mtime is None:
+                return False
+            for p in profiles:
+                rjson = ranked_jobs_json(p)
+                if (not rjson.exists()) or ((_file_mtime(rjson) or 0) < ai_mtime):
+                    return False
+            return True
+
+        def _update_ai_telemetry(ran: bool) -> None:
+            telemetry.update(
+                {
+                    "ai_requested": True if ai_required else False,
+                    "ai_ran": ran,
+                    "ai_output_hash": _hash_file(ai_path),
+                    "ai_output_mtime": _file_mtime_iso(ai_path),
+                }
+            )
+            telemetry["ai"] = {
+                "requested": telemetry["ai_requested"],
+                "ran": telemetry["ai_ran"],
+                "output_hash": telemetry["ai_output_hash"],
+                "output_mtime": telemetry["ai_output_mtime"],
+            }
+
+        if base_short:
+            # No-AI short-circuit: safe to skip everything downstream.
+            if not ai_required:
+                telemetry["hashes"] = curr_hashes
+                telemetry["counts"] = {
+                    "raw": _safe_len(RAW_JOBS_JSON),
+                    "labeled": _safe_len(LABELED_JOBS_JSON),
+                    "enriched": _safe_len(ENRICHED_JOBS_JSON),
+                }
+                telemetry["stages"] = {"short_circuit": {"duration_sec": 0.0}}
+                _update_ai_telemetry(False)
+                _finalize("short_circuit")
+                logger.info("No changes detected (raw/labeled/enriched). Short-circuiting downstream stages.")
+                return 0
+
+            # AI-aware short-circuit: allow skipping scrape/classify/enrich, but only skip AI+scoring when fresh.
+            prev_ai_hash = prev_run.get("ai_output_hash") or prev_ai.get("output_hash")
+            prev_ai_mtime = prev_run.get("ai_output_mtime") or prev_ai.get("output_mtime")
+            prev_ai_ran = bool(prev_run.get("ai_ran") or prev_ai.get("ran"))
+
+            curr_ai_mtime_iso = _file_mtime_iso(ai_path)
+            ai_fresh = bool(ai_path.exists()) and (
+                (ai_hash is not None and ai_hash == prev_ai_hash) or (curr_ai_mtime_iso is not None and curr_ai_mtime_iso == prev_ai_mtime)
+            )
+
+            if ai_fresh and prev_ai_ran and _ranked_up_to_date():
+                telemetry["hashes"] = curr_hashes
+                telemetry["counts"] = {
+                    "raw": _safe_len(RAW_JOBS_JSON),
+                    "labeled": _safe_len(LABELED_JOBS_JSON),
+                    "enriched": _safe_len(ENRICHED_JOBS_JSON),
+                }
+                telemetry["stages"] = {"short_circuit": {"duration_sec": 0.0}}
+                _update_ai_telemetry(False)
+                _finalize("short_circuit")
+                logger.info("No changes detected and AI+ranked outputs fresh. Short-circuiting downstream stages.")
+                return 0
+
+            # We still want AI and/or scoring to run, but we can skip scrape/classify/enrich.
+            if (not ai_path.exists()) or (not prev_ai_ran) or (not ai_fresh):
+                current_stage = "ai_augment"
+                telemetry["ai_ran"] = True
+                record_stage(
+                    current_stage,
+                    lambda: _run([sys.executable, str(REPO_ROOT / "scripts" / "run_ai_augment.py")], stage=current_stage),
+                )
+                ai_mtime = _file_mtime(ai_path)
+                ai_hash = _hash_file(ai_path)
+
+            # Ensure scoring runs if ranked outputs missing or stale vs AI file
+            for profile in profiles:
+                ranked_json = ranked_jobs_json(profile)
+                ranked_csv = ranked_jobs_csv(profile)
+                ranked_families = ranked_families_json(profile)
+                shortlist_md = shortlist_md_path(profile)
+
+                need_score = (not ranked_json.exists())
+                if ai_mtime is not None:
+                    need_score = need_score or ((_file_mtime(ranked_json) or 0) < ai_mtime)
+                else:
+                    need_score = True
+
+                if need_score:
+                    current_stage = f"score:{profile}"
+                    cmd = [
+                        sys.executable,
+                        str(REPO_ROOT / "scripts" / "score_jobs.py"),
+                        "--profile",
+                        profile,
+                        "--in_path",
+                        str(ai_path if ai_path.exists() else ENRICHED_JOBS_JSON),
+                        "--out_json",
+                        str(ranked_json),
+                        "--out_csv",
+                        str(ranked_csv),
+                        "--out_families",
+                        str(ranked_families),
+                        "--out_md",
+                        str(shortlist_md),
+                    ] + us_only_flag
+                    record_stage(current_stage, lambda cmd=cmd: _run(cmd, stage=current_stage))
+
+                    state_path = state_last_ranked(profile)
+                    curr = _read_json(ranked_json)
+                    prev = _read_json(state_path) if state_path.exists() else []
+                    _write_json(state_path, curr)
+                    # (diff/alerts handled in full path only; for freshness runs, we just persist state)
+
+            _finalize("success")
+            return 0
 
         # 1) Run pipeline stages ONCE
         current_stage = "scrape"
@@ -494,6 +638,7 @@ def main() -> int:
         # Optional AI augment stage
         if args.ai:
             current_stage = "ai_augment"
+            telemetry["ai_ran"] = True
             record_stage(current_stage, lambda: _run([sys.executable, str(REPO_ROOT / "scripts" / "run_ai_augment.py")], stage=current_stage))
 
         if args.ai_only:

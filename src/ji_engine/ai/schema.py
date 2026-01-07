@@ -48,5 +48,6 @@ def ensure_ai_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "match_score": match_score_int,
         "summary_bullets": _as_list_of_str(payload.get("summary_bullets")),
         "red_flags": _as_list_of_str(payload.get("red_flags")),
+        "rules_version": str(payload.get("rules_version", "")),
     }
 

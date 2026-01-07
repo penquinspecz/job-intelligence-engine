@@ -1,0 +1,17 @@
+{
+  "summary": "Stub summary for Solutions Engineer ",
+  "confidence": 0.0,
+  "notes": "required_match:0/1; preferred_match:0/0; role_bonus:0; seniority_bonus:0 | required_match:0/1; preferred_match:0/0; role_bonus:0; seniority_bonus:0 | required_match:0/1; preferred_match:0/0; role_bonus:0; seniority_bonus:0 | required_match:0/2; preferred_match:0/0; role_bonus:0; seniority_bonus:0 | required_match:0/1; preferred_match:0/0; role_bonus:0; seniority_bonus:0 | required_match:0/1; preferred_match:0/0; role_bonus:0; seniority_bonus:0",
+  "skills_required": [
+    "Security"
+  ],
+  "skills_preferred": [],
+  "role_family": "Product",
+  "seniority": "IC",
+  "match_score": 0,
+  "summary_bullets": [],
+  "red_flags": [
+    "Relocation required"
+  ],
+  "rules_version": "2025-01-AI-EXTRACT-3"
+}

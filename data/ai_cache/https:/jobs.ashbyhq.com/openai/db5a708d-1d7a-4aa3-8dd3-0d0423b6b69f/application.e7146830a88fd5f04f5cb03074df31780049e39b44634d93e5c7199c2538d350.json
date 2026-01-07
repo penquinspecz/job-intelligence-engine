@@ -1,0 +1,25 @@
+{
+  "summary": "Stub summary for Forward Deployed Engineer, Gov",
+  "confidence": 0.0,
+  "notes": "required_match:1/7; preferred_match:0/0; role_bonus:0; seniority_bonus:0 | required_match:1/7; preferred_match:0/0; role_bonus:0; seniority_bonus:0 | required_match:1/7; preferred_match:0/0; role_bonus:0; seniority_bonus:0 | required_match:1/8; preferred_match:0/0; role_bonus:0; seniority_bonus:0 | required_match:1/7; preferred_match:0/0; role_bonus:0; seniority_bonus:0 | required_match:1/7; preferred_match:0/0; role_bonus:0; seniority_bonus:0",
+  "skills_required": [
+    "Python",
+    "Kubernetes",
+    "Terraform",
+    "AWS",
+    "Azure",
+    "LLMs",
+    "Security"
+  ],
+  "skills_preferred": [],
+  "role_family": "Forward Deployed",
+  "seniority": "IC",
+  "match_score": 10,
+  "summary_bullets": [],
+  "red_flags": [
+    "Security clearance required",
+    "Relocation required",
+    "Travel up to 50%"
+  ],
+  "rules_version": "2025-01-AI-EXTRACT-3"
+}

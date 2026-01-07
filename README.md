@@ -87,11 +87,27 @@ docker run --rm -v "$PWD/data:/app/data" jobintel:local --profiles cs --us_only 
 - Env vars:
   - `DISCORD_WEBHOOK_URL` (optional; if unset, alerts are skipped)
   - `CAREERS_MODE` (optional; defaults to AUTO)
+  - `JOBINTEL_S3_BUCKET` (optional) + `JOBINTEL_S3_PREFIX` (optional): when set, AI cache and embedding cache use S3; defaults remain filesystem.
   - Any profile/flag overrides via CLI args to `scripts/run_daily.py`.
 - Example ECS/Fargate usage (high-level):
   - Build/push image.
   - Task definition: command `python scripts/run_daily.py --profiles cs,tam,se --us_only --no_post`; mount EFS/S3-backed volume to `/app/data`; supply env (e.g., webhook) via task env/Secrets Manager.
   - Schedule via EventBridge to trigger the task on your cadence.
+Docker run cheatsheet:
+```bash
+# build the image
+docker build -t jobintel:local .
+
+# default run (no AI augment, no Discord)
+docker run --rm -v "$PWD/data:/app/data" --env-file .env jobintel:local --profiles cs --us_only --no_post
+
+# run with AI augment (ensures AI outputs are generated and scoring consumes them)
+docker run --rm -v "$PWD/data:/app/data" --env-file .env jobintel:local --profiles cs --us_only --no_post --ai
+
+# verify AI-enriched artifact is present before scoring
+ls data/openai_enriched_jobs_ai.json
+```
+Run the last `ls` after the `--ai` invocation above to confirm `openai_enriched_jobs_ai.json` exists; the scoring step now picks it automatically when present.
 
 ## Roadmap
 

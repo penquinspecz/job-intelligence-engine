@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ji_engine.ai.augment import compute_content_hash, load_cached_ai, save_cached_ai
+from ji_engine.ai.extract_rules import RULES_VERSION, extract_ai_fields
 from ji_engine.ai.match import compute_match
 from ji_engine.ai.provider import OpenAIProvider, StubProvider, AIProvider
 from ji_engine.config import ENRICHED_JOBS_JSON
@@ -43,6 +44,31 @@ def _select_provider(args: argparse.Namespace) -> AIProvider:
     return StubProvider()
 
 
+_RULE_FIELDS = ("skills_required", "skills_preferred", "role_family", "seniority", "red_flags")
+
+
+def _needs_rule_upgrade(payload: Dict[str, Any]) -> bool:
+    if not payload:
+        return True
+    return payload.get("rules_version") != RULES_VERSION
+
+
+def _apply_rule_fields(payload: Dict[str, Any], job: Dict[str, Any]) -> Dict[str, Any]:
+    merged = dict(payload)
+    overrides = extract_ai_fields(job)
+    for k in _RULE_FIELDS:
+        merged[k] = overrides.get(k, [])
+    merged["rules_version"] = overrides.get("rules_version", RULES_VERSION)
+    return merged
+
+
+def _ensure_rules(payload: Dict[str, Any], job: Dict[str, Any], provider: AIProvider) -> tuple[Dict[str, Any], bool]:
+    needs_upgrade = isinstance(provider, StubProvider) or _needs_rule_upgrade(payload)
+    if needs_upgrade:
+        payload = _apply_rule_fields(payload, job)
+    return payload, needs_upgrade
+
+
 def main(argv: Optional[List[str]] = None, provider: Optional[AIProvider] = None) -> int:
     args = _parse_args(argv)
     provider = provider or _select_provider(args)
@@ -69,6 +95,9 @@ def main(argv: Optional[List[str]] = None, provider: Optional[AIProvider] = None
         if cached:
             cache_hits += 1
             payload = ensure_ai_payload(cached)
+            payload, upgraded = _ensure_rules(payload, job, provider)
+            if upgraded:
+                save_cached_ai(job_id, chash, payload)
         else:
             try:
                 raw = provider.extract(job)
@@ -79,7 +108,44 @@ def main(argv: Optional[List[str]] = None, provider: Optional[AIProvider] = None
                     "confidence": 0.0,
                     "notes": f"provider_error:{exc}",
                 }
-            payload = ensure_ai_payload(raw)
+            # Backfill/augment fields deterministically when using stub provider or when skills are missing/empty.
+            rules = extract_ai_fields(job) if isinstance(provider, StubProvider) else {}
+            if not (raw.get("skills_required") or raw.get("skills_preferred")):
+                rules = extract_ai_fields(job)
+            merged = dict(raw)
+            for k in ("skills_required", "skills_preferred", "role_family", "seniority", "red_flags"):
+                v = merged.get(k)
+                add = rules.get(k)
+                if isinstance(v, list):
+                    seen = set(str(x) for x in v)
+                    for x in add or []:
+                        sx = str(x)
+                        if sx not in seen:
+                            v.append(sx)
+                            seen.add(sx)
+                elif not v:
+                    merged[k] = add
+            payload = ensure_ai_payload(merged)
+            save_cached_ai(job_id, chash, payload)
+
+        # If cached payload was produced before rules existed (or provider returned empty skills), backfill now.
+        if isinstance(provider, StubProvider) or not (payload.get("skills_required") or payload.get("skills_preferred")):
+            rules = extract_ai_fields(job)
+            merged = dict(payload)
+            for k in ("skills_required", "skills_preferred", "role_family", "seniority", "red_flags"):
+                v = merged.get(k)
+                add = rules.get(k)
+                if isinstance(v, list):
+                    seen = set(str(x) for x in v)
+                    for x in add or []:
+                        sx = str(x)
+                        if sx not in seen:
+                            v.append(sx)
+                            seen.add(sx)
+                elif not v:
+                    merged[k] = add
+            payload = ensure_ai_payload(merged)
+            payload, upgraded = _ensure_rules(payload, job, provider)
             save_cached_ai(job_id, chash, payload)
 
         if candidate_profile:

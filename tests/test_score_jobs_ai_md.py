@@ -72,4 +72,5 @@ def test_ai_shortlist_md_includes_ai_fields(tmp_path: Path) -> None:
     assert "Skills preferred: ml" in content
     assert "Red flags:" in content
     assert "requires clearance" in content
+    assert "Explanation:" in content
 

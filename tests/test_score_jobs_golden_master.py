@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import csv
 from pathlib import Path
 
 
-def run_score_jobs(tmp_path: Path) -> list[dict]:
+def run_score_jobs(tmp_path: Path) -> tuple[list[dict], list[str]]:
     repo_root = Path(__file__).resolve().parents[1]
     fixture = repo_root / "tests" / "fixtures" / "openai_enriched_jobs.sample.json"
 
@@ -33,11 +34,15 @@ def run_score_jobs(tmp_path: Path) -> list[dict]:
     ]
 
     subprocess.run(cmd, cwd=repo_root, check=True)
-    return json.loads(out_json.read_text(encoding="utf-8"))
+    ranked = json.loads(out_json.read_text(encoding="utf-8"))
+    with out_csv.open("r", encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f)
+        headers = list(reader.fieldnames or [])
+    return ranked, headers
 
 
 def test_score_jobs_golden_master(tmp_path: Path) -> None:
-    ranked = run_score_jobs(tmp_path)
+    ranked, headers = run_score_jobs(tmp_path)
 
     assert len(ranked) == 20  # fixture count
 
@@ -65,4 +70,17 @@ def test_score_jobs_golden_master(tmp_path: Path) -> None:
     assert scores == expected_scores
     assert heuristic_scores == expected_scores  # no AI payload in fixture
     assert final_scores == expected_scores
+
+    # Explanations exist and are well-formed; should not affect ordering/scores.
+    assert "explanation_summary" in headers
+    for j in ranked[:5]:
+        expl = j.get("explanation")
+        assert isinstance(expl, dict)
+        assert expl.get("heuristic_score") == j.get("heuristic_score")
+        assert "heuristic_reasons_top3" in expl
+        assert "match_score" in expl
+        assert "match_rationale" in expl
+        assert expl.get("final_score") == j.get("final_score")
+        assert "blend_weight_used" in expl
+        assert "missing_required_skills" in expl
 

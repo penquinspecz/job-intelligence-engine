@@ -1,0 +1,26 @@
+{
+  "summary": "Stub summary for Field Engineer",
+  "confidence": 0.0,
+  "notes": "required_match:0/1; preferred_match:0/0; role_bonus:0; seniority_bonus:0 | required_match:0/1; preferred_match:0/0; role_bonus:0; seniority_bonus:0 | required_match:0/1; preferred_match:0/0; role_bonus:0; seniority_bonus:0 | required_match:0/7; preferred_match:0/1; role_bonus:0; seniority_bonus:0 | required_match:0/7; preferred_match:0/1; role_bonus:0; seniority_bonus:0 | required_match:0/7; preferred_match:0/1; role_bonus:0; seniority_bonus:0",
+  "skills_required": [
+    "Robotics",
+    "Embedded Systems",
+    "Controls",
+    "Electromechanical",
+    "CAD",
+    "Automation",
+    "Troubleshooting"
+  ],
+  "skills_preferred": [
+    "Security"
+  ],
+  "role_family": "Robotics",
+  "seniority": "IC",
+  "match_score": 0,
+  "summary_bullets": [],
+  "red_flags": [
+    "Relocation required",
+    "Shift/weekend coverage"
+  ],
+  "rules_version": "2025-01-AI-EXTRACT-3"
+}

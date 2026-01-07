@@ -1,0 +1,21 @@
+{
+  "summary": "Stub summary for Solutions Engineer, Public Sector",
+  "confidence": 0.0,
+  "notes": "required_match:0/4; preferred_match:0/0; role_bonus:0; seniority_bonus:0 | required_match:0/4; preferred_match:0/0; role_bonus:0; seniority_bonus:0 | required_match:0/4; preferred_match:0/0; role_bonus:0; seniority_bonus:0 | required_match:0/5; preferred_match:0/0; role_bonus:0; seniority_bonus:0 | required_match:0/4; preferred_match:0/0; role_bonus:0; seniority_bonus:0 | required_match:0/4; preferred_match:0/0; role_bonus:0; seniority_bonus:0",
+  "skills_required": [
+    "Python",
+    "LLMs",
+    "APIs",
+    "Security"
+  ],
+  "skills_preferred": [],
+  "role_family": "Product",
+  "seniority": "IC",
+  "match_score": 0,
+  "summary_bullets": [],
+  "red_flags": [
+    "Security clearance required",
+    "Relocation required"
+  ],
+  "rules_version": "2025-01-AI-EXTRACT-3"
+}

@@ -4,6 +4,7 @@ import json
 import math
 import re
 import hashlib
+import os
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
@@ -68,22 +69,63 @@ def cosine_similarity(vec_a: List[float], vec_b: List[float]) -> float:
 
 
 def load_cache(path: Path) -> Dict[str, Dict[str, List[float]]]:
-    if not path.exists():
+    bucket = os.getenv("JOBINTEL_S3_BUCKET", "").strip()
+    prefix = os.getenv("JOBINTEL_S3_PREFIX", "").strip("/")
+
+    def _empty() -> Dict[str, Dict[str, List[float]]]:
         return {"profile": {}, "job": {}}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+
+    def _normalize(data: Any) -> Dict[str, Dict[str, List[float]]]:
         if not isinstance(data, dict):
-            return {"profile": {}, "job": {}}
+            return _empty()
         data.setdefault("profile", {})
         data.setdefault("job", {})
-        return data
+        return data  # type: ignore[return-value]
+
+    if bucket:
+        try:
+            import boto3  # type: ignore
+
+            region = os.getenv("AWS_REGION") or None
+            client = boto3.client("s3", region_name=region)
+            key_prefix = f"{prefix}/" if prefix else ""
+            key = f"{key_prefix}state/{path.name}"
+            obj = client.get_object(Bucket=bucket, Key=key)
+            return _normalize(json.loads(obj["Body"].read().decode("utf-8")))
+        except Exception:
+            return _empty()
+
+    if not path.exists():
+        return _empty()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return _normalize(data)
     except Exception:
-        return {"profile": {}, "job": {}}
+        return _empty()
 
 
 def save_cache(path: Path, cache: Dict[str, Dict[str, List[float]]]) -> None:
+    bucket = os.getenv("JOBINTEL_S3_BUCKET", "").strip()
+    prefix = os.getenv("JOBINTEL_S3_PREFIX", "").strip("/")
+
+    data = json.dumps(cache, ensure_ascii=False, indent=2).encode("utf-8")
+
+    if bucket:
+        try:
+            import boto3  # type: ignore
+
+            region = os.getenv("AWS_REGION") or None
+            client = boto3.client("s3", region_name=region)
+            key_prefix = f"{prefix}/" if prefix else ""
+            key = f"{key_prefix}state/{path.name}"
+            client.put_object(Bucket=bucket, Key=key, Body=data)
+            return
+        except Exception:
+            # fall back to local write if S3 fails
+            pass
+
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
+    path.write_text(data.decode("utf-8"), encoding="utf-8")
 
 
 __all__ = [
