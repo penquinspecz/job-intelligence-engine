@@ -26,7 +26,10 @@
         "AI Deployment / Implementation Lead",
         "Technical Program Manager (AI / Platform)",
         "Principal Customer Success Manager",
-        "Forward Deployed Engineer (Customer-facing)"
+        "Forward Deployed Engineer (Customer-facing)",
+        "Customer Success",
+        "Solutions Architect",
+        "Forward Deployed"
       ],
       "anti_patterns": [
         "Pure quota-carrying sales roles",
@@ -34,7 +37,7 @@
         "Non-technical account management",
         "Pure people-management roles with no technical IC component"
       ],
-      "seniority_level": "Senior / Principal / Manager"
+      "seniority_level": "Senior"
     },
     "skills": {
       "technical_core": [
@@ -61,7 +64,16 @@
         "Renewal risk management",
         "Escalation and incident management",
         "Program management for CS tooling & processes",
-        "Training & field enablement"
+        "Training & field enablement",
+        "Adoption",
+        "Onboarding",
+        "Enablement",
+        "Change Management",
+        "Stakeholder Management",
+        "Implementation",
+        "Program Management",
+        "Value Measurement",
+        "Renewals"
       ],
       "domain_knowledge": [
         "Open-source business models",

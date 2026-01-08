@@ -51,6 +51,45 @@ from ji_engine.utils.atomic_write import atomic_write_text, atomic_write_with
 
 logger = logging.getLogger(__name__)
 
+def _print_explain_top(scored: List[Dict[str, Any]], n: int) -> None:
+    """
+    Print a deterministic, output-only report for the top N jobs.
+    Does not affect scoring or outputs on disk.
+    """
+    if not n or n <= 0:
+        return
+
+    header = [
+        "title",
+        "heuristic_score",
+        "ai_match_score",
+        "blend_weight_used",
+        "final_score",
+        "ai_influenced",
+    ]
+    print("\t".join(header))
+
+    for job in scored[:n]:
+        title = _norm(job.get("title")) or "Untitled"
+        heuristic_score = int(job.get("heuristic_score", job.get("score", 0)) or 0)
+        final_score = int(job.get("final_score", job.get("score", 0)) or 0)
+        ai_payload = ensure_ai_payload(job.get("ai") or {}) if job.get("ai") else ensure_ai_payload({})
+        ai_match_score = int(ai_payload.get("match_score", 0))
+
+        ai_present = bool(job.get("ai"))
+        blend_weight_used = AI_BLEND_CONFIG.weight if ai_present else 0.0
+        ai_influenced = bool(ai_present and blend_weight_used > 0.0)
+
+        row = [
+            title,
+            str(heuristic_score),
+            str(ai_match_score),
+            str(blend_weight_used),
+            str(final_score),
+            str(ai_influenced),
+        ]
+        print("\t".join(row))
+
 def _candidate_skill_set() -> set[str]:
     """
     Best-effort load of candidate_profile.json for explanation-only overlap/gap reporting.
@@ -892,6 +931,7 @@ def main() -> int:
     ap.add_argument("--us_only", action="store_true")
     ap.add_argument("--app_kit", action="store_true", help="Generate application kit for shortlisted jobs.")
     ap.add_argument("--ai_live", action="store_true", help="Use live AI provider for application kit (requires OPENAI_API_KEY).")
+    ap.add_argument("--explain_top", type=int, default=0, help="Print a TSV debug report for the top N jobs (output-only).")
     args = ap.parse_args()
 
     # ---- HARDEN OUTPUT PATHS ----
@@ -937,6 +977,7 @@ def main() -> int:
     for j in scored:
         j["explanation"] = _build_explanation(j, candidate_skills)
     scored.sort(key=lambda x: x.get("score", 0), reverse=True)
+    _print_explain_top(scored, int(args.explain_top or 0))
 
     atomic_write_text(out_json, json.dumps(scored, ensure_ascii=False, indent=2))
 

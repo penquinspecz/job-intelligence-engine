@@ -64,7 +64,7 @@ def test_value_realization_does_not_emit_hw_skills_without_triggers() -> None:
         "jd_text": """
         You will drive adoption, onboarding, and value realization for enterprise customers.
         Partner with operations staff to improve processes and reporting.
-        Requirements: stakeholder management, program management, analytics, security/privacy best practices.
+        Requirements: stakeholder management, program management, change management, analytics, security/privacy best practices.
         """,
     }
     out = extract_ai_fields(job)
