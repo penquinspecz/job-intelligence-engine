@@ -414,6 +414,7 @@ def main() -> int:
     ap.add_argument("--min_alert_score", type=int, default=85)
     ap.add_argument("--no_post", action="store_true", help="Run pipeline but do not send Discord webhook")
     ap.add_argument("--test_post", action="store_true", help="Send a test message to Discord and exit")
+    ap.add_argument("--no_enrich", action="store_true", help="Skip enrichment step (CI / offline safe)")
     ap.add_argument("--ai", action="store_true", help="Run AI augment stage after enrichment")
     ap.add_argument("--ai_only", action="store_true", help="Run enrich + AI augment only (no scoring/alerts)")
     ap.add_argument(
@@ -633,7 +634,10 @@ def main() -> int:
         current_stage = "classify"
         record_stage(current_stage, lambda: _run([sys.executable, str(REPO_ROOT / "scripts" / "run_classify.py")], stage=current_stage))
         current_stage = "enrich"
-        record_stage(current_stage, lambda: _run([sys.executable, "-m", "scripts.enrich_jobs"], stage=current_stage))
+        if args.no_enrich:
+            logger.info("Skipping enrichment step (--no_enrich set)")
+        else:
+            record_stage(current_stage, lambda: _run([sys.executable, "-m", "scripts.enrich_jobs"], stage=current_stage))
 
         # Optional AI augment stage
         if args.ai:
