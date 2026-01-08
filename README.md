@@ -45,6 +45,17 @@ pip install -e .
 python scripts/run_daily.py --profiles cs --us_only --no_post
 ```
 
+## Local quickstart
+
+After creating the venv above, you can run the common stages via `make`:
+
+```bash
+make test
+make enrich
+make score            # default PROFILE=cs
+make all              # test + enrich + score
+```
+
 ## Docker (AWS-ready)
 
 Build and run locally (expects ./data mounted to /app/data):
@@ -61,6 +72,20 @@ docker run --rm -v "$PWD/data:/app/data" --env-file .env jobintel:local \
 # run with AI augment stage
 docker run --rm -v "$PWD/data:/app/data" --env-file .env jobintel:local \
   --profiles cs --us_only --no_post --ai
+```
+
+## Docker quickstart
+
+The image runs tests during `docker build`, and the container `ENTRYPOINT` is `python`, so you can run any script directly.
+
+```bash
+docker build -t jobintel:local .
+
+# AI augment (writes data/openai_enriched_jobs_ai.json into the mounted ./data volume)
+docker run --rm -v "$PWD/data:/app/data" --env-file .env jobintel:local scripts/run_ai_augment.py
+
+# Scoring (reads AI-enriched input automatically when present; writes ranked outputs under ./data)
+docker run --rm -v "$PWD/data:/app/data" --env-file .env jobintel:local scripts/score_jobs.py --profile cs --us_only
 ```
 
 Compose convenience (also mounts ./data):

@@ -8,6 +8,6 @@ services:
       - .env
     volumes:
       - ./data:/app/data
-    command: ["python", "scripts/run_daily.py", "--profiles", "cs,tam,se", "--us_only", "--no_post"]
+    command: ["scripts/run_daily.py", "--profiles", "cs,tam,se", "--us_only", "--no_post"]
     working_dir: /app
 
