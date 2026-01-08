@@ -88,3 +88,52 @@ def test_compute_match_cs_role_nonzero_when_profile_has_cs_tokens() -> None:
     assert any("role_bonus:5" in n for n in notes)
     assert any("seniority_bonus:5" in n for n in notes)
 
+
+def test_skill_alias_customer_onboarding_design_matches_onboarding() -> None:
+    ai_payload = ensure_ai_payload(
+        {
+            "skills_required": ["Onboarding"],
+            "skills_preferred": [],
+            "role_family": "",
+            "seniority": "IC",
+        }
+    )
+    profile = _profile(
+        skills={
+            "technical_core": [],
+            "ai_specific": [],
+            "customer_success": ["Customer onboarding design"],
+            "domain_knowledge": [],
+        },
+        target_roles=[],
+        seniority="senior",
+    )
+    score, notes = compute_match(ai_payload, profile)
+    # Required: 1/1 => 70, preferred: 0 => 0, bonuses => 0
+    assert score == 70
+    assert any("required_match:1/1" in n for n in notes)
+
+
+def test_skill_alias_training_field_enablement_matches_enablement() -> None:
+    ai_payload = ensure_ai_payload(
+        {
+            "skills_required": ["Enablement"],
+            "skills_preferred": [],
+            "role_family": "",
+            "seniority": "IC",
+        }
+    )
+    profile = _profile(
+        skills={
+            "technical_core": [],
+            "ai_specific": [],
+            "customer_success": ["Training & field enablement"],
+            "domain_knowledge": [],
+        },
+        target_roles=[],
+        seniority="senior",
+    )
+    score, notes = compute_match(ai_payload, profile)
+    assert score == 70
+    assert any("required_match:1/1" in n for n in notes)
+

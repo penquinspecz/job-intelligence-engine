@@ -50,6 +50,8 @@ def test_explain_top_prints_expected_columns(tmp_path: Path) -> None:
             "title",
             "heuristic_score",
             "ai_match_score",
+            "role_family",
+            "seniority",
             "blend_weight_used",
             "final_score",
             "ai_influenced",

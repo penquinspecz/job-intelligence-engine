@@ -63,6 +63,8 @@ def _print_explain_top(scored: List[Dict[str, Any]], n: int) -> None:
         "title",
         "heuristic_score",
         "ai_match_score",
+        "role_family",
+        "seniority",
         "blend_weight_used",
         "final_score",
         "ai_influenced",
@@ -75,6 +77,8 @@ def _print_explain_top(scored: List[Dict[str, Any]], n: int) -> None:
         final_score = int(job.get("final_score", job.get("score", 0)) or 0)
         ai_payload = ensure_ai_payload(job.get("ai") or {}) if job.get("ai") else ensure_ai_payload({})
         ai_match_score = int(ai_payload.get("match_score", 0))
+        role_family = str(ai_payload.get("role_family") or "") if job.get("ai") else ""
+        seniority = str(ai_payload.get("seniority") or "") if job.get("ai") else ""
 
         ai_present = bool(job.get("ai"))
         blend_weight_used = AI_BLEND_CONFIG.weight if ai_present else 0.0
@@ -84,11 +88,36 @@ def _print_explain_top(scored: List[Dict[str, Any]], n: int) -> None:
             title,
             str(heuristic_score),
             str(ai_match_score),
+            role_family,
+            seniority,
             str(blend_weight_used),
             str(final_score),
             str(ai_influenced),
         ]
         print("\t".join(row))
+
+def _print_family_counts(scored: List[Dict[str, Any]]) -> None:
+    """
+    Print deterministic role_family frequency table for the ranked list.
+    Order is first-seen in the ranked list (top-to-bottom).
+    """
+    counts: Dict[str, int] = {}
+    order: List[str] = []
+    for job in scored:
+        if job.get("ai"):
+            ai_payload = ensure_ai_payload(job.get("ai") or {})
+            rf = str(ai_payload.get("role_family") or "").strip()
+        else:
+            rf = ""
+        key = rf if rf else "(blank)"
+        if key not in counts:
+            counts[key] = 0
+            order.append(key)
+        counts[key] += 1
+
+    print("\t".join(["role_family", "count"]))
+    for k in order:
+        print(f"{k}\t{counts[k]}")
 
 def _candidate_skill_set() -> set[str]:
     """
@@ -932,6 +961,7 @@ def main() -> int:
     ap.add_argument("--app_kit", action="store_true", help="Generate application kit for shortlisted jobs.")
     ap.add_argument("--ai_live", action="store_true", help="Use live AI provider for application kit (requires OPENAI_API_KEY).")
     ap.add_argument("--explain_top", type=int, default=0, help="Print a TSV debug report for the top N jobs (output-only).")
+    ap.add_argument("--family_counts", action="store_true", help="Print a TSV frequency table of role_family for the ranked list (output-only).")
     args = ap.parse_args()
 
     # ---- HARDEN OUTPUT PATHS ----
@@ -978,6 +1008,8 @@ def main() -> int:
         j["explanation"] = _build_explanation(j, candidate_skills)
     scored.sort(key=lambda x: x.get("score", 0), reverse=True)
     _print_explain_top(scored, int(args.explain_top or 0))
+    if args.family_counts:
+        _print_family_counts(scored)
 
     atomic_write_text(out_json, json.dumps(scored, ensure_ascii=False, indent=2))
 
