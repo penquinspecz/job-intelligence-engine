@@ -44,6 +44,9 @@ def test_invariant_security_not_required_without_strong_trigger() -> None:
     )
     assert "Security" not in out["skills_required"]
     assert "Security" in out["skills_preferred"]
+    assert out.get("security_required_reason") == ""
+    assert out.get("security_required_match") == ""
+    assert out.get("security_required_context") == ""
 
     # Strong compliance/clearance triggers should force Security into required.
     out2 = extract_ai_fields(
@@ -54,6 +57,37 @@ def test_invariant_security_not_required_without_strong_trigger() -> None:
     )
     assert "Security" in out2["skills_required"]
     assert "Security" not in out2["skills_preferred"]
+    assert out2.get("security_required_reason") == "security clearance"
+    assert "security clearance" in str(out2.get("security_required_match") or "").lower()
+    assert len(str(out2.get("security_required_match") or "")) <= 80
+    assert len(str(out2.get("security_required_context") or "")) <= 220
+
+
+def test_invariant_security_required_reason_ts_sci() -> None:
+    out = extract_ai_fields(
+        {
+            "title": "Forward Deployed Engineer, Gov",
+            "jd_text": "Active TS/SCI clearance. Work with customers.",
+        }
+    )
+    assert "Security" in out["skills_required"]
+    assert out.get("security_required_reason") == "security clearance"
+    assert "ts/sci" in str(out.get("security_required_match") or "").lower()
+    assert len(str(out.get("security_required_match") or "")) <= 80
+    assert len(str(out.get("security_required_context") or "")) <= 220
+
+
+def test_invariant_security_required_reason_fedramp() -> None:
+    out = extract_ai_fields(
+        {
+            "title": "Solutions Architect, Gov",
+            "jd_text": "FedRAMP required. Deploy systems.",
+        }
+    )
+    assert "Security" in out["skills_required"]
+    assert out.get("security_required_reason") == "compliance requirement"
+    assert "fedramp" in str(out.get("security_required_match") or "").lower()
+    assert len(str(out.get("security_required_match") or "")) <= 80
 
 
 def test_invariant_cs_role_has_nonzero_match_score_with_current_profile() -> None:

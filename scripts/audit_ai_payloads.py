@@ -68,6 +68,9 @@ def _skills_required(job: Dict[str, Any]) -> List[str]:
 def _skills_preferred(job: Dict[str, Any]) -> List[str]:
     return _as_list_str(_ai(job).get("skills_preferred"))
 
+def _security_required_reason(job: Dict[str, Any]) -> str:
+    return str(_ai(job).get("security_required_reason") or "").strip()
+
 
 def _role_family(job: Dict[str, Any]) -> str:
     return str(_ai(job).get("role_family") or "").strip()
@@ -173,6 +176,11 @@ def main(argv: List[str] | None = None) -> int:
     print("")
     print(f"== top {int(args.top_k)} skills_required (current) ==")
     _print_table(_top_k(skills_cur, int(args.top_k)), "skill")
+
+    reasons_cur = _freq(r for j in cur for r in [_security_required_reason(j)] if r)
+    print("")
+    print("== security_required_reason counts (current) ==")
+    _print_table(_top_k(reasons_cur, len(reasons_cur)), "security_required_reason")
 
     # --- diff vs before ---
     if before is None:

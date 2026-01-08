@@ -44,7 +44,16 @@ def _select_provider(args: argparse.Namespace) -> AIProvider:
     return StubProvider()
 
 
-_RULE_FIELDS = ("skills_required", "skills_preferred", "role_family", "seniority", "red_flags")
+_RULE_FIELDS = (
+    "skills_required",
+    "skills_preferred",
+    "role_family",
+    "seniority",
+    "red_flags",
+    "security_required_reason",
+    "security_required_match",
+    "security_required_context",
+)
 
 
 def _needs_rule_upgrade(payload: Dict[str, Any]) -> bool:

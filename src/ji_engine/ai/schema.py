@@ -13,6 +13,9 @@ AI_REQUIRED_KEYS = {
     "match_score": int,
     "summary_bullets": list,
     "red_flags": list,
+    "security_required_reason": str,
+    "security_required_match": str,
+    "security_required_context": str,
 }
 
 
@@ -48,6 +51,9 @@ def ensure_ai_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "match_score": match_score_int,
         "summary_bullets": _as_list_of_str(payload.get("summary_bullets")),
         "red_flags": _as_list_of_str(payload.get("red_flags")),
+        "security_required_reason": str(payload.get("security_required_reason", "")),
+        "security_required_match": str(payload.get("security_required_match", "")),
+        "security_required_context": str(payload.get("security_required_context", "")),
         "rules_version": str(payload.get("rules_version", "")),
     }
 

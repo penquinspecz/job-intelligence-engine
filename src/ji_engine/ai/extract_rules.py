@@ -4,7 +4,7 @@ import re
 from typing import Any, Dict, List, Tuple
 
 
-RULES_VERSION = "2025-01-AI-EXTRACT-6"
+RULES_VERSION = "2025-01-AI-EXTRACT-7"
 _WS_RE = re.compile(r"\s+")
 
 
@@ -161,20 +161,58 @@ _SECURITY_MENTION_PATTERNS: List[str] = [
     r"\bdata security\b",
 ]
 
-_SECURITY_REQUIRED_TRIGGER_PATTERNS: List[str] = [
-    r"\bsecurity clearance required\b",
-    r"\bmust obtain (?:a )?clearance\b",
-    r"\bts/sci\b",
-    r"\btop secret\b",
-    r"\bfedramp\b.*\brequired\b",
-    r"\bsoc\s*2\b.*\brequired\b",
-    r"\biso\s*27001\b.*\brequired\b",
-    r"\bcompliance\b.*\brequire(?:ment|d)\b",
+# Strong "Security is required" triggers.
+# - Clearance-tier triggers must map to reason label exactly: "security clearance"
+# - Compliance triggers (FedRAMP/SOC2/ISO27001) must map to reason label exactly: "compliance requirement"
+# Patterns should be tight so the matched substring is short and usable.
+_SECURITY_REQUIRED_TRIGGERS: List[Tuple[str, str]] = [
+    # Clearance-tier triggers
+    ("security clearance", r"\bsecurity clearance required\b"),
+    ("security clearance", r"\bmust obtain (?:a )?clearance\b"),
+    ("security clearance", r"\bts/sci\b"),
+    ("security clearance", r"\btop secret\b"),
+    # Compliance-tier triggers (match only short phrases)
+    ("compliance requirement", r"\bfedramp\b\s+required\b"),
+    ("compliance requirement", r"\bsoc\s*2\b\s+required\b"),
+    ("compliance requirement", r"\biso\s*27001\b\s+required\b"),
 ]
 
 
 def _security_required(text: str) -> bool:
-    return _contains(text, _SECURITY_REQUIRED_TRIGGER_PATTERNS)
+    for _reason, pat in _SECURITY_REQUIRED_TRIGGERS:
+        if re.search(pat, text, flags=re.IGNORECASE):
+            return True
+    return False
+
+
+def _security_required_reason_match_context(text: str) -> Tuple[str, str, str]:
+    """
+    Deterministically return (reason_label, matched_text, context_snippet) for the first strong trigger.
+    Returns ("","","") if no strong trigger matches.
+    """
+    for reason, pat in _SECURITY_REQUIRED_TRIGGERS:
+        m = re.search(pat, text, flags=re.IGNORECASE)
+        if m:
+            match_text = (m.group(0) or "")
+            if len(match_text) > 80:
+                match_text = match_text[:77] + "..."
+
+            # Context: single-line snippet <= 220 chars centered around match (bounded, deterministic).
+            # We assume input text is already whitespace-collapsed by _job_text/_norm_text.
+            match_len = len(match_text)
+            remaining = max(0, 220 - match_len)
+            left_allow = remaining // 2
+            right_allow = remaining - left_allow
+
+            start = max(0, m.start() - left_allow)
+            end = min(len(text), m.end() + right_allow)
+            context = text[start:end].strip()
+            context = _WS_RE.sub(" ", context)
+            if len(context) > 220:
+                context = context[:217] + "..."
+
+            return reason, match_text, context
+    return "", "", ""
 
 
 def _security_mentioned(text: str) -> bool:
@@ -344,7 +382,11 @@ def extract_ai_fields(job: Dict[str, Any]) -> Dict[str, Any]:
     # Security handling:
     # - If strong requirement triggers exist anywhere, add to required (and do not add to preferred).
     # - Otherwise, if mentioned anywhere, add to preferred (not required).
+    security_required_reason = ""
+    security_required_match = ""
+    security_required_context = ""
     if _security_required(text):
+        security_required_reason, security_required_match, security_required_context = _security_required_reason_match_context(text)
         if "Security" not in req_skills:
             req_skills.append("Security")
     else:
@@ -361,6 +403,9 @@ def extract_ai_fields(job: Dict[str, Any]) -> Dict[str, Any]:
         "role_family": _role_family(title_only, text),
         "seniority": _seniority_from_title(title_only),
         "red_flags": _red_flags(text),
+        "security_required_reason": security_required_reason,
+        "security_required_match": security_required_match,
+        "security_required_context": security_required_context,
         "rules_version": RULES_VERSION,
     }
 
