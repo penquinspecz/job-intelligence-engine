@@ -57,3 +57,34 @@ def test_compute_match_handles_partial_and_caps():
     assert score == 20
     assert any("required_match:0/2" in n for n in notes)
 
+
+def test_compute_match_cs_role_nonzero_when_profile_has_cs_tokens() -> None:
+    """
+    Ensure CS/business skill labels extracted by rules can produce a non-zero match_score
+    when the candidate profile contains the same canonical tokens (string-overlap based).
+    """
+    ai_payload = ensure_ai_payload(
+        {
+            "skills_required": ["Adoption", "Onboarding", "Enablement", "Change Management"],
+            "skills_preferred": [],
+            "role_family": "Customer Success",
+            "seniority": "Senior",
+        }
+    )
+    profile = _profile(
+        skills={
+            "technical_core": [],
+            "ai_specific": [],
+            "customer_success": ["Adoption", "Onboarding", "Enablement", "Change Management"],
+            "domain_knowledge": [],
+        },
+        target_roles=["customer success"],
+        seniority="senior",
+    )
+    score, notes = compute_match(ai_payload, profile)
+    # Required: 4/4 => 70, preferred: 0 => 0, role+seniority bonuses => +10 => 80
+    assert score == 80
+    assert any("required_match:4/4" in n for n in notes)
+    assert any("role_bonus:5" in n for n in notes)
+    assert any("seniority_bonus:5" in n for n in notes)
+

@@ -82,5 +82,8 @@ def test_score_jobs_golden_master(tmp_path: Path) -> None:
         assert "match_rationale" in expl
         assert expl.get("final_score") == j.get("final_score")
         assert "blend_weight_used" in expl
+        assert "ai_blend_config" in expl
+        cfg = expl.get("ai_blend_config") or {}
+        assert cfg.get("weight_used") == expl.get("blend_weight_used")
         assert "missing_required_skills" in expl
 

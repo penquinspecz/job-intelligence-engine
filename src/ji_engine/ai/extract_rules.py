@@ -4,7 +4,7 @@ import re
 from typing import Any, Dict, List, Tuple
 
 
-RULES_VERSION = "2025-01-AI-EXTRACT-3"
+RULES_VERSION = "2025-01-AI-EXTRACT-4"
 _WS_RE = re.compile(r"\s+")
 
 
@@ -58,6 +58,16 @@ _SKILL_PATTERNS: List[Tuple[str, List[str]]] = [
     ("Prompting", [r"\bprompt\b", r"\bprompting\b", r"\bprompt engineering\b"]),
     ("APIs", [r"\bapi\b", r"\bapis\b", r"\brest\b"]),
     ("Security", [r"\bsecurity\b", r"\bthreat\b", r"\bprivacy\b"]),
+    # Business / Customer Success (gated; see _CS_TRIGGER_PATTERNS)
+    ("Adoption", [r"\badoption\b", r"\bactivation\b", r"\bactivate\b"]),
+    ("Onboarding", [r"\bonboarding\b"]),
+    ("Enablement", [r"\benablement\b", r"\btraining\b", r"\bplaybooks?\b"]),
+    ("Change Management", [r"\bchange management\b"]),
+    ("Stakeholder Management", [r"\bstakeholders?\b", r"\bexecutive\b", r"\bc-?level\b", r"\bsponsors?\b"]),
+    ("Value Measurement", [r"\broi\b", r"\btco\b", r"\bkpis?\b", r"\bdashboards?\b", r"\bvalue reports?\b", r"\bbusiness outcomes?\b"]),
+    ("Implementation", [r"\bimplementation\b", r"\bdeploy(?:ment|ing)?\b", r"\bintegration\b", r"\bconnectors?\b", r"\bcustom gpts?\b"]),
+    ("Program Management", [r"\bprogram management\b", r"\boperating model\b", r"\boperating rhythms?\b", r"\boperating mechanisms?\b"]),
+    ("Renewals", [r"\brenewals?\b", r"\bretention\b", r"\bexpansion\b"]),
 ]
 
 _HW_TRIGGER_PATTERNS: List[str] = [
@@ -81,6 +91,36 @@ _HW_TRIGGER_PATTERNS: List[str] = [
 ]
 
 _GATED_HW_SKILLS = {"Robotics", "Embedded Systems", "Controls", "Electromechanical", "CAD", "Automation"}
+
+# CS/business skills should only appear when there are explicit customer-success / adoption / value signals.
+_CS_TRIGGER_PATTERNS: List[str] = [
+    r"\bcustomer success\b",
+    r"\bvalue realization\b",
+    r"\badoption\b",
+    r"\bonboarding\b",
+    r"\benablement\b",
+    r"\bchange management\b",
+    r"\bpost[- ]sales\b",
+    r"\bprofessional services\b",
+    r"\brenewals?\b",
+    r"\bretention\b",
+    r"\broi\b",
+    r"\btco\b",
+    r"\bkpis?\b",
+    r"\bqbrs?\b",
+]
+
+_GATED_CS_SKILLS = {
+    "Adoption",
+    "Onboarding",
+    "Enablement",
+    "Change Management",
+    "Stakeholder Management",
+    "Value Measurement",
+    "Implementation",
+    "Program Management",
+    "Renewals",
+}
 
 
 def _hw_trigger_count(text: str) -> int:
@@ -129,8 +169,11 @@ def _section_slices(text: str) -> Tuple[str, str, str]:
 def _skills_from_text(text: str) -> List[str]:
     out: List[str] = []
     hw_triggers = _hw_trigger_count(text)
+    cs_triggered = _contains(text, _CS_TRIGGER_PATTERNS)
     for skill, pats in _SKILL_PATTERNS:
         if skill in _GATED_HW_SKILLS and hw_triggers < 1:
+            continue
+        if skill in _GATED_CS_SKILLS and not cs_triggered:
             continue
         if _contains(text, pats):
             out.append(skill)
@@ -147,6 +190,9 @@ def _role_family(title_text: str, job_text: str) -> str:
     if re.search(r"\bvalue realization\b", title, flags=re.IGNORECASE):
         return "Customer Success"
     if re.search(r"\bcustomer success\b|\bcs\b", title, flags=re.IGNORECASE):
+        return "Customer Success"
+    # If team/dept/JD explicitly says Customer Success, treat as Customer Success before generic "product" matches.
+    if _contains(job_text, [r"\bcustomer success\b", r"\bai deployment\b", r"\bdeployment and adoption\b", r"\bdeployment & adoption\b"]):
         return "Customer Success"
 
     rules = [

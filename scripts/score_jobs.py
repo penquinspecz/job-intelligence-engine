@@ -30,7 +30,7 @@ import logging
 import re
 import io
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -107,12 +107,17 @@ def _build_explanation(job: Dict[str, Any], candidate_skills: set[str]) -> Dict[
         missing_required = [s for s in skills_required if s.strip().lower() not in candidate_skills]
     missing_required = missing_required[:5]
 
-    blend_weight_used = AI_BLEND_WEIGHT if job.get("ai") else 0.0
+    blend_weight_used = AI_BLEND_CONFIG.weight if job.get("ai") else 0.0
+
+    if job.get("ai"):
+        ai_phrase = f"AI match score {match_score} (weight {blend_weight_used})"
+    else:
+        ai_phrase = f"AI match score {match_score} not applied (weight {blend_weight_used})"
 
     explanation_summary = (
-        f"final={final_score} (heur={heuristic_score}, ai={match_score}, w={blend_weight_used}); "
-        f"top={','.join(top3_reasons) or '—'}; "
-        f"missing_req={','.join(missing_required) or '—'}"
+        f"Final score {final_score} (Heuristic score {heuristic_score}; {ai_phrase}); "
+        f"Top reasons: {', '.join(top3_reasons) or '—'}; "
+        f"Missing required skills: {', '.join(missing_required) or '—'}"
     )
 
     return {
@@ -122,6 +127,11 @@ def _build_explanation(job: Dict[str, Any], candidate_skills: set[str]) -> Dict[
         "match_rationale": match_rationale,
         "final_score": final_score,
         "blend_weight_used": blend_weight_used,
+        "ai_blend_config": {
+            "weight_used": blend_weight_used,
+            "min_heuristic_floor": AI_BLEND_CONFIG.min_heuristic_floor,
+            "max_ai_contribution": AI_BLEND_CONFIG.max_ai_contribution,
+        },
         "missing_required_skills": missing_required,
         "explanation_summary": explanation_summary,
     }
@@ -140,7 +150,7 @@ def apply_profile(profile_name: str, profiles: Dict[str, Any]) -> None:
     """
     Overwrite global ROLE_BAND_MULTIPLIERS + PROFILE_WEIGHTS with selected profile settings.
     """
-    global AI_BLEND_WEIGHT
+    global AI_BLEND_CONFIG
     if profile_name not in profiles:
         raise SystemExit(f"Unknown profile '{profile_name}'. Available: {', '.join(sorted(profiles.keys()))}")
 
@@ -158,7 +168,10 @@ def apply_profile(profile_name: str, profiles: Dict[str, Any]) -> None:
     PROFILE_WEIGHTS.clear()
     PROFILE_WEIGHTS.update({str(k): int(v) for k, v in pw.items()})
 
-    AI_BLEND_WEIGHT = float(cfg.get("ai_match_weight", AI_BLEND_WEIGHT))
+    AI_BLEND_CONFIG = replace(
+        AI_BLEND_CONFIG,
+        weight=float(cfg.get("ai_match_weight", AI_BLEND_CONFIG.weight)),
+    )
 
 
 def _select_ai_provider(ai_live: bool) -> AIProvider:
@@ -212,8 +225,22 @@ PROFILE_WEIGHTS = {
     # was 6 — increase so it outranks Partner Solutions Architect
     "pin_manager_ai_deployment": 30,
 }
-# Weight to blend heuristic score with AI match_score (0-1). Can be overridden by profile.
-AI_BLEND_WEIGHT: float = 0.35
+@dataclass(frozen=True)
+class AIBlendConfig:
+    """
+    Centralized controls for how AI affects scoring.
+
+    NOTE: To preserve existing behavior exactly, the additional controls
+    (min_heuristic_floor / max_ai_contribution) default to None (disabled).
+    """
+
+    weight: float = 0.35
+    min_heuristic_floor: Optional[int] = None
+    max_ai_contribution: Optional[int] = None
+
+
+# Single source of truth for AI blend behavior. Weight can be overridden by profile.
+AI_BLEND_CONFIG = AIBlendConfig()
 
 
 # ------------------------------------------------------------
@@ -303,7 +330,24 @@ def _blend_with_ai(heuristic_score: int, ai_payload: Optional[Dict[str, Any]]) -
         return heuristic_score
     ai = ensure_ai_payload(ai_payload)
     ai_score = int(ai.get("match_score", 0))
-    return int(round((1 - AI_BLEND_WEIGHT) * heuristic_score + AI_BLEND_WEIGHT * ai_score))
+    cfg = AI_BLEND_CONFIG
+
+    # Centralized controls (disabled by default to preserve historical behavior).
+    base = heuristic_score
+    if cfg.min_heuristic_floor is not None:
+        base = max(base, int(cfg.min_heuristic_floor))
+
+    blended = int(round((1 - cfg.weight) * base + cfg.weight * ai_score))
+
+    if cfg.max_ai_contribution is not None:
+        cap = int(cfg.max_ai_contribution)
+        delta = blended - base
+        if delta > cap:
+            blended = base + cap
+        elif delta < -cap:
+            blended = base - cap
+
+    return blended
 
 
 def _classify_role_band(job: Dict[str, Any]) -> str:

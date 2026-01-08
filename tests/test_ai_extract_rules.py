@@ -70,8 +70,38 @@ def test_value_realization_does_not_emit_hw_skills_without_triggers() -> None:
     out = extract_ai_fields(job)
     assert out["role_family"] == "Customer Success"
     assert out["role_family"] != "Field"
+    # Should capture obvious CS/business skills (not just "Security").
+    assert "Adoption" in out["skills_required"]
+    assert "Onboarding" in out["skills_required"]
+    assert "Program Management" in out["skills_required"]
+    assert "Stakeholder Management" in out["skills_required"]
+    assert "Enablement" in out["skills_required"] or "Change Management" in out["skills_required"]
+    assert len(out["skills_required"]) >= 3
     # Should not hallucinate hardware/robotics skills without strong triggers.
     for s in ("Electromechanical", "Controls", "Embedded Systems", "CAD", "Automation", "Robotics"):
         assert s not in out["skills_required"]
 
+
+def test_manager_ai_deployment_extracts_cs_skills() -> None:
+    job = {
+        "title": "Manager, AI Deployment - AMER",
+        "team": "Go To Market, Customer Success",
+        "location": "New York City",
+        "jd_text": """
+        About the Role
+        Manage and scale a team of AI Deployment Managers.
+        Drive activation and adoption through structured onboarding, training, and change management playbooks.
+        Own successful deployment including integrating connectors and custom GPTs.
+        Engage and influence executive stakeholders; build strong customer relationships.
+        """,
+    }
+    out = extract_ai_fields(job)
+    assert out["role_family"] == "Customer Success"
+    assert out["seniority"] == "Manager"
+    assert "Adoption" in out["skills_required"]
+    assert "Onboarding" in out["skills_required"]
+    assert "Enablement" in out["skills_required"]
+    assert "Change Management" in out["skills_required"]
+    assert "Implementation" in out["skills_required"]
+    assert "Stakeholder Management" in out["skills_required"]
 

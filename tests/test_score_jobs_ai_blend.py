@@ -59,4 +59,7 @@ def test_ai_blend_affects_order(tmp_path: Path) -> None:
     assert ranked[0]["heuristic_score"] == ranked[1]["heuristic_score"] == 0
     assert ranked[0]["final_score"] > ranked[1]["final_score"]
     assert ranked[0]["final_score"] == int(round(0.35 * 90))
+    # Explanation should reference the effective blend config used.
+    cfg = ranked[0].get("explanation", {}).get("ai_blend_config") or {}
+    assert cfg.get("weight_used") == 0.35
 
