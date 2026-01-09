@@ -20,7 +20,13 @@ def load_dotenv(path: Optional[str] = None, override: bool = False) -> Dict[str,
         return {}
 
     loaded: Dict[str, str] = {}
-    for raw in env_path.read_text(encoding="utf-8").splitlines():
+    try:
+        content = env_path.read_text(encoding="utf-8")
+    except (PermissionError, OSError):
+        # .env exists but not readable (sandboxed env, permissions, etc.)
+        return {}
+    
+    for raw in content.splitlines():
         line = raw.strip()
         if not line or line.startswith("#"):
             continue

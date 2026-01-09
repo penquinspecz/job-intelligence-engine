@@ -7,9 +7,12 @@ from pathlib import Path
 REPO_ROOT = Path(".")
 _DEFAULT_DATA_DIR = REPO_ROOT / "data"
 _ENV_DATA_DIR = os.environ.get("JOBINTEL_DATA_DIR")
+_STATE_DIR_OVERRIDE = os.environ.get("JOBINTEL_STATE_DIR")
 DATA_DIR = Path(_ENV_DATA_DIR).expanduser() if _ENV_DATA_DIR else _DEFAULT_DATA_DIR
-STATE_DIR = DATA_DIR / "state"
+STATE_DIR = Path(_STATE_DIR_OVERRIDE).expanduser() if _STATE_DIR_OVERRIDE else Path("/app/state" if os.environ.get("CI") else REPO_ROOT / "state")
 SNAPSHOT_DIR = DATA_DIR / "openai_snapshots"
+HISTORY_DIR = STATE_DIR / "history"
+RUN_METADATA_DIR = STATE_DIR / "runs"
 
 # Canonical pipeline artifacts
 RAW_JOBS_JSON = DATA_DIR / "openai_raw_jobs.json"
@@ -19,6 +22,9 @@ ASHBY_CACHE_DIR = DATA_DIR / "ashby_cache"
 EMBED_CACHE_JSON = STATE_DIR / "embed_cache.json"
 
 RANKED_FAMILIES_JSON = DATA_DIR / "openai_ranked_families.json"
+
+HISTORY_DIR = STATE_DIR / "history"
+RUN_METADATA_DIR = STATE_DIR / "runs"
 
 def ranked_jobs_json(profile: str) -> Path:
     return DATA_DIR / f"openai_ranked_jobs.{profile}.json"
@@ -47,3 +53,7 @@ def ensure_dirs() -> None:
     SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
     ASHBY_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     EMBED_CACHE_JSON.parent.mkdir(parents=True, exist_ok=True)
+    HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+    RUN_METADATA_DIR.mkdir(parents=True, exist_ok=True)
+    HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+    RUN_METADATA_DIR.mkdir(parents=True, exist_ok=True)

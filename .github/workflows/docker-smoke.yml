@@ -17,5 +17,29 @@ jobs:
 
       - name: Smoke test run_daily (no webhook)
         run: |
-          docker run --rm jobintel:ci scripts/run_daily.py --profiles cs --us_only --no_post --no_enrich
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE/data:/app/data" \
+            -v "$GITHUB_WORKSPACE/state:/app/state" \
+            jobintel:ci --profiles cs --us_only --no_post --no_enrich
 
+      - name: Verify history artifacts
+        run: |
+          set -euo pipefail
+          latest="state/history/latest/cs"
+          summary="$latest/run_summary.txt"
+          if [ ! -f "$summary" ]; then
+            echo "Missing $summary"
+            exit 1
+          fi
+          metadata="$latest/run_metadata.json"
+          if [ ! -f "$metadata" ]; then
+            echo "Missing $metadata"
+            exit 1
+          fi
+          ranked_json="$latest/openai_ranked_jobs.cs.json"
+          fallback_json="$latest/ranked.json"
+          if [ -f "$ranked_json" ] || [ -f "$fallback_json" ]; then
+            exit 0
+          fi
+          echo "Neither $ranked_json nor $fallback_json exists"
+          exit 1

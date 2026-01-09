@@ -19,6 +19,11 @@ dependencies = [
 dev = ["pytest", "moto[s3]>=5.1.0"]
 aws = ["boto3>=1.34,<2"]
 
+[tool.ruff]
+line-length = 120
+select = ["E", "F", "I", "W", "B", "C4"]
+extend-select = []
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 

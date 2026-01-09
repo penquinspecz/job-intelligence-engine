@@ -28,9 +28,11 @@ High level:
 
 This project is intentionally built using AI pair programming:
 
-GPT-5 is used for design, code generation, and refactoring.
+GPT-5 is used for design and project management, as well as daily task guidance.
 
 A second model (e.g. Gemini) is used as a cross-model reviewer for critical modules (scraper, matching engine, etc.).
+
+Development is done in Codex IDE using a variety of models depending on the task.
 
 The goal is to demonstrate practical, safe use of multi-model workflows for software engineering.
 
@@ -82,10 +84,10 @@ The image runs tests during `docker build`, and the container `ENTRYPOINT` is `p
 docker build -t jobintel:local .
 
 # AI augment (writes data/openai_enriched_jobs_ai.json into the mounted ./data volume)
-docker run --rm -v "$PWD/data:/app/data" --env-file .env jobintel:local scripts/run_ai_augment.py
+docker run --rm -v "$PWD/data:/app/data" -v "$PWD/state:/app/state" --env-file .env jobintel:local --profiles cs --us_only --no_post --ai
 
 # Scoring (reads AI-enriched input automatically when present; writes ranked outputs under ./data)
-docker run --rm -v "$PWD/data:/app/data" --env-file .env jobintel:local scripts/score_jobs.py --profile cs --us_only
+docker run --rm -v "$PWD/data:/app/data" -v "$PWD/state:/app/state" --env-file .env jobintel:local --profile cs --us_only --no_post
 ```
 
 Compose convenience (also mounts ./data):
@@ -99,8 +101,8 @@ docker-compose up --build
 You can override the default `ENTRYPOINT` to run a quick Python snippet or drop into a shell:
 
 ```bash
-docker run --rm -v "$PWD/data:/app/data" jobintel:local python -c "print('debug', __import__('sys').executable)"
-docker run --rm -it -v "$PWD/data:/app/data" jobintel:local sh
+docker run --rm -v "$PWD/data:/app/data" --entrypoint python jobintel:local -c "import sys; print(sys.executable)"
+docker run --rm -it -v "$PWD/data:/app/data" --entrypoint sh jobintel:local
 ```
 
 Notes:
@@ -117,7 +119,10 @@ docker run --rm -v "$PWD/data:/app/data" jobintel:local --profiles cs --us_only 
 ```
 
 ## Runtime contract
-- Volume: mount `./data` → `/app/data` (holds snapshots, cache, outputs).
+- Runs as non-root user `app` by default; artifacts on mounted volumes remain host-writable (no sudo/chmod needed after runs).
+- Volumes:
+  - `./data` → `/app/data` (snapshots, cache, outputs)
+  - `./state` → `/app/state` (history, metadata)
 - Env vars:
   - `DISCORD_WEBHOOK_URL` (optional; if unset, alerts are skipped)
   - `CAREERS_MODE` (optional; defaults to AUTO)
@@ -133,26 +138,112 @@ Docker run cheatsheet:
 docker build -t jobintel:local .
 
 # default run (no AI augment, no Discord)
-docker run --rm -v "$PWD/data:/app/data" --env-file .env jobintel:local --profiles cs --us_only --no_post
+docker run --rm \
+  -v "$PWD/data:/app/data" \
+  -v "$PWD/state:/app/state" \
+  --env-file .env jobintel:local --profiles cs --us_only --no_post
 
 # run with AI augment (ensures AI outputs are generated and scoring consumes them)
-docker run --rm -v "$PWD/data:/app/data" --env-file .env jobintel:local --profiles cs --us_only --no_post --ai
+docker run --rm \
+  -v "$PWD/data:/app/data" \
+  -v "$PWD/state:/app/state" \
+  --env-file .env jobintel:local --profiles cs --us_only --no_post --ai
 
 # verify AI-enriched artifact is present before scoring
 ls data/openai_enriched_jobs_ai.json
 ```
 Run the last `ls` after the `--ai` invocation above to confirm `openai_enriched_jobs_ai.json` exists; the scoring step now picks it automatically when present.
 
+Mounting `/app/state` alongside `/app/data` keeps `state/history` persisted between runs; otherwise history disappears when the container exits.
+
+```bash
+# after a run
+# (e.g., state/history/2026-01-01/20260101T000000Z/cs/run_summary.txt)
+find state -maxdepth 10 -type f
+```
+
+## Dev commands
+
+```bash
+.venv/bin/pip install -e .
+.venv/bin/python -m pytest -q
+.venv/bin/ruff check .
+```
+
+## Quick commands
+
+```bash
+make test
+make lint
+make docker-build
+make docker-run-local
+make report
+```
+
+`make report` runs `scripts.report_changes` inside the Docker image (mounting `state/`, overriding entrypoint) to compare the latest CS run; override `PROFILE`/`LIMIT` as needed.
+
+## Uploading run history to S3
+
+```
+docker run --rm \
+  -v "$PWD/data:/app/data" \
+  --env-file .env \
+  jobintel:local \
+  python scripts/publish_s3.py \
+  --bucket my-bucket \
+  --profile cs \
+  --latest \
+  --dry_run
+```
+
+Set `--run_id` instead of `--latest` to upload a specific run, and omit `--dry_run` to perform the actual upload.
+
+Note: `publish_s3.py` only uploads artifacts under `state/history/**`; other state files (embed cache, etc.) are ignored.
+
+## AWS deployment templates
+
+- Use `ops/aws/ecs-taskdef.json` as the basis for a Fargate task that mounts `/app/data` & `/app/state`, sets the JOBINTEL_ vars, and runs `python scripts/run_daily.py --profiles cs --us_only --no_enrich`.
+- Trigger it with `ops/aws/eventbridge-rule.json` on a cron schedule.
+- After each run, schedule a second job (or step) that runs `python scripts/publish_s3.py --profile cs --latest --bucket ...` to upload the persisted history to S3.
+
+
 ## Roadmap
 
-Sprint 0: Repo setup, models, and basic scraper skeleton
+### Phase 0 — Local & CI reliability
+- [x] Deterministic ranking tie-breakers
+- [x] CI-safe `--no_enrich` + changelog diff output
+- [x] Structured logging + failure alerts (stderr/stdout tails)
+- [x] Absolute paths, `ensure_dirs()`, and atomic writes (data/state/snapshot/cache)
+- [x] GraphQL null jobPosting guard + golden master scoring test
+- [x] BeautifulSoup HTML-to-text for deterministic enrichment
+- [ ] Broader failure surfacing (Ashby retries / explicit unavailable on 4xx/5xx)
+- [ ] Log rotation / destination strategy (launchd/stdout)
 
-Sprint 1: Raw scraping of OpenAI careers → JSON
+### Phase 1 — Packaging & deployment
+- [x] Docker image that runs `pytest` during build and respects `/app/data`
+- [x] Single canonical entrypoint (`scripts/run_daily.py`) with deterministic scripts
+- [x] Debugging container docs + quickstart guidance
+- [ ] Full pipeline golden master (snapshot HTML → ranked outputs)
+- [ ] Cleanup legacy scripts (`run_full_pipeline`, `run_openai_pipeline`) and move integrations fully under `src/ji_engine`
+- [ ] Logging destination/rotation (launchd docs, log sink)
 
-Sprint 2: Embeddings + basic classification
+### Phase 2 — State, history & intelligence
+- [x] Persist ranked artifacts, shortlist, and fingerprints per profile
+- [x] “Changes since last run” shortlist section + changelog logs
+- [x] Alert gating (skip Discord when diffs are empty)
+- [ ] Job fingerprinting per `job_identity()` (title/location, URLs, description hash)
+- [ ] Additional providers (Anthropic, other APIs) with snapshot/live toggles
+- [ ] Smarter scoring blends / AI-assisted insights
+- [ ] Dashboard/alerts enhancements (structured payloads, filters)
 
-Sprint 3: Matching engine + Discord alerts
+### Phase 3 — Packaging, ops & monitoring
+- [ ] Config validation + clear exit codes
+- [ ] Structured logs + run metadata (timings, counts, hashes)
+- [ ] S3-backed caches for AI output/embeddings (optional backend) + OBS telemetry
+- [ ] Observability/alerting (CloudWatch, alarms, runbooks)
 
-Sprint 4: Insights + Streamlit dashboard
-
-Sprint 5: Add additional providers (Anthropic, etc.)
+### Phase 4 — Hardening & scaling
+- [ ] Rate limiting / backoff for providers
+- [ ] Provider abstraction for multiple job boards
+- [ ] Cost controls (limits, caching, sampling)
+- [ ] Optional DynamoDB or similar index for job state/history

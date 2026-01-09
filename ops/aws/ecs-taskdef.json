@@ -1,0 +1,36 @@
+{
+  "family": "jobintel-run-daily",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "2048",
+  "memory": "4096",
+  "containerDefinitions": [
+    {
+      "name": "jobintel",
+      "image": "jobintel:latest",
+      "essential": true,
+      "entryPoint": ["python", "scripts/run_daily.py"],
+      "command": ["--profiles", "cs", "--us_only", "--no_enrich"],
+      "environment": [
+        { "name": "JOBINTEL_DATA_DIR", "value": "/mnt/data" },
+        { "name": "JOBINTEL_STATE_DIR", "value": "/mnt/state" }
+      ],
+      "mountPoints": [
+        { "sourceVolume": "data", "containerPath": "/mnt/data" },
+        { "sourceVolume": "state", "containerPath": "/mnt/state" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/jobintel",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "jobintel"
+        }
+      }
+    }
+  ],
+  "volumes": [
+    { "name": "data", "host": {} },
+    { "name": "state", "host": {} }
+  ]
+}

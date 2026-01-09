@@ -81,6 +81,9 @@ def test_pipeline_golden_master_e2e(tmp_path, monkeypatch):
         elif script_path == "run_classify.py":
             sys.argv = [script_path, *argv[1:]]
             rc = run_classify.main()
+        elif script_path == "enrich_jobs.py":
+            sys.argv = [script_path, *argv[1:]]
+            rc = enrich_jobs.main()
         elif script_path == "score_jobs.py":
             sys.argv = [script_path, *argv[1:]]
             rc = score_jobs.main()

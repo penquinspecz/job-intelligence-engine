@@ -941,6 +941,11 @@ def main() -> int:
     ap.add_argument("--profile", default="cs")
     ap.add_argument("--profiles", default="config/profiles.json")
     ap.add_argument("--in_path", default=str(ENRICHED_JOBS_JSON))
+    ap.add_argument(
+        "--prefer_ai",
+        action="store_true",
+        help="If set, and --in_path is the default enriched path, prefer AI-enriched input when present.",
+    )
 
     ap.add_argument("--out_json", default=str(ranked_jobs_json("cs")))
     ap.add_argument("--out_csv", default=str(ranked_jobs_csv("cs")))
@@ -985,11 +990,21 @@ def main() -> int:
 
     ai_input = ENRICHED_JOBS_JSON.with_name("openai_enriched_jobs_ai.json")
     requested_in = Path(args.in_path)
-    if ai_input.exists() and requested_in == ENRICHED_JOBS_JSON:
-        in_path = ai_input
-        logger.info("Using AI-enriched input %s", in_path)
+    if args.prefer_ai:
+        if requested_in == ENRICHED_JOBS_JSON:
+            if ai_input.exists():
+                in_path = ai_input
+                logger.info("Using AI-enriched input %s (prefer_ai)", in_path)
+            else:
+                raise SystemExit(
+                    f"Input not found: {ai_input}. Prefer-ai was requested; ensure it exists or omit --prefer_ai."
+                )
+        else:
+            logger.info("Prefer-ai requested but --in_path is custom (%s); using requested path.", requested_in)
+            in_path = requested_in
     else:
         in_path = requested_in
+
     if not in_path.exists():
         raise SystemExit(f"Input not found: {in_path}")
 
@@ -1000,7 +1015,16 @@ def main() -> int:
     if args.us_only:
         before = len(jobs)
         jobs = [j for j in jobs if is_us_or_remote_us(j)]
-        logger.info(f"US-only filter: {before} -> {len(jobs)} jobs")
+        after = len(jobs)
+        logger.info(f"US-only filter: {before} -> {after} jobs")
+        if before > 0 and after == 0:
+            logger.warning(
+                "US-only filter removed all jobs (input=%d, after=%d). "
+                "This often means location fields are missing or not normalized. "
+                "If you ran with --no_enrich, did you pass labeled input instead of enriched?",
+                before,
+                after,
+            )
 
     pos_rules, neg_rules = _compile_rules()
     scored = [score_job(j, pos_rules, neg_rules) for j in jobs]

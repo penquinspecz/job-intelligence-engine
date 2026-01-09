@@ -21,21 +21,11 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
 
+from ji_engine.utils.job_identity import job_identity
+
 
 def _job_id(job: Dict[str, Any]) -> str:
-    """
-    Stable job identifier for diffs.
-
-    Preference order (as requested):
-    1) apply_url
-    2) detail_url
-    3) title
-    """
-    for k in ("apply_url", "detail_url", "title"):
-        v = job.get(k)
-        if isinstance(v, str) and v.strip():
-            return v.strip()
-    return ""
+    return job_identity(job)
 
 
 def _as_list_str(v: Any) -> List[str]:

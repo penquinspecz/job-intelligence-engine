@@ -4,5 +4,6 @@ beautifulsoup4
 pydantic
 faiss-cpu
 pandas
+boto3
 streamlit
 python-dotenv

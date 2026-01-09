@@ -1,0 +1,13 @@
+{
+  "Name": "jobintel-daily-trigger",
+  "ScheduleExpression": "cron(0 12 * * ? *)",
+  "State": "ENABLED",
+  "Targets": [
+    {
+      "Id": "JobIntelDaily",
+      "Arn": "arn:aws:events:us-east-1:123456789012:rule/jobintel-daily-trigger",
+      "RoleArn": "arn:aws:iam::123456789012:role/jobintel-eventbridge-role",
+      "Input": "{}"
+    }
+  ]
+}

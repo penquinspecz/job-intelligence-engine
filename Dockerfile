@@ -3,6 +3,9 @@ FROM python:3.11-slim
 WORKDIR /app
 ENV PYTHONPATH=/app/src
 
+# Create non-root user early (will own /app before final runtime)
+RUN groupadd -r app && useradd -m -r -g app app
+
 # System deps (minimal)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
@@ -32,13 +35,16 @@ COPY data/candidate_profile.json /app/data/candidate_profile.json
 # Run tests during build (deterministic, offline)
 RUN python -m pytest -q
 
-# Expect /app/data to be a mounted volume; runtime code will ensure dirs
-VOLUME ["/app/data"]
+# Ensure runtime user can write everywhere under /app (data/state when mounted stay host-owned)
+RUN mkdir -p /app/data /app/state && chown -R app:app /app
 
-# Default container behavior runs the daily pipeline, but ENTRYPOINT is python
-# so you can run other scripts like:
-#   docker run ... jobintel:local scripts/run_ai_augment.py
-#   docker run ... jobintel:local scripts/score_jobs.py --profile cs --us_only
-ENTRYPOINT ["python"]
-CMD ["scripts/run_daily.py", "--profiles", "cs", "--us_only", "--no_post"]
+# Expect /app/data and /app/state to be mounted; runtime code will ensure dirs
+VOLUME ["/app/data", "/app/state"]
+
+# Drop privileges for runtime
+USER app
+
+# Default container behavior runs the daily pipeline.
+ENTRYPOINT ["python", "scripts/run_daily.py"]
+CMD ["--profiles", "cs", "--us_only", "--no_post"]
 
