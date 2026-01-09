@@ -94,6 +94,15 @@ Compose convenience (also mounts ./data):
 docker-compose up --build
 ```
 
+## Debugging the container
+
+You can override the default `ENTRYPOINT` to run a quick Python snippet or drop into a shell:
+
+```bash
+docker run --rm -v "$PWD/data:/app/data" jobintel:local python -c "print('debug', __import__('sys').executable)"
+docker run --rm -it -v "$PWD/data:/app/data" jobintel:local sh
+```
+
 Notes:
 - Container is suitable for ECS/Fargate or cron on EC2; mount /app/data as a volume.
 - No secrets are baked into the image; use env vars or task/env files.
