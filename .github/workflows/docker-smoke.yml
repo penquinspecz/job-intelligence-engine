@@ -17,5 +17,5 @@ jobs:
 
       - name: Smoke test run_daily (no webhook)
         run: |
-          docker run --rm jobintel:ci --profiles cs --us_only --no_post --no_enrich
+          docker run --rm jobintel:ci scripts/run_daily.py --profiles cs --us_only --no_post --no_enrich
 
