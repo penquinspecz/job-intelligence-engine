@@ -71,6 +71,15 @@ def test_score_jobs_golden_master(tmp_path: Path) -> None:
     assert heuristic_scores == expected_scores  # no AI payload in fixture
     assert final_scores == expected_scores
 
+    # Verify stable sort: for tied scores, apply_url is non-decreasing
+    for i in range(len(ranked) - 1):
+        curr_score = ranked[i].get("score", 0)
+        next_score = ranked[i + 1].get("score", 0)
+        if curr_score == next_score:
+            curr_url = ranked[i].get("apply_url", "")
+            next_url = ranked[i + 1].get("apply_url", "")
+            assert curr_url <= next_url, f"Tied scores at index {i}, {i+1} not ordered by apply_url"
+
     # Explanations exist and are well-formed; should not affect ordering/scores.
     assert "explanation_summary" in headers
     for j in ranked[:5]:
