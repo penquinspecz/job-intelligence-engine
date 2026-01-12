@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Dict
 
 
@@ -13,16 +15,21 @@ def job_identity(job: Dict[str, object]) -> str:
     3. title + location (or locationName)
     4. empty string
     """
+    def _normalize(value: str, *, lower: bool = False) -> str:
+        normalized = " ".join(value.split()).strip()
+        return normalized.lower() if lower else normalized
+
     for field in ("apply_url", "detail_url"):
         value = job.get(field)
         if isinstance(value, str):
-            stripped = value.strip()
-            if stripped:
-                return stripped
+            normalized = _normalize(value)
+            if normalized:
+                return normalized
 
-    title = str(job.get("title") or "").strip()
-    location = str(job.get("location") or job.get("locationName") or "").strip()
+    title = _normalize(str(job.get("title") or ""), lower=True)
+    location = _normalize(str(job.get("location") or job.get("locationName") or ""), lower=True)
     if title or location:
         return f"{title}|{location}"
 
-    return ""
+    payload = json.dumps(job, ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
