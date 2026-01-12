@@ -48,8 +48,71 @@ from ji_engine.config import (
     shortlist_md,
 )
 from ji_engine.utils.atomic_write import atomic_write_text, atomic_write_with
+from ji_engine.utils.job_identity import job_identity
+from ji_engine.utils.job_identity import job_identity
 
 logger = logging.getLogger(__name__)
+JSON_DUMP_SETTINGS = {"ensure_ascii": False, "indent": 2, "separators": (", ", ": ")}
+CSV_FIELDNAMES = [
+    "score",
+    "heuristic_score",
+    "final_score",
+    "explanation_summary",
+    "base_score",
+    "profile_delta",
+    "role_band",
+    "title",
+    "department",
+    "team",
+    "location",
+    "enrich_status",
+    "enrich_reason",
+    "jd_text_chars",
+    "fit_signals",
+    "risk_signals",
+    "apply_url",
+    "why_top3",
+]
+
+
+def _serialize_json(obj: Any) -> str:
+    return json.dumps(obj, **JSON_DUMP_SETTINGS) + "\n"
+
+
+EPHEMERAL_FIELDS = {
+    "fetched_at",
+    "enriched_at",
+    "scored_at",
+    "run_started_at",
+    "run_id",
+}
+
+
+def _strip_ephemeral_fields(job: Dict[str, Any]) -> Dict[str, Any]:
+    cleaned = dict(job)
+    for field in EPHEMERAL_FIELDS:
+        cleaned.pop(field, None)
+    return cleaned
+CSV_FIELDNAMES = [
+    "score",
+    "heuristic_score",
+    "final_score",
+    "explanation_summary",
+    "base_score",
+    "profile_delta",
+    "role_band",
+    "title",
+    "department",
+    "team",
+    "location",
+    "enrich_status",
+    "enrich_reason",
+    "jd_text_chars",
+    "fit_signals",
+    "risk_signals",
+    "apply_url",
+    "why_top3",
+]
 
 def _print_explain_top(scored: List[Dict[str, Any]], n: int) -> None:
     """
@@ -621,6 +684,9 @@ def to_csv_rows(scored: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 # ------------------------------------------------------------
 
 def build_families(scored: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    if not scored:
+        return []
+
     families: Dict[str, Dict[str, Any]] = {}
     variants: Dict[str, List[Dict[str, Any]]] = {}
 
@@ -631,26 +697,36 @@ def build_families(scored: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if not fam:
             fam = _norm(j.get("title")).lower()
 
-        variants.setdefault(fam, []).append({
-            "title": _norm(j.get("title")),
-            "location": _norm(j.get("location") or j.get("locationName")),
-            "apply_url": _norm(j.get("apply_url")),
-            "score": j.get("score", 0),
-            "role_band": _norm(j.get("role_band")),
-        })
+        variants.setdefault(fam, []).append(
+            {
+                "title": _norm(j.get("title")),
+                "location": _norm(j.get("location") or j.get("locationName")),
+                "apply_url": _norm(j.get("apply_url")),
+                "score": j.get("score", 0),
+                "role_band": _norm(j.get("role_band")),
+            }
+        )
 
-        if fam not in families or j.get("score", 0) > families[fam].get("score", 0):
+        current_best = families.get(fam)
+        if current_best is None or j.get("score", 0) > current_best.get("score", 0):
             families[fam] = dict(j)
 
-    out: List[Dict[str, Any]] = []
+    entries: List[Tuple[str, Dict[str, Any], List[Dict[str, Any]]]] = []
     for fam, best in families.items():
+        entries.append((fam or "", best, variants.get(fam, [])))
+
+    def _variant_sort_key(candidate: Dict[str, Any]) -> Tuple[int, str]:
+        return (-int(candidate.get("score", 0) or 0), job_identity(candidate))
+
+    entries.sort(key=lambda item: (item[0], job_identity(item[1])))
+
+    out: List[Dict[str, Any]] = []
+    for fam, best, fam_variants in entries:
+        sorted_variants = sorted(fam_variants, key=_variant_sort_key)
         entry = dict(best)
         entry["title_family"] = fam
-        entry["family_variants"] = variants.get(fam, [])
+        entry["family_variants"] = sorted_variants
         out.append(entry)
-
-    # Stable sort: primary by score desc, secondary by apply_url asc (for deterministic CI/golden-master tests)
-    out.sort(key=lambda x: (-x.get("score", 0), x.get("apply_url", "")))
     return out
 
 
@@ -660,7 +736,8 @@ def build_families(scored: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 def write_shortlist_md(scored: List[Dict[str, Any]], out_path: Path, min_score: int) -> None:
     shortlist = [
-        j for j in scored
+        _strip_ephemeral_fields(j)
+        for j in scored
         if j.get("score", 0) >= min_score and j.get("enrich_status") != "unavailable"
     ]
 
@@ -706,7 +783,8 @@ def write_shortlist_md(scored: List[Dict[str, Any]], out_path: Path, min_score: 
 
 def write_shortlist_ai_md(scored: List[Dict[str, Any]], out_path: Path, min_score: int) -> None:
     shortlist = [
-        j for j in scored
+        _strip_ephemeral_fields(j)
+        for j in scored
         if j.get("score", 0) >= min_score and j.get("enrich_status") != "unavailable"
     ]
 
@@ -1031,30 +1109,38 @@ def main() -> int:
     candidate_skills = _candidate_skill_set()
     for j in scored:
         j["explanation"] = _build_explanation(j, candidate_skills)
-    # Stable sort: primary by score desc, secondary by apply_url asc (for deterministic CI/golden-master tests)
-    scored.sort(key=lambda x: (-x.get("score", 0), x.get("apply_url", "")))
+    # Stable sort: primary by score desc, secondary by job identity (apply_url/detail_url/title/location)
+    scored.sort(key=lambda x: (-x.get("score", 0), job_identity(x)))
     _print_explain_top(scored, int(args.explain_top or 0))
     if args.family_counts:
         _print_family_counts(scored)
 
-    atomic_write_text(out_json, json.dumps(scored, ensure_ascii=False, indent=2))
+    sanitized_scored = [_strip_ephemeral_fields(j) for j in scored]
 
-    rows = to_csv_rows(scored)
+    atomic_write_text(out_json, _serialize_json(sanitized_scored))
+
+    rows = to_csv_rows(sanitized_scored)
     def _write_csv(tmp_path: Path) -> None:
         with tmp_path.open("w", encoding="utf-8", newline="") as f:
             if rows:
-                w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+                w = csv.DictWriter(
+                    f,
+                    fieldnames=CSV_FIELDNAMES,
+                    extrasaction="ignore",
+                    lineterminator="\n",
+                )
                 w.writeheader()
                 w.writerows(rows)
     atomic_write_with(out_csv, _write_csv)
 
-    families = build_families(scored)
-    atomic_write_text(out_families, json.dumps(families, ensure_ascii=False, indent=2))
+    families = build_families(sanitized_scored)
+    atomic_write_text(out_families, _serialize_json(families))
 
     shortlist_content: str
     shortlist_buffer = io.StringIO()
     shortlist = [
-        j for j in scored
+        _strip_ephemeral_fields(j)
+        for j in scored
         if j.get("score", 0) >= args.shortlist_score and j.get("enrich_status") != "unavailable"
     ]
 

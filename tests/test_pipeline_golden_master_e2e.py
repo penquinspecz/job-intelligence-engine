@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib
 import json
 import os
@@ -8,14 +9,33 @@ import sys
 from pathlib import Path
 
 
+HASHED_OUTPUT_FILES = [
+    "openai_ranked_jobs.cs.json",
+    "openai_ranked_jobs.cs.csv",
+    "openai_ranked_families.cs.json",
+    "openai_shortlist.cs.md",
+]
+REQUIRED_OUTPUT_FILES = HASHED_OUTPUT_FILES
+
+
 def _copy(src: Path, dst: Path) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy(src, dst)
 
 
-def test_pipeline_golden_master_e2e(tmp_path, monkeypatch):
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as fp:
+        for chunk in iter(lambda: fp.read(8192), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def test_pipeline_golden_master_e2e(tmp_path, monkeypatch, request):
     repo_root = Path(__file__).resolve().parents[1]
     data_dir = tmp_path / "data"
+    if os.getenv("JOBINTEL_TEST_DEBUG_PATHS") == "1":
+        print(f"[TEST_TMP_DATA_DIR] {data_dir}")
 
     # Isolate all pipeline artifacts under tmp_path
     monkeypatch.setenv("JOBINTEL_DATA_DIR", str(data_dir))
@@ -114,17 +134,51 @@ def test_pipeline_golden_master_e2e(tmp_path, monkeypatch):
     seen_urls = set()
     last_score = float("inf")
 
+    top20_count = len(top20)
+    top20_scores_non_increasing = True
+
     for idx, item in enumerate(top20):
         assert {"title", "apply_url", "score"} <= set(item.keys())
         score = item.get("score", 0)
+        if score > last_score:
+            top20_scores_non_increasing = False
         assert score <= last_score, f"Scores must be non-increasing at index {idx}"
         last_score = score
         url = item.get("apply_url")
         assert url not in seen_urls, f"apply_url must be unique in top 20 but found duplicate {url}"
         seen_urls.add(url)
 
+    # Build manifest of generated artifacts
+    manifest = {
+        "files": {},
+        "stats": {
+            "ranked_jobs_count": len(results),
+            "top20_count": top20_count,
+            "top20_scores_non_increasing": top20_scores_non_increasing,
+            "top20_unique_apply_urls": len(seen_urls),
+        },
+    }
+
+    for filename in REQUIRED_OUTPUT_FILES:
+        file_path = data_dir / filename
+        assert file_path.exists(), f"Missing required pipeline output {filename}"
+        manifest["files"][filename] = {"sha256": _sha256(file_path), "bytes": file_path.stat().st_size}
+
+    fixture_path = repo_root / "tests" / "fixtures" / "golden" / "openai_snapshot_cs.manifest.json"
+    update_golden = bool(request.config.getoption("--update-golden"))
+
+    if update_golden:
+        fixture_path.parent.mkdir(parents=True, exist_ok=True)
+        fixture_path.write_text(json.dumps(manifest, indent=2, sort_keys=True))
+        assert True
+    else:
+        expected_manifest = json.loads(fixture_path.read_text())
+        assert manifest["files"] == expected_manifest.get("files", {})
+        assert manifest["stats"]["top20_scores_non_increasing"] is True
+        assert manifest["stats"]["top20_unique_apply_urls"] == len(seen_urls)
+        assert manifest["stats"]["top20_count"] == top20_count
+
     # Document regeneration approach for maintainers
-    # To refresh the fixture: set JOBINTEL_DATA_DIR to a temp dir, run this test with
-    # --maxfail=1 -k pipeline_golden_master_e2e --update-golden (manual), then copy the
-    # new top10 from the generated ranked file into the fixture.
+    # To refresh the manifest fixture: run
+    #   pytest -q tests/test_pipeline_golden_master_e2e.py --update-golden
 
