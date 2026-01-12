@@ -18,6 +18,7 @@ data/jobs_enriched.json
 
 # Runtime state
 data/state/
+state/
 
 # Generated job data artifacts
 data/openai_*_jobs.json
