@@ -36,7 +36,7 @@ New conventions added (scaffold only; no behavioral integration yet):
 - [x] `state/user_state/` convention + loader utility returning `{}` if missing
 
 Known sharp edges / TODO:
-- [ ] Decide final canonical run-report location/name (`state/runs/` vs `state/run_reports/`) and standardize docs/tests
+- [x] Canonical run-report location/name standardized to `state/runs/<run_id>.json`
 - [ ] Better provider failure surfacing (retries/backoff, explicit unavailable reasons)
 - [ ] Log destination / rotation strategy (launchd/stdout/sink)
 - [ ] “Replay a run” workflow from run report (determinism contract)

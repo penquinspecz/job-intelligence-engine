@@ -139,3 +139,4 @@ def test_run_metadata_written_and_deterministic(tmp_path: Path, monkeypatch) -> 
     assert data["outputs_by_profile"]["tam"]["ranked_csv"]["path"] == str(_ranked_csv("tam"))
     assert data["scoring_input_selection_by_profile"]["cs"]["decision"]["rule"] == "default_enriched_required"
     assert data["scoring_input_selection_by_profile"]["tam"]["decision"]["rule"] == "no_enrich_compare"
+    assert path1.name == "20260101T000000Z.json"

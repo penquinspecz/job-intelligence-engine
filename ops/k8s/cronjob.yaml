@@ -61,6 +61,9 @@ spec:
                 - configMapRef:
                     name: jobintel-config
               env:
+                # Optional: enable pruning of state/history and run reports
+                # - name: JOBINTEL_PRUNE
+                #   value: "1"
                 - name: OPENAI_API_KEY
                   valueFrom:
                     secretKeyRef:

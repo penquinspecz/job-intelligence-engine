@@ -54,7 +54,7 @@ State (`./state`):
 - `user_state/` reserved for user-scoped state files
 
 Run reports:
-- `state/runs/<timestamp>.<run_id>.json` (run metadata)
+- `state/runs/<run_id>.json` (run metadata)
 - Includes `run_report_schema_version`, inputs, outputs, scoring inputs, and selection reasons per profile.
 
 ## Common failure modes and debugging

@@ -14,6 +14,11 @@ SNAPSHOT_DIR = DATA_DIR / "openai_snapshots"
 HISTORY_DIR = STATE_DIR / "history"
 RUN_METADATA_DIR = STATE_DIR / "runs"
 USER_STATE_DIR = STATE_DIR / "user_state"
+
+# Retention defaults (used by scripts/prune_state.py; can be overridden by env vars there).
+DEFAULT_KEEP_RUN_REPORTS = 60
+DEFAULT_KEEP_HISTORY_SNAPSHOTS_PER_PROFILE = 30
+DEFAULT_PRUNE_MAX_AGE_DAYS = 90
 # Canonical pipeline artifacts
 RAW_JOBS_JSON = DATA_DIR / "openai_raw_jobs.json"
 LABELED_JOBS_JSON = DATA_DIR / "openai_labeled_jobs.json"

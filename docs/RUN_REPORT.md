@@ -4,7 +4,7 @@
 
 Run reports are written to:
 
-- `state/runs/<timestamp>.<run_id>.json`
+- `state/runs/<run_id>.json`
 
 ## Schema overview
 
@@ -19,6 +19,7 @@ Top-level fields:
 - `timestamps`: `started_at`, `ended_at`.
 - `stage_durations`: per-stage timing data.
 - `diff_counts`: per-profile counts of new/changed/removed.
+- `content_fingerprint`: per-job stable content hash stored in ranked outputs and used for change detection.
 - `inputs`: metadata for pipeline inputs (path, mtime, sha256).
 - `scoring_inputs_by_profile`: selected scoring input per profile (path, mtime, sha256).
 - `scoring_input_selection_by_profile`: selection details per profile, including candidates and decision rationale.

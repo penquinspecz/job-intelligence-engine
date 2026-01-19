@@ -88,6 +88,7 @@ def test_score_jobs_golden_master(tmp_path: Path) -> None:
 
     # Explanations exist and are well-formed; should not affect ordering/scores.
     assert "explanation_summary" in headers
+    assert "content_fingerprint" in ranked[0]
     for j in ranked[:5]:
         expl = j.get("explanation")
         assert isinstance(expl, dict)
@@ -128,4 +129,3 @@ def test_families_json_deterministic(tmp_path: Path) -> None:
     hash1 = hashlib.sha256(first_families.read_bytes()).hexdigest()
     hash2 = hashlib.sha256(second_families.read_bytes()).hexdigest()
     assert hash1 == hash2, "Families JSON should be deterministic across identical runs"
-

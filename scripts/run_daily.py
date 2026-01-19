@@ -33,6 +33,7 @@ import urllib.request
 
 from ji_engine.utils.dotenv import load_dotenv
 from ji_engine.utils.job_identity import job_identity
+from ji_engine.utils.content_fingerprint import content_fingerprint
 from ji_engine.config import (
     DATA_DIR,
     STATE_DIR,
@@ -672,15 +673,7 @@ _FIELD_DIFF_KEYS: List[Tuple[str, str]] = [
 
 
 def _hash_job(job: Dict[str, Any]) -> str:
-    desc_hash = hashlib.sha256(_job_description_text(job).encode("utf-8")).hexdigest()
-    payload = {
-        "title": job.get("title"),
-        "location": job.get("location") or job.get("locationName"),
-        "team": job.get("team"),
-        "description_text_hash": desc_hash,
-    }
-    raw = json.dumps(payload, sort_keys=True).encode("utf-8")
-    return hashlib.sha256(raw).hexdigest()
+    return str(job.get("content_fingerprint") or content_fingerprint(job))
 
 
 def _diff(
@@ -1131,6 +1124,14 @@ def main() -> int:
                 run_metadata_path,
                 summary_payload,
             )
+
+        if os.environ.get("JOBINTEL_PRUNE") == "1":
+            try:
+                from scripts import prune_state as prune_state
+
+                prune_state.main(["--apply"])
+            except Exception as e:
+                logger.warning("Prune step failed (JOBINTEL_PRUNE=1): %r", e)
 
     current_stage = "startup"
 

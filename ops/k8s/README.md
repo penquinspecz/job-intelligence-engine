@@ -44,6 +44,16 @@ Default args are set in `ops/k8s/configmap.yaml` as `RUN_DAILY_ARGS`. Edit it to
 Storage:
 - Default uses two PVCs: `jobintel-data` and `jobintel-state`.
 - If you switch either mount to `emptyDir`, outputs/history will be ephemeral and disappear when the pod exits.
+- Recommended retention: enable pruning and tune keep counts/max age based on your PVC size (e.g., keep 60 run reports, 30 history snapshots per profile, max age 90 days).
+
+Pruning:
+- Enable by setting `JOBINTEL_PRUNE=1` in the CronJob env (see `ops/k8s/cronjob.yaml`).
+- Defaults: keep 60 run reports, keep 30 history snapshots per profile, max age 90 days.
+- Override defaults by running `scripts/prune_state.py` with `--keep-runs`, `--keep-history`, and `--max-age-days` in a separate Job.
+
+PVC sizing:
+- `state` grows with history snapshots and run reports; pruning keeps it bounded.
+- `data` grows with snapshots and outputs; consider limiting profiles or retention if PVC is small.
 
 ## Optional: publish artifacts to S3
 

@@ -50,6 +50,7 @@ from ji_engine.config import (
 )
 from ji_engine.utils.atomic_write import atomic_write_text, atomic_write_with
 from ji_engine.utils.job_identity import job_identity
+from ji_engine.utils.content_fingerprint import content_fingerprint
 from ji_engine.utils.user_state import load_user_state
 
 logger = logging.getLogger(__name__)
@@ -1256,6 +1257,7 @@ def main() -> int:
     candidate_skills = _candidate_skill_set()
     for j in scored:
         j["explanation"] = _build_explanation(j, candidate_skills)
+        j["content_fingerprint"] = content_fingerprint(j)
     # Stable sort: primary by score desc, secondary by job identity (apply_url/detail_url/title/location)
     scored.sort(key=lambda x: (-x.get("score", 0), x.get("job_id") or job_identity(x)))
     _print_explain_top(scored, int(args.explain_top or 0))
