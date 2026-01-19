@@ -46,14 +46,16 @@ from ji_engine.config import (
     ranked_jobs_csv,
     ranked_jobs_json,
     shortlist_md,
+    USER_STATE_DIR,
 )
 from ji_engine.utils.atomic_write import atomic_write_text, atomic_write_with
 from ji_engine.utils.job_identity import job_identity
-from ji_engine.utils.job_identity import job_identity
+from ji_engine.utils.user_state import load_user_state
 
 logger = logging.getLogger(__name__)
 JSON_DUMP_SETTINGS = {"ensure_ascii": False, "indent": 2, "separators": (", ", ": ")}
 CSV_FIELDNAMES = [
+    "job_id",
     "score",
     "heuristic_score",
     "final_score",
@@ -94,6 +96,7 @@ def _strip_ephemeral_fields(job: Dict[str, Any]) -> Dict[str, Any]:
         cleaned.pop(field, None)
     return cleaned
 CSV_FIELDNAMES = [
+    "job_id",
     "score",
     "heuristic_score",
     "final_score",
@@ -657,6 +660,7 @@ def to_csv_rows(scored: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         expl = j.get("explanation") or {}
         expl_summary = _norm(expl.get("explanation_summary") or "")
         rows.append({
+            "job_id": _norm(j.get("job_id")),
             "score": j.get("score", 0),
             "heuristic_score": j.get("heuristic_score", j.get("score", 0)),
             "final_score": j.get("final_score", j.get("score", 0)),
@@ -699,6 +703,7 @@ def build_families(scored: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
         variants.setdefault(fam, []).append(
             {
+                "job_id": _norm(j.get("job_id")),
                 "title": _norm(j.get("title")),
                 "location": _norm(j.get("location") or j.get("locationName")),
                 "apply_url": _norm(j.get("apply_url")),
@@ -730,16 +735,145 @@ def build_families(scored: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return out
 
 
+def _dedupe_jobs_for_scoring(jobs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Deterministically collapse duplicate postings by `job_id` before scoring.
+
+    Canonical selection (deterministic, in priority order):
+    1) Prefer richer description (longer jd_text/description_text/descriptionHtml/description).
+    2) Prefer records with non-unavailable enrichment status (if present).
+    3) Prefer records with more non-empty core fields (title/location/team/apply_url/detail_url).
+    4) Prefer having an apply_url over only a detail_url.
+    5) Final tiebreaker: stable JSON representation (sort_keys=True).
+
+    Provenance:
+    - Canonical record gets `duplicates`: a sorted list of the other source records' identifiers
+      (apply_url/detail_url/id/applyId) to audit merges.
+    """
+
+    def _desc_len(job: Dict[str, Any]) -> int:
+        text = (
+            job.get("jd_text")
+            or job.get("description_text")
+            or job.get("descriptionHtml")
+            or job.get("description")
+            or ""
+        )
+        return len(_norm(text))
+
+    def _core_field_count(job: Dict[str, Any]) -> int:
+        fields = [
+            job.get("title"),
+            job.get("location") or job.get("locationName"),
+            job.get("team") or job.get("department"),
+            job.get("apply_url"),
+            job.get("detail_url"),
+        ]
+        return sum(1 for v in fields if _norm(v))
+
+    def _enrich_rank(job: Dict[str, Any]) -> int:
+        s = _norm(job.get("enrich_status")).lower()
+        if not s:
+            return 0
+        return 0 if s == "unavailable" else 1
+
+    def _url_rank(job: Dict[str, Any]) -> int:
+        return 2 if _norm(job.get("apply_url")) else (1 if _norm(job.get("detail_url")) else 0)
+
+    def _stable_repr(job: Dict[str, Any]) -> str:
+        return json.dumps(job, ensure_ascii=False, sort_keys=True, default=str)
+
+    groups: Dict[str, List[Dict[str, Any]]] = {}
+    order: List[str] = []
+    for job in jobs:
+        jid = _norm(job.get("job_id")) or job_identity(job)
+        job["job_id"] = jid
+        if jid not in groups:
+            groups[jid] = []
+            order.append(jid)
+        groups[jid].append(job)
+
+    out: List[Dict[str, Any]] = []
+    for jid in order:
+        members = groups[jid]
+        if len(members) == 1:
+            out.append(members[0])
+            continue
+
+        def _canonical_key(job: Dict[str, Any]):
+            return (
+                _desc_len(job),
+                _enrich_rank(job),
+                _core_field_count(job),
+                _url_rank(job),
+                _stable_repr(job),
+            )
+
+        canonical = max(members, key=_canonical_key)
+        dup_sources: List[Dict[str, Any]] = []
+        for m in members:
+            if m is canonical:
+                continue
+            entry: Dict[str, Any] = {}
+            for k in ("apply_url", "detail_url", "id", "applyId"):
+                v = m.get(k)
+                if _norm(v):
+                    entry[k] = _norm(v)
+            if entry:
+                dup_sources.append(entry)
+
+        if dup_sources:
+            dup_sources.sort(key=lambda d: json.dumps(d, ensure_ascii=False, sort_keys=True, default=str))
+            canonical["duplicates"] = dup_sources
+        out.append(canonical)
+
+    return out
+
+
 # ------------------------------------------------------------
 # Step 8: shortlist output
 # ------------------------------------------------------------
 
 def write_shortlist_md(scored: List[Dict[str, Any]], out_path: Path, min_score: int) -> None:
+    def _shortlist_profile(path: Path) -> Optional[str]:
+        name = path.name
+        if name.startswith("openai_shortlist.") and name.endswith(".md"):
+            return name[len("openai_shortlist.") : -len(".md")]
+        return None
+
+    def _truncate_note(note: str, limit: int = 160) -> str:
+        trimmed = " ".join(note.split()).strip()
+        if len(trimmed) <= limit:
+            return trimmed
+        return trimmed[: limit - 1].rstrip() + "…"
+
+    def _load_user_state_map(profile: Optional[str]) -> Dict[str, Dict[str, Any]]:
+        if not profile:
+            return {}
+        path = USER_STATE_DIR / f"{profile}.json"
+        try:
+            data = load_user_state(path)
+        except Exception:
+            return {}
+        if isinstance(data, dict):
+            if all(isinstance(v, dict) for v in data.values()):
+                return {str(k): v for k, v in data.items()}
+            jobs = data.get("jobs")
+            if isinstance(jobs, list):
+                mapping: Dict[str, Dict[str, Any]] = {}
+                for item in jobs:
+                    if isinstance(item, dict) and item.get("id"):
+                        mapping[str(item["id"])] = item
+                return mapping
+        return {}
+
     shortlist = [
         _strip_ephemeral_fields(j)
         for j in scored
         if j.get("score", 0) >= min_score and j.get("enrich_status") != "unavailable"
     ]
+    profile = _shortlist_profile(out_path)
+    user_state = _load_user_state_map(profile)
 
     lines: List[str] = ["# OpenAI Shortlist", f"", f"Min score: **{min_score}**", ""]
     for idx, job in enumerate(shortlist):
@@ -747,10 +881,21 @@ def write_shortlist_md(scored: List[Dict[str, Any]], out_path: Path, min_score: 
         score = job.get("score", 0)
         role_band = _norm(job.get("role_band"))
         apply_url = _norm(job.get("apply_url"))
+        identity = job_identity(job)
+        status = ""
+        note = ""
+        if identity and identity in user_state:
+            record = user_state.get(identity) or {}
+            if isinstance(record, dict):
+                status = _norm(record.get("status") or "")
+                note = _norm(record.get("notes") or "")
 
-        lines.append(f"## {title} — {score} [{role_band}]")
+        status_tag = f" [{status}]" if status else ""
+        lines.append(f"## {title} — {score} [{role_band}]{status_tag}")
         if apply_url:
             lines.append(f"[Apply link]({apply_url})")
+        if note:
+            lines.append(f"Note: {_truncate_note(note)}")
 
         fit = job.get("fit_signals") or []
         risk = job.get("risk_signals") or []
@@ -1104,13 +1249,15 @@ def main() -> int:
                 after,
             )
 
+    jobs = _dedupe_jobs_for_scoring(jobs)
+
     pos_rules, neg_rules = _compile_rules()
     scored = [score_job(j, pos_rules, neg_rules) for j in jobs]
     candidate_skills = _candidate_skill_set()
     for j in scored:
         j["explanation"] = _build_explanation(j, candidate_skills)
     # Stable sort: primary by score desc, secondary by job identity (apply_url/detail_url/title/location)
-    scored.sort(key=lambda x: (-x.get("score", 0), job_identity(x)))
+    scored.sort(key=lambda x: (-x.get("score", 0), x.get("job_id") or job_identity(x)))
     _print_explain_top(scored, int(args.explain_top or 0))
     if args.family_counts:
         _print_family_counts(scored)

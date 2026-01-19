@@ -45,3 +45,15 @@ def test_job_identity_returns_hash_if_missing():
     assert isinstance(first, str)
     assert len(first) == 64
     int(first, 16)
+
+
+def test_job_identity_normalizes_url_query_params():
+    base = {"apply_url": "https://example.com/jobs/123?utm_source=a&utm_medium=b"}
+    variant = {"apply_url": "https://example.com/jobs/123?utm_source=other"}
+    assert job_identity(base) == job_identity(variant)
+
+
+def test_job_identity_normalizes_url_fragments():
+    base = {"detail_url": "https://example.com/jobs/123#section-a"}
+    variant = {"detail_url": "https://example.com/jobs/123#section-b"}
+    assert job_identity(base) == job_identity(variant)

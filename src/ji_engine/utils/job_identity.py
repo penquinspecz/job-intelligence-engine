@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from typing import Dict
+from urllib.parse import urlsplit, urlunsplit
 
 
 def job_identity(job: Dict[str, object]) -> str:
@@ -19,10 +20,20 @@ def job_identity(job: Dict[str, object]) -> str:
         normalized = " ".join(value.split()).strip()
         return normalized.lower() if lower else normalized
 
+    def _normalize_url(value: str) -> str:
+        normalized = _normalize(value)
+        if not normalized:
+            return ""
+        parts = urlsplit(normalized)
+        scheme = parts.scheme.lower()
+        netloc = parts.netloc.lower()
+        path = parts.path.rstrip("/")
+        return urlunsplit((scheme, netloc, path, "", ""))
+
     for field in ("apply_url", "detail_url"):
         value = job.get(field)
         if isinstance(value, str):
-            normalized = _normalize(value)
+            normalized = _normalize_url(value)
             if normalized:
                 return normalized
 

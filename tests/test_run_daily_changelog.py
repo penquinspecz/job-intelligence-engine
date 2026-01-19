@@ -39,3 +39,28 @@ def test_changelog_counts(tmp_path: Path) -> None:
     assert len(new_jobs) == 1
     assert len(changed_jobs) == 1
     assert len(removed_jobs) == 1
+
+
+def test_changelog_uses_job_id_identity(tmp_path: Path) -> None:
+    prev_jobs = [
+        _job("https://example.com/a", "A Role", 100, "alpha"),
+    ]
+    prev_jobs[0]["job_id"] = "job-1"
+    curr_jobs = [
+        _job("https://example.com/a", "A Role", 100, "alpha"),
+    ]
+    curr_jobs[0]["job_id"] = "job-2"
+
+    prev_path = tmp_path / "prev.json"
+    curr_path = tmp_path / "curr.json"
+    run_daily._write_json(prev_path, prev_jobs)
+    run_daily._write_json(curr_path, curr_jobs)
+
+    prev_loaded = run_daily._read_json(prev_path)
+    curr_loaded = run_daily._read_json(curr_path)
+
+    new_jobs, changed_jobs, removed_jobs, _changed_fields = run_daily._diff(prev_loaded, curr_loaded)
+
+    assert len(new_jobs) == 1
+    assert len(changed_jobs) == 0
+    assert len(removed_jobs) == 1

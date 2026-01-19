@@ -323,8 +323,30 @@ def _persist_run_metadata(
     profiles: List[str],
     flags: Dict[str, Any],
     diff_counts: Dict[str, Dict[str, int]],
+    scoring_inputs_by_profile: Dict[str, Dict[str, Optional[str]]],
+    scoring_input_selection_by_profile: Dict[str, Dict[str, Any]],
 ) -> Path:
+    run_report_schema_version = "1"
+    inputs: Dict[str, Dict[str, Optional[str]]] = {
+        "raw_jobs_json": _file_metadata(RAW_JOBS_JSON),
+        "labeled_jobs_json": _file_metadata(LABELED_JOBS_JSON),
+        "enriched_jobs_json": _file_metadata(ENRICHED_JOBS_JSON),
+    }
+    ai_path = ENRICHED_JOBS_JSON.with_name("openai_enriched_jobs_ai.json")
+    if ai_path.exists():
+        inputs["ai_enriched_jobs_json"] = _file_metadata(ai_path)
+
+    outputs_by_profile: Dict[str, Dict[str, Dict[str, Optional[str]]]] = {}
+    for profile in profiles:
+        outputs_by_profile[profile] = {
+            "ranked_json": _output_metadata(ranked_jobs_json(profile)),
+            "ranked_csv": _output_metadata(ranked_jobs_csv(profile)),
+            "ranked_families_json": _output_metadata(ranked_families_json(profile)),
+            "shortlist_md": _output_metadata(shortlist_md_path(profile)),
+        }
+
     payload = {
+        "run_report_schema_version": run_report_schema_version,
         "run_id": run_id,
         "status": telemetry.get("status"),
         "profiles": profiles,
@@ -335,13 +357,22 @@ def _persist_run_metadata(
         },
         "stage_durations": telemetry.get("stages", {}),
         "diff_counts": diff_counts,
+        "inputs": inputs,
+        "scoring_inputs_by_profile": scoring_inputs_by_profile,
+        "scoring_input_selection_by_profile": scoring_input_selection_by_profile,
+        "outputs_by_profile": outputs_by_profile,
+        "git_sha": _best_effort_git_sha(),
+        "image_tag": os.environ.get("IMAGE_TAG"),
     }
     payload["success"] = telemetry.get("success", False)
     if telemetry.get("failed_stage"):
         payload["failed_stage"] = telemetry["failed_stage"]
     path = _run_metadata_path(run_id)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
     return path
 
 
@@ -352,6 +383,45 @@ def _hash_file(path: Path) -> Optional[str]:
         return hashlib.sha256(path.read_bytes()).hexdigest()
     except Exception:
         return None
+
+
+def _file_metadata(path: Path) -> Dict[str, Optional[str]]:
+    return {
+        "path": str(path),
+        "mtime_iso": _file_mtime_iso(path),
+        "sha256": _hash_file(path),
+    }
+
+
+def _candidate_metadata(path: Path) -> Dict[str, Optional[str]]:
+    meta = _file_metadata(path)
+    meta["exists"] = path.exists()
+    return meta
+
+
+def _output_metadata(path: Path) -> Dict[str, Optional[str]]:
+    return {
+        "path": str(path),
+        "sha256": _hash_file(path),
+    }
+
+
+def _best_effort_git_sha() -> Optional[str]:
+    env_sha = os.environ.get("GIT_SHA")
+    if env_sha:
+        return env_sha
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(REPO_ROOT),
+            text=True,
+            capture_output=True,
+        )
+        if result.returncode == 0:
+            return (result.stdout or "").strip() or None
+    except Exception:
+        return None
+    return None
 
 
 def _normalize_exit_code(code: Any) -> int:
@@ -417,6 +487,82 @@ def _resolve_score_input_path(args: argparse.Namespace) -> Tuple[Optional[Path],
         f"Scoring input not found: {ENRICHED_JOBS_JSON}. "
         "Re-run without --no_enrich to produce enrichment output."
     )
+
+
+def _score_input_selection_detail(args: argparse.Namespace) -> Dict[str, Any]:
+    ai_path = ENRICHED_JOBS_JSON.with_name("openai_enriched_jobs_ai.json")
+    enriched_meta = _candidate_metadata(ENRICHED_JOBS_JSON)
+    labeled_meta = _candidate_metadata(LABELED_JOBS_JSON)
+    ai_meta = _candidate_metadata(ai_path)
+    candidates = [ai_meta, enriched_meta, labeled_meta]
+    flags = {"no_enrich": bool(args.no_enrich), "ai": bool(args.ai), "ai_only": bool(args.ai_only)}
+
+    decision: Dict[str, Any] = {"flags": flags, "comparisons": {}}
+    selected_path: Optional[Path] = None
+    reason = ""
+
+    def _ai_note() -> str:
+        if args.ai and not args.ai_only:
+            return " (ai does not change selection; prefer_ai affects scoring only)"
+        return ""
+
+    if args.ai_only:
+        decision["rule"] = "ai_only"
+        reason = "ai_only requires AI-enriched input"
+        selected_path = ai_path if ai_path.exists() else None
+        decision["reason"] = reason
+        return {
+            "selected": _file_metadata(selected_path) if selected_path else None,
+            "candidates": candidates,
+            "decision": decision,
+        }
+
+    if args.no_enrich:
+        decision["rule"] = "no_enrich_compare"
+        comparisons: Dict[str, Any] = {}
+        if ENRICHED_JOBS_JSON.exists() and LABELED_JOBS_JSON.exists():
+            enriched_mtime = _file_mtime(ENRICHED_JOBS_JSON)
+            labeled_mtime = _file_mtime(LABELED_JOBS_JSON)
+            comparisons["enriched_mtime"] = enriched_mtime
+            comparisons["labeled_mtime"] = labeled_mtime
+            if (enriched_mtime or 0) > (labeled_mtime or 0):
+                selected_path = ENRICHED_JOBS_JSON
+                reason = "enriched newer than labeled"
+                comparisons["winner"] = "enriched"
+            else:
+                selected_path = LABELED_JOBS_JSON
+                reason = "labeled newer or same mtime as enriched"
+                comparisons["winner"] = "labeled"
+        elif ENRICHED_JOBS_JSON.exists():
+            selected_path = ENRICHED_JOBS_JSON
+            reason = "enriched exists and labeled missing"
+            comparisons["winner"] = "enriched"
+        elif LABELED_JOBS_JSON.exists():
+            selected_path = LABELED_JOBS_JSON
+            reason = "labeled exists and enriched missing"
+            comparisons["winner"] = "labeled"
+        else:
+            reason = "no_enrich requires labeled or enriched input"
+        decision["comparisons"] = comparisons
+        decision["reason"] = reason + _ai_note()
+        return {
+            "selected": _file_metadata(selected_path) if selected_path else None,
+            "candidates": candidates,
+            "decision": decision,
+        }
+
+    decision["rule"] = "default_enriched_required"
+    if ENRICHED_JOBS_JSON.exists():
+        selected_path = ENRICHED_JOBS_JSON
+        reason = "default requires enriched input"
+    else:
+        reason = "enriched input missing"
+    decision["reason"] = reason + _ai_note()
+    return {
+        "selected": _file_metadata(selected_path) if selected_path else None,
+        "candidates": candidates,
+        "decision": decision,
+    }
 
 
 def _safe_len(path: Path) -> int:
@@ -495,7 +641,7 @@ def _should_short_circuit(prev_hashes: Dict[str, Any], curr_hashes: Dict[str, An
 
 
 def _job_key(job: Dict[str, Any]) -> str:
-    return job_identity(job)
+    return str(job.get("job_id") or job_identity(job))
 
 
 def _job_description_text(job: Dict[str, Any]) -> str:
@@ -531,7 +677,6 @@ def _hash_job(job: Dict[str, Any]) -> str:
         "title": job.get("title"),
         "location": job.get("location") or job.get("locationName"),
         "team": job.get("team"),
-        "score": job.get("score"),
         "description_text_hash": desc_hash,
     }
     raw = json.dumps(payload, sort_keys=True).encode("utf-8")
@@ -922,6 +1067,8 @@ def main() -> int:
 
     profiles_list: List[str] = []
     diff_counts_by_profile: Dict[str, Dict[str, int]] = {}
+    scoring_inputs_by_profile: Dict[str, Dict[str, Optional[str]]] = {}
+    scoring_input_selection_by_profile: Dict[str, Dict[str, Any]] = {}
     flag_payload = {
         "profile": args.profile,
         "profiles": args.profiles,
@@ -960,7 +1107,13 @@ def main() -> int:
             telemetry.update(extra)
         _write_last_run(telemetry)
         run_metadata_path = _persist_run_metadata(
-            run_id, telemetry, profiles_list, flag_payload, diff_counts_by_profile
+            run_id,
+            telemetry,
+            profiles_list,
+            flag_payload,
+            diff_counts_by_profile,
+            scoring_inputs_by_profile,
+            scoring_input_selection_by_profile,
         )
         for profile in profiles_list:
             diffs = diff_counts_by_profile.get(profile, {"new": 0, "changed": 0, "removed": 0})
@@ -1127,6 +1280,14 @@ def main() -> int:
                 ranked_families = ranked_families_json(profile)
                 shortlist_md = shortlist_md_path(profile)
 
+                scoring_input_selection_by_profile[profile] = _score_input_selection_detail(args)
+                score_in, score_err = _resolve_score_input_path(args)
+                scoring_inputs_by_profile[profile] = _file_metadata(score_in) if score_in else {
+                    "path": None,
+                    "mtime_iso": None,
+                    "sha256": None,
+                }
+
                 need_score = (not ranked_json.exists())
                 if ai_mtime is not None:
                     need_score = need_score or ((_file_mtime(ranked_json) or 0) < ai_mtime)
@@ -1135,7 +1296,6 @@ def main() -> int:
 
                 if need_score:
                     current_stage = f"score:{profile}"
-                    score_in, score_err = _resolve_score_input_path(args)
                     if score_err or score_in is None:
                         logger.error(score_err or "Unknown scoring input error")
                         _finalize("error", {"error": score_err or "score input missing", "failed_stage": current_stage})
@@ -1202,7 +1362,13 @@ def main() -> int:
             ranked_csv = ranked_jobs_csv(profile)
             ranked_families = ranked_families_json(profile)
             shortlist_md = shortlist_md_path(profile)
+            scoring_input_selection_by_profile[profile] = _score_input_selection_detail(args)
             in_path, score_err = _resolve_score_input_path(args)
+            scoring_inputs_by_profile[profile] = _file_metadata(in_path) if in_path else {
+                "path": None,
+                "mtime_iso": None,
+                "sha256": None,
+            }
             
             # Validate scoring prerequisites
             if score_err or in_path is None:
@@ -1358,7 +1524,9 @@ def main() -> int:
             stderr=getattr(e, "stderr", "") or "",
         )
         _finalize("error", {"error": str(e), "failed_stage": current_stage})
-        return e.returncode
+        if e.returncode == 2:
+            return 2
+        return max(3, e.returncode or 0)
     except SystemExit as e:
         exit_code = _normalize_exit_code(e.code)
         if exit_code == 0:
@@ -1384,7 +1552,7 @@ def main() -> int:
             no_post=args.no_post,
         )
         _finalize("error", {"error": repr(e), "failed_stage": current_stage})
-        return 1
+        return 3
     finally:
         logger.info(f"===== jobintel end {_utcnow_iso()} =====")
 

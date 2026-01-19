@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jobintel-config
+  namespace: jobintel
+data:
+  JOBINTEL_DATA_DIR: /app/data
+  JOBINTEL_STATE_DIR: /app/state
+  CAREERS_MODE: AUTO
+  PYTHONDONTWRITEBYTECODE: "1"
+  RUN_DAILY_ARGS: "--profiles cs --us_only --no_post --no_enrich"

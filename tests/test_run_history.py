@@ -74,6 +74,8 @@ def test_short_circuit_history_summary(tmp_path: Path, monkeypatch) -> None:
         [profile],
         {"profile": "cs", "profiles": "", "us_only": False, "no_enrich": False, "ai": False, "ai_only": False},
         {profile: {"new": 0, "changed": 0, "removed": 0}},
+        {profile: {"path": None, "mtime_iso": None, "sha256": None}},
+        {profile: {"selected": None, "candidates": [], "decision": {"rule": "default_enriched_required", "flags": {}, "comparisons": {}, "reason": ""}}},
     )
 
     summary_payload = {
@@ -109,6 +111,8 @@ def test_short_circuit_history_dir(tmp_path: Path, monkeypatch):
         [profile],
         {"profile": profile, "profiles": "", "us_only": False, "no_enrich": False, "ai": False, "ai_only": False},
         {profile: {"new": 0, "changed": 0, "removed": 0}},
+        {profile: {"path": None, "mtime_iso": None, "sha256": None}},
+        {profile: {"selected": None, "candidates": [], "decision": {"rule": "default_enriched_required", "flags": {}, "comparisons": {}, "reason": ""}}},
     )
 
     summary_payload = {

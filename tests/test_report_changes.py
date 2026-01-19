@@ -34,9 +34,11 @@ def _create_history_run(tmp_dir: Path, run_id: str, profile: str, jobs):
 
 def test_report_changes(tmp_path, capsys, monkeypatch):
     history_dir = tmp_path / "state" / "history"
+    user_state_dir = tmp_path / "state" / "user_state"
     monkeypatch.setattr(run_daily, "HISTORY_DIR", history_dir)
     monkeypatch.setattr(report_changes, "HISTORY_DIR", history_dir)
     monkeypatch.setattr(run_daily, "HISTORY_DIR", history_dir)
+    monkeypatch.setattr(report_changes, "USER_STATE_DIR", user_state_dir)
 
     run_id1 = "2026-01-01T00:00:00Z"
     run_id2 = "2026-01-02T00:00:00Z"
@@ -50,12 +52,17 @@ def test_report_changes(tmp_path, capsys, monkeypatch):
         {"title": "Role C", "apply_url": "https://example.com/c", "score": 80},
     ]
     jobs_curr = [
-        {"title": "Role A", "apply_url": "https://example.com/a", "score": 110},
+        {"title": "Role A", "apply_url": "https://example.com/a", "score": 110, "job_id": "job-a"},
         {"title": "Role D", "apply_url": "https://example.com/d", "score": 70},
     ]
 
     _create_history_run(tmp_path, run_id1, profile, jobs_prev)
     _create_history_run(tmp_path, run_id2, profile, jobs_curr)
+    user_state_dir.mkdir(parents=True, exist_ok=True)
+    (user_state_dir / "cs.json").write_text(
+        json.dumps({"job-a": {"status": "APPLIED"}}),
+        encoding="utf-8",
+    )
 
     monkeypatch.setattr(
         sys,
@@ -70,6 +77,7 @@ def test_report_changes(tmp_path, capsys, monkeypatch):
     assert "- Role D — https://example.com/d" in output
     assert "Changed" in output
     assert "removed" in output.lower()
+    assert "status: APPLIED" in output
 
 
 def test_previous_run_selection_prefers_history(tmp_path, monkeypatch):

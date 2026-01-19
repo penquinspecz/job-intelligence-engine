@@ -7,8 +7,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List
 
-from ji_engine.config import HISTORY_DIR
+from ji_engine.config import HISTORY_DIR, USER_STATE_DIR
 from ji_engine.utils.job_identity import job_identity
+from ji_engine.utils.user_state import load_user_state
 import scripts.run_daily as run_daily
 
 
@@ -72,15 +73,50 @@ def _load_ranked(run_id: str, profile: str) -> List[Dict[str, object]]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _format_job_line(job: Dict[str, object], changed_fields: Dict[str, List[str]] | None) -> str:
+def _load_user_state_map(profile: str) -> Dict[str, Dict[str, object]]:
+    path = USER_STATE_DIR / f"{profile}.json"
+    try:
+        data = load_user_state(path)
+    except Exception:
+        return {}
+    if isinstance(data, dict):
+        if all(isinstance(v, dict) for v in data.values()):
+            return {str(k): v for k, v in data.items()}
+        jobs = data.get("jobs")
+        if isinstance(jobs, list):
+            mapping: Dict[str, Dict[str, object]] = {}
+            for item in jobs:
+                if isinstance(item, dict) and item.get("id"):
+                    mapping[str(item["id"])] = item
+            return mapping
+    return {}
+
+
+def _format_job_line(
+    job: Dict[str, object],
+    changed_fields: Dict[str, List[str]] | None,
+    user_state: Dict[str, Dict[str, object]],
+) -> str:
     title = job.get("title") or "Untitled"
     url = job.get("apply_url") or job.get("detail_url") or job_identity(job) or "—"
+    ident = str(job.get("job_id") or job_identity(job))
+    status_note = ""
+    if ident in user_state:
+        record = user_state.get(ident) or {}
+        status = record.get("status") if isinstance(record, dict) else None
+        status_norm = str(status or "").strip().upper()
+        if status_norm in {"APPLIED", "IGNORE"}:
+            status_note = f" (status: {status_norm}, priority=low)"
+        elif status_norm:
+            status_note = f" (status: {status_norm})"
     line = f"- {title} — {url}"
     if changed_fields:
         key = run_daily._job_key(job)
         diff = changed_fields.get(key)
         if diff:
             line += f" (changed: {', '.join(diff)})"
+    if status_note:
+        line += status_note
     return line
 
 
@@ -116,13 +152,15 @@ def _report(
     counts = {"new": len(new_jobs), "changed": len(changed_jobs), "removed": len(removed_jobs)}
     print("Counts:", counts)
 
+    user_state = _load_user_state_map(profile)
+
     def _print_section(label: str, jobs: List[Dict[str, object]], changed_fields_map=None) -> None:
         print(f"### {label} ({min(len(jobs), limit)} of {len(jobs)})")
         if not jobs:
             print("  (none)")
             return
         for job in _sorted_jobs(jobs)[:limit]:
-            print("  " + _format_job_line(job, changed_fields_map))
+            print("  " + _format_job_line(job, changed_fields_map, user_state))
 
     _print_section("New", new_jobs)
     _print_section("Changed", changed_jobs, changed_fields)

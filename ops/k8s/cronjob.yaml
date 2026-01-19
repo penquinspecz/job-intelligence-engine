@@ -1,0 +1,95 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: jobintel-daily
+  namespace: jobintel
+spec:
+  schedule: "0 9 * * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 900
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            seccompProfile:
+              type: RuntimeDefault
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: jobintel-data
+            - name: state
+              persistentVolumeClaim:
+                claimName: jobintel-state
+            - name: tmp
+              emptyDir: {}
+          initContainers:
+            - name: seed-snapshots
+              image: jobintel:local
+              imagePullPolicy: IfNotPresent
+              command:
+                - sh
+                - -c
+                - |
+                  set -eu
+                  mkdir -p /mnt/data/openai_snapshots
+                  if [ ! -f /mnt/data/openai_snapshots/index.html ]; then
+                    cp -R /app/data/openai_snapshots/. /mnt/data/openai_snapshots/
+                  fi
+                  if [ ! -f /mnt/data/candidate_profile.json ]; then
+                    cp /app/data/candidate_profile.json /mnt/data/candidate_profile.json
+                  fi
+              volumeMounts:
+                - name: data
+                  mountPath: /mnt/data
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+          containers:
+            - name: jobintel
+              image: jobintel:local
+              imagePullPolicy: IfNotPresent
+              command: ["sh", "-c"]
+              args: ["python scripts/run_daily.py ${RUN_DAILY_ARGS}"]
+              envFrom:
+                - configMapRef:
+                    name: jobintel-config
+              env:
+                - name: OPENAI_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: jobintel-secrets
+                      key: OPENAI_API_KEY
+                      optional: true
+                - name: DISCORD_WEBHOOK_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: jobintel-secrets
+                      key: DISCORD_WEBHOOK_URL
+                      optional: true
+              volumeMounts:
+                - name: data
+                  mountPath: /app/data
+                - name: state
+                  mountPath: /app/state
+                - name: tmp
+                  mountPath: /tmp
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  cpu: 500m
+                  memory: 1Gi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                capabilities:
+                  drop: ["ALL"]

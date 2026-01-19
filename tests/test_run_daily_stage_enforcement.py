@@ -154,6 +154,21 @@ def test_ai_run_sets_prefer_ai(tmp_path: Path, monkeypatch: Any) -> None:
     (data_dir / "openai_enriched_jobs.json").write_text("[]")
     (data_dir / "openai_enriched_jobs_ai.json").write_text("[]")
     (data_dir / "candidate_profile.json").write_text('{"skills": [], "roles": []}')
+    labeled_path = data_dir / "openai_labeled_jobs.json"
+    enriched_path = data_dir / "openai_enriched_jobs.json"
+    ts_now = time.time()
+    os.utime(labeled_path, (ts_now - 120, ts_now - 120))
+    os.utime(enriched_path, (ts_now, ts_now))
+    labeled_path = data_dir / "openai_labeled_jobs.json"
+    enriched_path = data_dir / "openai_enriched_jobs.json"
+    ts_now = time.time()
+    os.utime(labeled_path, (ts_now - 120, ts_now - 120))
+    os.utime(enriched_path, (ts_now, ts_now))
+    labeled_path = data_dir / "openai_labeled_jobs.json"
+    enriched_path = data_dir / "openai_enriched_jobs.json"
+    ts_now = time.time()
+    os.utime(labeled_path, (ts_now - 30, ts_now - 30))
+    os.utime(enriched_path, (ts_now, ts_now))
 
     labeled_path = data_dir / "openai_labeled_jobs.json"
     enriched_path = data_dir / "openai_enriched_jobs.json"
@@ -398,6 +413,11 @@ def test_short_circuit_scoring_uses_labeled_input(tmp_path: Path, monkeypatch: A
     (data_dir / "openai_enriched_jobs.json").write_text("[]")
     (data_dir / "openai_enriched_jobs_ai.json").write_text("[]")
     (data_dir / "candidate_profile.json").write_text('{"skills": [], "roles": []}')
+    labeled_path = data_dir / "openai_labeled_jobs.json"
+    enriched_path = data_dir / "openai_enriched_jobs.json"
+    ts_now = time.time()
+    os.utime(labeled_path, (ts_now - 120, ts_now - 120))
+    os.utime(enriched_path, (ts_now, ts_now))
 
     monkeypatch.setenv("JOBINTEL_DATA_DIR", str(data_dir))
     monkeypatch.setenv("JOBINTEL_STATE_DIR", str(state_dir))
@@ -733,6 +753,78 @@ def test_stage_systemexit_is_reflected_in_metadata(tmp_path: Path, monkeypatch: 
     assert payload["status"] == "error"
     assert payload["success"] is False
     assert payload["failed_stage"] == "classify"
+
+
+def test_subprocess_error_exit_codes_are_normalized(tmp_path: Path, monkeypatch: Any) -> None:
+    data_dir = tmp_path / "data"
+    state_dir = tmp_path / "state"
+    data_dir.mkdir()
+    state_dir.mkdir()
+    snapshot_dir = data_dir / "openai_snapshots"
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    (snapshot_dir / "index.html").write_text("<html>test</html>")
+    (data_dir / "candidate_profile.json").write_text('{"skills": [], "roles": []}')
+
+    monkeypatch.setenv("JOBINTEL_DATA_DIR", str(data_dir))
+    monkeypatch.setenv("JOBINTEL_STATE_DIR", str(state_dir))
+    monkeypatch.setenv("DISCORD_WEBHOOK_URL", "")
+
+    import ji_engine.config as config
+    import scripts.run_daily as run_daily
+
+    config = importlib.reload(config)
+    run_daily = importlib.reload(run_daily)
+    run_daily.USE_SUBPROCESS = False
+
+    def fake_run(cmd, *, stage):
+        raise subprocess.CalledProcessError(2, cmd)
+
+    monkeypatch.setattr(run_daily, "_run", fake_run)
+    monkeypatch.setattr(sys, "argv", ["run_daily.py", "--no_subprocess", "--profiles", "cs", "--no_post"])
+
+    rc = run_daily.main()
+    assert rc == 2
+    lock_path = state_dir / "run_daily.lock"
+    if lock_path.exists():
+        lock_path.unlink()
+
+    def fake_run_runtime(cmd, *, stage):
+        raise subprocess.CalledProcessError(1, cmd)
+
+    monkeypatch.setattr(run_daily, "_run", fake_run_runtime)
+    rc = run_daily.main()
+    assert rc == 3
+
+
+def test_unexpected_exception_returns_runtime_failure(tmp_path: Path, monkeypatch: Any) -> None:
+    data_dir = tmp_path / "data"
+    state_dir = tmp_path / "state"
+    data_dir.mkdir()
+    state_dir.mkdir()
+    snapshot_dir = data_dir / "openai_snapshots"
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    (snapshot_dir / "index.html").write_text("<html>test</html>")
+    (data_dir / "candidate_profile.json").write_text('{"skills": [], "roles": []}')
+
+    monkeypatch.setenv("JOBINTEL_DATA_DIR", str(data_dir))
+    monkeypatch.setenv("JOBINTEL_STATE_DIR", str(state_dir))
+    monkeypatch.setenv("DISCORD_WEBHOOK_URL", "")
+
+    import ji_engine.config as config
+    import scripts.run_daily as run_daily
+
+    config = importlib.reload(config)
+    run_daily = importlib.reload(run_daily)
+    run_daily.USE_SUBPROCESS = False
+
+    def fake_run(cmd, *, stage):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(run_daily, "_run", fake_run)
+    monkeypatch.setattr(sys, "argv", ["run_daily.py", "--no_subprocess", "--profiles", "cs", "--no_post"])
+
+    rc = run_daily.main()
+    assert rc == 3
 
 
 def test_systemexit_zero_stage_allows_pipeline_to_continue(tmp_path: Path, monkeypatch: Any) -> None:

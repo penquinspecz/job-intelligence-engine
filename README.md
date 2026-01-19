@@ -122,7 +122,8 @@ docker run --rm -v "$PWD/data:/app/data" jobintel:local --profiles cs --us_only 
 - Runs as non-root user `app` by default; artifacts on mounted volumes remain host-writable (no sudo/chmod needed after runs).
 - Volumes:
   - `./data` → `/app/data` (snapshots, cache, outputs)
-  - `./state` → `/app/state` (history, metadata)
+  - `./state` → `/app/state` (history, metadata, user_state)
+- Run report schema version is recorded in run metadata as `run_report_schema_version`.
 - Env vars:
   - `DISCORD_WEBHOOK_URL` (optional; if unset, alerts are skipped)
   - `CAREERS_MODE` (optional; defaults to AUTO)

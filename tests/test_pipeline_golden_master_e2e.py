@@ -34,11 +34,13 @@ def _sha256(path: Path) -> str:
 def test_pipeline_golden_master_e2e(tmp_path, monkeypatch, request):
     repo_root = Path(__file__).resolve().parents[1]
     data_dir = tmp_path / "data"
+    state_dir = tmp_path / "state"
     if os.getenv("JOBINTEL_TEST_DEBUG_PATHS") == "1":
         print(f"[TEST_TMP_DATA_DIR] {data_dir}")
 
     # Isolate all pipeline artifacts under tmp_path
     monkeypatch.setenv("JOBINTEL_DATA_DIR", str(data_dir))
+    monkeypatch.setenv("JOBINTEL_STATE_DIR", str(state_dir))
     monkeypatch.setenv("CAREERS_MODE", "SNAPSHOT")
     monkeypatch.setenv("EMBED_PROVIDER", "stub")
     monkeypatch.setenv("ENRICH_MAX_WORKERS", "1")
@@ -181,4 +183,3 @@ def test_pipeline_golden_master_e2e(tmp_path, monkeypatch, request):
     # Document regeneration approach for maintainers
     # To refresh the manifest fixture: run
     #   pytest -q tests/test_pipeline_golden_master_e2e.py --update-golden
-
