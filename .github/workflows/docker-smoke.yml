@@ -25,6 +25,8 @@ jobs:
           docker run --rm \
             -v "$PWD/ci_data:/app/data" \
             -v "$PWD/ci_state:/app/state" \
+            -v "$PWD/data/openai_snapshots:/app/data/openai_snapshots:ro" \
+            -v "$PWD/data/candidate_profile.json:/app/data/candidate_profile.json:ro" \
             jobintel:local --providers openai --profiles cs --no_post --no_enrich
 
       - name: Collect smoke artifacts
