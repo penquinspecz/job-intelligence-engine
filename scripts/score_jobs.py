@@ -82,6 +82,10 @@ def _serialize_json(obj: Any) -> str:
     return json.dumps(obj, **JSON_DUMP_SETTINGS) + "\n"
 
 
+def _score_meta_path(out_json: Path) -> Path:
+    return out_json.with_suffix(".score_meta.json")
+
+
 EPHEMERAL_FIELDS = {
     "fetched_at",
     "enriched_at",
@@ -1236,19 +1240,32 @@ def main() -> int:
     if not isinstance(jobs, list):
         raise SystemExit("Input JSON must be a list of jobs")
 
+    us_only_fallback: Optional[Dict[str, Any]] = None
     if args.us_only:
         before = len(jobs)
-        jobs = [j for j in jobs if is_us_or_remote_us(j)]
-        after = len(jobs)
+        unfiltered_jobs = jobs
+        filtered_jobs = [j for j in jobs if is_us_or_remote_us(j)]
+        after = len(filtered_jobs)
         logger.info(f"US-only filter: {before} -> {after} jobs")
         if before > 0 and after == 0:
             logger.warning(
                 "US-only filter removed all jobs (input=%d, after=%d). "
-                "This often means location fields are missing or not normalized. "
-                "If you ran with --no_enrich, did you pass labeled input instead of enriched?",
+                "Falling back to unfiltered set because locations likely aren't normalized "
+                "(common with --no_enrich). If you ran with --no_enrich, did you pass labeled input "
+                "instead of enriched?",
                 before,
                 after,
             )
+            jobs = unfiltered_jobs
+            us_only_fallback = {
+                "input_count": before,
+                "post_filter_count": after,
+                "fallback_applied": True,
+                "reason": "us_only_filter_removed_all_jobs",
+                "note": "Fallback to unfiltered set; locations likely aren't normalized (common with --no_enrich).",
+            }
+        else:
+            jobs = filtered_jobs
 
     jobs = _dedupe_jobs_for_scoring(jobs)
 
@@ -1267,6 +1284,9 @@ def main() -> int:
     sanitized_scored = [_strip_ephemeral_fields(j) for j in scored]
 
     atomic_write_text(out_json, _serialize_json(sanitized_scored))
+    if us_only_fallback:
+        meta_payload = {"us_only_fallback": us_only_fallback}
+        atomic_write_text(_score_meta_path(out_json), _serialize_json(meta_payload))
 
     rows = to_csv_rows(sanitized_scored)
     def _write_csv(tmp_path: Path) -> None:

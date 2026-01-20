@@ -268,6 +268,22 @@ def _write_json(path: Path, obj: Any) -> None:
     path.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _score_meta_path(ranked_json: Path) -> Path:
+    return ranked_json.with_suffix(".score_meta.json")
+
+
+def _apply_score_fallback_metadata(selection: Dict[str, Any], ranked_json: Path) -> None:
+    meta_path = _score_meta_path(ranked_json)
+    if not meta_path.exists():
+        return
+    try:
+        meta = _read_json(meta_path)
+    except Exception:
+        return
+    if isinstance(meta, dict) and meta.get("us_only_fallback"):
+        selection["us_only_fallback"] = meta["us_only_fallback"]
+
+
 def _run_metadata_path(run_id: str) -> Path:
     safe_id = _sanitize_run_id(run_id)
     return RUN_METADATA_DIR / f"{safe_id}.json"
@@ -1663,6 +1679,7 @@ def main() -> int:
                     cmd.append("--prefer_ai")
 
                 record_stage(current_stage, lambda cmd=cmd: _run(cmd, stage=current_stage))
+                _apply_score_fallback_metadata(selection, ranked_json)
 
                 # Warn if freshly produced artifacts are not writable for future runs.
                 warn_context = _stage_label("after_score", provider, profile)
