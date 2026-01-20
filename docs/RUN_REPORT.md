@@ -15,15 +15,20 @@ Top-level fields:
 - `status`: `success`, `short_circuit`, or `error`.
 - `success`: boolean success flag.
 - `profiles`: list of profiles processed.
+- `providers`: list of providers processed.
 - `flags`: CLI flags that affected the run.
 - `timestamps`: `started_at`, `ended_at`.
 - `stage_durations`: per-stage timing data.
 - `diff_counts`: per-profile counts of new/changed/removed.
 - `content_fingerprint`: per-job stable content hash stored in ranked outputs and used for change detection.
 - `inputs`: metadata for pipeline inputs (path, mtime, sha256).
+- `inputs_by_provider`: per-provider input metadata (path, mtime, sha256).
 - `scoring_inputs_by_profile`: selected scoring input per profile (path, mtime, sha256).
 - `scoring_input_selection_by_profile`: selection details per profile, including candidates and decision rationale.
+- `scoring_inputs_by_provider`: per-provider scoring input metadata by profile.
+- `scoring_input_selection_by_provider`: per-provider selection details by profile.
 - `outputs_by_profile`: output hashes/paths per profile.
+- `outputs_by_provider`: per-provider output hashes/paths by profile.
 - `git_sha`: git revision (best-effort).
 - `image_tag`: image tag (if provided).
 - `failed_stage`: set when `status` is `error`.

@@ -20,7 +20,7 @@ jobs:
           docker run --rm \
             -v "$GITHUB_WORKSPACE/data:/app/data" \
             -v "$GITHUB_WORKSPACE/state:/app/state" \
-            jobintel:ci --profiles cs --us_only --no_post --no_enrich
+            jobintel:ci --profiles cs --us_only --no_post --no_enrich --providers openai
 
       - name: Verify history artifacts
         run: |

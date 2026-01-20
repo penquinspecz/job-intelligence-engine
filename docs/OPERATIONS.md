@@ -39,6 +39,7 @@ Scoring input resolution is handled by `scripts/run_daily.py`:
 
 Data outputs (`./data`):
 - `openai_raw_jobs.json`
+- `<provider_id>_raw_jobs.json` (per-provider raw output)
 - `openai_labeled_jobs.json`
 - `openai_enriched_jobs.json`
 - `openai_enriched_jobs_ai.json` (if AI augment ran)
@@ -74,6 +75,7 @@ Typical issues:
 Debug tips:
 - Use `JOBINTEL_TEST_DEBUG_PATHS=1` to print temp paths in tests.
 - Inspect `state/runs/*.json` for the inputs/outputs and hash provenance for a run.
+- Providers are configured in `config/providers.json`; run `scripts/run_scrape.py --providers openai,anthropic` to scrape multiple providers.
 
 ## Docker daemon troubleshooting
 

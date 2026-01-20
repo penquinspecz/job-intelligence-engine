@@ -5,6 +5,7 @@ import argparse
 import json
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -31,7 +32,9 @@ PROFILE_PATH = Path("data/candidate_profile.json")
 def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     ap = argparse.ArgumentParser()
     ap.add_argument("--ai_live", action="store_true", help="Use live AI provider (requires OPENAI_API_KEY)")
-    return ap.parse_args(argv if argv is not None else [])
+    ap.add_argument("--in_path", help="Input enriched jobs JSON (default: config ENRICHED_JOBS_JSON)")
+    ap.add_argument("--out_path", help="Output AI-enriched jobs JSON (default: data/openai_enriched_jobs_ai.json)")
+    return ap.parse_args(argv)
 
 
 def _select_provider(args: argparse.Namespace) -> AIProvider:
@@ -79,11 +82,14 @@ def _ensure_rules(payload: Dict[str, Any], job: Dict[str, Any], provider: AIProv
 
 
 def main(argv: Optional[List[str]] = None, provider: Optional[AIProvider] = None) -> int:
-    args = _parse_args(argv)
+    args = _parse_args(argv or [])
     provider = provider or _select_provider(args)
 
-    if not ENRICHED_JOBS_JSON.exists():
-        raise SystemExit(f"Input not found: {ENRICHED_JOBS_JSON}")
+    in_path = Path(args.in_path) if args.in_path else ENRICHED_JOBS_JSON
+    out_path = Path(args.out_path) if args.out_path else OUTPUT_PATH
+
+    if not in_path.exists():
+        raise SystemExit(f"Input not found: {in_path}")
 
     candidate_profile = None
     if PROFILE_PATH.exists():
@@ -93,7 +99,7 @@ def main(argv: Optional[List[str]] = None, provider: Optional[AIProvider] = None
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning(f"Could not load candidate_profile.json; proceeding without match scoring: {exc}")
 
-    jobs: List[Dict[str, Any]] = json.loads(ENRICHED_JOBS_JSON.read_text(encoding="utf-8"))
+    jobs: List[Dict[str, Any]] = json.loads(in_path.read_text(encoding="utf-8"))
     augmented: List[Dict[str, Any]] = []
     cache_hits = 0
 
@@ -175,12 +181,11 @@ def main(argv: Optional[List[str]] = None, provider: Optional[AIProvider] = None
         job_out["ai_content_hash"] = chash
         augmented.append(job_out)
 
-    atomic_write_text(OUTPUT_PATH, json.dumps(augmented, ensure_ascii=False, indent=2))
+    atomic_write_text(out_path, json.dumps(augmented, ensure_ascii=False, indent=2))
     logger.info(f"AI augment complete. cache_hits={cache_hits}, total={len(jobs)}")
-    logger.info(f"Output: {OUTPUT_PATH}")
+    logger.info(f"Output: {out_path}")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
-
+    raise SystemExit(main(sys.argv[1:]))

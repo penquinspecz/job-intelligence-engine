@@ -8,6 +8,7 @@ Usage (from repo root, with venv active):
 
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import sys
@@ -41,7 +42,10 @@ def _load_raw_jobs(path: Path) -> List[RawJobPosting]:
 
     for d in data:
         # Normalize types for RawJobPosting(**d)
-        d["source"] = JobSource(d["source"])
+        try:
+            d["source"] = JobSource(d["source"])
+        except Exception:
+            d["source"] = JobSource.OPENAI
         d["scraped_at"] = datetime.fromisoformat(d["scraped_at"])
         jobs.append(RawJobPosting(**d))
 
@@ -88,7 +92,7 @@ def _reclassify_maybe(
         save_cache(cache_path, cache)
 
 
-def main() -> int:
+def main(argv: Optional[List[str]] = None) -> int:
     if not logging.getLogger().hasHandlers():
         logging.basicConfig(
             level=logging.INFO,
@@ -96,13 +100,19 @@ def main() -> int:
             datefmt="%Y-%m-%d %H:%M:%S",
         )
 
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--in_path", help="Input raw jobs JSON (default: config RAW_JOBS_JSON)")
+    ap.add_argument("--out_path", help="Output labeled jobs JSON (default: config LABELED_JOBS_JSON)")
+    args = ap.parse_args(argv)
+
     profile = load_candidate_profile()
     provider_kind = os.getenv("EMBED_PROVIDER", "stub").strip().lower()
     api_key = os.getenv("OPENAI_API_KEY", "").strip() or None
     provider = _select_provider(provider_kind, api_key)
 
     try:
-        jobs = _load_raw_jobs(RAW_JOBS_JSON)
+        in_path = Path(args.in_path) if args.in_path else RAW_JOBS_JSON
+        jobs = _load_raw_jobs(in_path)
     except FileNotFoundError as e:
         logger.error(f"Error: {e}")
         return 1
@@ -151,15 +161,16 @@ def main() -> int:
             }
         )
 
-    LABELED_JOBS_JSON.parent.mkdir(parents=True, exist_ok=True)
-    LABELED_JOBS_JSON.write_text(
+    out_path = Path(args.out_path) if args.out_path else LABELED_JOBS_JSON
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(
         json.dumps(output_data, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
 
-    logger.info(f"\nWrote labeled jobs to {LABELED_JOBS_JSON}")
+    logger.info(f"\nWrote labeled jobs to {out_path}")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

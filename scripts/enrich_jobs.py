@@ -12,9 +12,11 @@ Usage:
 
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import os
+import sys
 import re
 import sys
 from datetime import datetime
@@ -244,15 +246,13 @@ def _enrich_single(
     return updated_job, unavailable_reason, status_key
 
 
-def main() -> int:
+def main(argv: Optional[List[str]] = None) -> int:
     if not logging.getLogger().hasHandlers():
         logging.basicConfig(
             level=logging.INFO,
             format="%(asctime)s %(levelname)s %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
         )
-
-    import argparse
 
     ap = argparse.ArgumentParser()
     default_max_workers = int(os.getenv("ENRICH_MAX_WORKERS", "4"))
@@ -264,13 +264,16 @@ def main() -> int:
         default=int(default_limit_env) if default_limit_env else None,
         help="Limit number of jobs to enrich (for tests/dev).",
     )
-    args = ap.parse_args()
+    ap.add_argument("--in_path", help="Input labeled jobs JSON (default: config LABELED_JOBS_JSON)")
+    ap.add_argument("--out_path", help="Output enriched jobs JSON (default: config ENRICHED_JOBS_JSON)")
+    args = ap.parse_args(argv)
 
-    if not LABELED_JOBS_JSON.exists():
-        logger.error(f"Error: Input file not found: {LABELED_JOBS_JSON}")
+    in_path = Path(args.in_path) if args.in_path else LABELED_JOBS_JSON
+    if not in_path.exists():
+        logger.error(f"Error: Input file not found: {in_path}")
         return 1
 
-    jobs = json.loads(LABELED_JOBS_JSON.read_text(encoding="utf-8"))
+    jobs = json.loads(in_path.read_text(encoding="utf-8"))
     enriched: List[Dict[str, Any]] = []
     stats = {"enriched": 0, "unavailable": 0, "failed": 0}
     unavailable_reasons: Counter[str] = Counter()
@@ -307,8 +310,9 @@ def main() -> int:
 
         enriched.append(updated_job)
 
-    ENRICHED_JOBS_JSON.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_text(ENRICHED_JOBS_JSON, json.dumps(enriched, ensure_ascii=False, indent=2))
+    out_path = Path(args.out_path) if args.out_path else ENRICHED_JOBS_JSON
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(out_path, json.dumps(enriched, ensure_ascii=False, indent=2))
 
     logger.info("\n" + "=" * 60)
     logger.info("Enrichment Summary:")
@@ -319,11 +323,11 @@ def main() -> int:
     if unavailable_reasons:
         reason_str = ", ".join([f"{k}={v}" for k, v in sorted(unavailable_reasons.items())])
         logger.info(f" Unavailable reasons: {reason_str}")
-    logger.info(f" Output: {ENRICHED_JOBS_JSON}")
+    logger.info(f" Output: {out_path}")
     logger.info("=" * 60)
 
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

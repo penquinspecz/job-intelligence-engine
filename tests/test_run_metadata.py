@@ -128,6 +128,7 @@ def test_run_metadata_written_and_deterministic(tmp_path: Path, monkeypatch) -> 
     data = json.loads(path1.read_text(encoding="utf-8"))
     assert data["run_id"] == "2026-01-01T00:00:00Z"
     assert data["profiles"] == profiles
+    assert data["providers"] == ["openai"]
     assert data["diff_counts"]["cs"]["new"] == 1
     assert data["stage_durations"] == telemetry["stages"]
     assert data["run_report_schema_version"] == "1"
@@ -135,8 +136,12 @@ def test_run_metadata_written_and_deterministic(tmp_path: Path, monkeypatch) -> 
     assert data["image_tag"] == "jobintel:test"
     assert data["inputs"]["raw_jobs_json"]["path"] == str(raw_path)
     assert data["inputs"]["ai_enriched_jobs_json"]["path"] == str(ai_path)
+    assert data["inputs_by_provider"]["openai"]["raw_jobs_json"]["path"] == str(raw_path)
     assert data["scoring_inputs_by_profile"]["cs"]["path"] == str(enriched_path)
+    assert data["scoring_inputs_by_provider"]["openai"]["cs"]["path"] == str(enriched_path)
     assert data["outputs_by_profile"]["tam"]["ranked_csv"]["path"] == str(_ranked_csv("tam"))
+    assert data["outputs_by_provider"]["openai"]["tam"]["ranked_csv"]["path"] == str(_ranked_csv("tam"))
     assert data["scoring_input_selection_by_profile"]["cs"]["decision"]["rule"] == "default_enriched_required"
     assert data["scoring_input_selection_by_profile"]["tam"]["decision"]["rule"] == "no_enrich_compare"
+    assert data["scoring_input_selection_by_provider"]["openai"]["cs"]["decision"]["rule"] == "default_enriched_required"
     assert path1.name == "20260101T000000Z.json"
