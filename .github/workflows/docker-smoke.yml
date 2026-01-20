@@ -18,6 +18,7 @@ jobs:
       - name: Prepare CI artifact dirs
         run: |
           mkdir -p ci_data ci_state ci_artifacts
+          chmod -R u+rwx,g+rwx,o+rwx ci_data ci_state
 
       - name: Smoke test run_daily (no webhook)
         run: |
