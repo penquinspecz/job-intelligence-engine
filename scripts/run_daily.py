@@ -272,6 +272,25 @@ def _score_meta_path(ranked_json: Path) -> Path:
     return ranked_json.with_suffix(".score_meta.json")
 
 
+def _scrape_meta_path(provider: str) -> Path:
+    return DATA_DIR / f"{provider}_scrape_meta.json"
+
+
+def _load_scrape_provenance(providers: List[str]) -> Dict[str, Dict[str, Any]]:
+    out: Dict[str, Dict[str, Any]] = {}
+    for provider in providers:
+        meta_path = _scrape_meta_path(provider)
+        if not meta_path.exists():
+            continue
+        try:
+            meta = _read_json(meta_path)
+        except Exception:
+            continue
+        if isinstance(meta, dict):
+            out[provider] = meta
+    return out
+
+
 def _apply_score_fallback_metadata(selection: Dict[str, Any], ranked_json: Path) -> None:
     meta_path = _score_meta_path(ranked_json)
     if not meta_path.exists():
@@ -418,7 +437,8 @@ def _persist_run_metadata(
     telemetry: Dict[str, Any],
     profiles: List[str],
     flags: Dict[str, Any],
-    diff_counts: Dict[str, Dict[str, int]],
+    diff_counts: Dict[str, Dict[str, Any]],
+    provenance_by_provider: Optional[Dict[str, Dict[str, Any]]],
     scoring_inputs_by_profile: Dict[str, Dict[str, Optional[str]]],
     scoring_input_selection_by_profile: Dict[str, Dict[str, Any]],
     providers: Optional[List[str]] = None,
@@ -465,6 +485,8 @@ def _persist_run_metadata(
         },
         "stage_durations": telemetry.get("stages", {}),
         "diff_counts": diff_counts,
+        "provenance_by_provider": provenance_by_provider or {},
+        "selection": {"scrape_provenance": provenance_by_provider or {}},
         "inputs": inputs,
         "scoring_inputs_by_profile": scoring_inputs_by_profile,
         "scoring_input_selection_by_profile": scoring_input_selection_by_profile,
@@ -1196,12 +1218,13 @@ def main() -> int:
     ai_mtime = _file_mtime(ai_path)
 
     profiles_list: List[str] = []
-    diff_counts_by_profile: Dict[str, Dict[str, int]] = {}
+    diff_counts_by_profile: Dict[str, Dict[str, Any]] = {}
     scoring_inputs_by_profile: Dict[str, Dict[str, Optional[str]]] = {}
     scoring_input_selection_by_profile: Dict[str, Dict[str, Any]] = {}
-    diff_counts_by_provider: Dict[str, Dict[str, Dict[str, int]]] = {}
+    diff_counts_by_provider: Dict[str, Dict[str, Dict[str, Any]]] = {}
     scoring_inputs_by_provider: Dict[str, Dict[str, Dict[str, Optional[str]]]] = {}
     scoring_input_selection_by_provider: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    provenance_by_provider: Dict[str, Dict[str, Any]] = {}
     flag_payload = {
         "profile": args.profile,
         "profiles": args.profiles,
@@ -1269,6 +1292,7 @@ def main() -> int:
             profiles_list,
             flag_payload,
             diff_counts_by_profile,
+            provenance_by_provider,
             scoring_inputs_by_profile,
             scoring_input_selection_by_profile,
             providers=providers,
@@ -1553,6 +1577,7 @@ def main() -> int:
             args.providers_config,
         ]
         record_stage(current_stage, lambda cmd=scrape_cmd: _run(cmd, stage=current_stage))
+        provenance_by_provider = _load_scrape_provenance(providers)
 
         if args.scrape_only:
             logger.info("Stopping after scrape (--scrape_only set)")
@@ -1697,6 +1722,36 @@ def main() -> int:
                 state_path = _state_last_ranked(provider, profile)
                 state_exists = state_path.exists()
                 curr = _read_json(ranked_json)
+                fallback_applied = selection.get("us_only_fallback", {}).get("fallback_applied") is True
+                if fallback_applied:
+                    label = _profile_label(provider, profile)
+                    diff_counts = {
+                        "new": 0,
+                        "changed": 0,
+                        "removed": 0,
+                        "suppressed": True,
+                        "reason": "us_only_fallback",
+                        "note": (
+                            "US-only filter removed all jobs under --no_enrich; "
+                            "changelog suppressed to avoid noise."
+                        ),
+                    }
+                    diff_counts_by_provider.setdefault(provider, {})[profile] = diff_counts
+                    if provider == "openai":
+                        diff_counts_by_profile[profile] = diff_counts
+                    logger.info("Changelog (%s) suppressed due to US-only fallback.", label)
+                    _write_json(state_path, curr)
+                    if unavailable_summary:
+                        logger.info("Unavailable reasons: %s", unavailable_summary)
+                    logger.info(
+                        "Done (%s). Ranked outputs:\n - %s\n - %s\n - %s",
+                        label,
+                        ranked_json,
+                        ranked_csv,
+                        shortlist_md,
+                    )
+                    continue
+
                 prev = _read_json(state_path) if state_exists else []
                 new_jobs, changed_jobs, removed_jobs, changed_fields = _diff(prev, curr)
 

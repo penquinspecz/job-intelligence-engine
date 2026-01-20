@@ -111,6 +111,7 @@ def test_run_metadata_written_and_deterministic(tmp_path: Path, monkeypatch) -> 
         profiles=profiles,
         flags=flags,
         diff_counts=diff_counts,
+        provenance_by_provider=None,
         scoring_inputs_by_profile=scoring_inputs_by_profile,
         scoring_input_selection_by_profile=scoring_input_selection_by_profile,
     )
@@ -120,6 +121,7 @@ def test_run_metadata_written_and_deterministic(tmp_path: Path, monkeypatch) -> 
         profiles=profiles,
         flags=flags,
         diff_counts=diff_counts,
+        provenance_by_provider=None,
         scoring_inputs_by_profile=scoring_inputs_by_profile,
         scoring_input_selection_by_profile=scoring_input_selection_by_profile,
     )

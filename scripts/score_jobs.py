@@ -30,6 +30,7 @@ import logging
 import re
 import io
 import os
+from collections import Counter
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -51,6 +52,7 @@ from ji_engine.config import (
 from ji_engine.utils.atomic_write import atomic_write_text, atomic_write_with
 from ji_engine.utils.job_identity import job_identity
 from ji_engine.utils.content_fingerprint import content_fingerprint
+from ji_engine.utils.location_normalize import normalize_location_guess
 from ji_engine.utils.user_state import load_user_state
 
 logger = logging.getLogger(__name__)
@@ -92,6 +94,9 @@ EPHEMERAL_FIELDS = {
     "scored_at",
     "run_started_at",
     "run_id",
+    "location_norm",
+    "is_us_or_remote_us_guess",
+    "us_guess_reason",
 }
 
 
@@ -100,6 +105,18 @@ def _strip_ephemeral_fields(job: Dict[str, Any]) -> Dict[str, Any]:
     for field in EPHEMERAL_FIELDS:
         cleaned.pop(field, None)
     return cleaned
+
+
+def _format_us_only_reason_summary(jobs: List[Dict[str, Any]]) -> str:
+    counts = Counter()
+    for job in jobs:
+        reason = job.get("us_guess_reason")
+        if isinstance(reason, str) and reason:
+            counts[reason] += 1
+    if not counts:
+        return "(no reason fields present)"
+    parts = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    return ", ".join(f"{reason}={count}" for reason, count in parts)
 CSV_FIELDNAMES = [
     "job_id",
     "score",
@@ -886,6 +903,7 @@ def write_shortlist_md(scored: List[Dict[str, Any]], out_path: Path, min_score: 
         score = job.get("score", 0)
         role_band = _norm(job.get("role_band"))
         apply_url = _norm(job.get("apply_url"))
+        job_id = _norm(job.get("job_id"))
         identity = job_identity(job)
         status = ""
         note = ""
@@ -899,6 +917,8 @@ def write_shortlist_md(scored: List[Dict[str, Any]], out_path: Path, min_score: 
         lines.append(f"## {title} — {score} [{role_band}]{status_tag}")
         if apply_url:
             lines.append(f"[Apply link]({apply_url})")
+        if job_id:
+            lines.append(f"(job_id: {job_id})")
         if note:
             lines.append(f"Note: {_truncate_note(note)}")
 
@@ -1129,6 +1149,17 @@ def write_application_kit_md(
     out_path.write_text("\n".join(lines), encoding="utf-8")
 
 def is_us_or_remote_us(job: Dict[str, Any]) -> bool:
+    guess = job.get("is_us_or_remote_us_guess")
+    if isinstance(guess, bool):
+        return guess
+
+    normalized = normalize_location_guess(
+        job.get("title"),
+        job.get("location") or job.get("locationName"),
+    )
+    if normalized["us_guess_reason"] != "none":
+        return normalized["is_us_or_remote_us_guess"]
+
     loc = (job.get("location") or job.get("locationName") or "").strip().lower()
 
     # allow remote only if explicitly US
@@ -1137,12 +1168,23 @@ def is_us_or_remote_us(job: Dict[str, Any]) -> bool:
 
     # common non-US markers to exclude
     non_us_markers = [
-        "london", "uk", "united kingdom",
-        "dublin", "ireland",
-        "tokyo", "japan",
-        "munich", "germany",
-        "sydney", "australia",
-        "emea", "apac", "singapore", "paris", "france", "canada",
+        "london",
+        "uk",
+        "united kingdom",
+        "dublin",
+        "ireland",
+        "tokyo",
+        "japan",
+        "munich",
+        "germany",
+        "sydney",
+        "australia",
+        "emea",
+        "apac",
+        "singapore",
+        "paris",
+        "france",
+        "canada",
     ]
     if any(x in loc for x in non_us_markers):
         return False
@@ -1242,30 +1284,45 @@ def main() -> int:
 
     us_only_fallback: Optional[Dict[str, Any]] = None
     if args.us_only:
-        before = len(jobs)
-        unfiltered_jobs = jobs
-        filtered_jobs = [j for j in jobs if is_us_or_remote_us(j)]
-        after = len(filtered_jobs)
-        logger.info(f"US-only filter: {before} -> {after} jobs")
-        if before > 0 and after == 0:
-            logger.warning(
-                "US-only filter removed all jobs (input=%d, after=%d). "
-                "Falling back to unfiltered set because locations likely aren't normalized "
-                "(common with --no_enrich). If you ran with --no_enrich, did you pass labeled input "
-                "instead of enriched?",
-                before,
-                after,
+        def _has_location_signal(job: Dict[str, Any]) -> bool:
+            if job.get("location") or job.get("locationName") or job.get("location_norm"):
+                return True
+            if isinstance(job.get("is_us_or_remote_us_guess"), bool):
+                return True
+            normalized = normalize_location_guess(
+                job.get("title"),
+                job.get("location") or job.get("locationName"),
             )
-            jobs = unfiltered_jobs
-            us_only_fallback = {
-                "input_count": before,
-                "post_filter_count": after,
-                "fallback_applied": True,
-                "reason": "us_only_filter_removed_all_jobs",
-                "note": "Fallback to unfiltered set; locations likely aren't normalized (common with --no_enrich).",
-            }
+            return normalized["us_guess_reason"] != "none"
+
+        if not any(_has_location_signal(j) for j in jobs):
+            logger.info("US-only filter skipped (no location signals in input).")
         else:
-            jobs = filtered_jobs
+            before = len(jobs)
+            unfiltered_jobs = jobs
+            filtered_jobs = [j for j in jobs if is_us_or_remote_us(j)]
+            after = len(filtered_jobs)
+            logger.info(f"US-only filter: {before} -> {after} jobs")
+            if before > 0 and after == 0:
+                logger.warning(
+                    "US-only filter removed all jobs (input=%d, after=%d). "
+                    "Falling back to unfiltered set because locations likely aren't normalized "
+                    "(common with --no_enrich). If you ran with --no_enrich, did you pass labeled input "
+                    "instead of enriched?",
+                    before,
+                    after,
+                )
+                jobs = unfiltered_jobs
+                us_only_fallback = {
+                    "input_count": before,
+                    "post_filter_count": after,
+                    "fallback_applied": True,
+                    "reason": "us_only_filter_removed_all_jobs",
+                    "note": "Fallback to unfiltered set; locations likely aren't normalized (common with --no_enrich).",
+                }
+            else:
+                jobs = filtered_jobs
+        logger.info("US-only kept jobs by reason: %s", _format_us_only_reason_summary(jobs))
 
     jobs = _dedupe_jobs_for_scoring(jobs)
 
@@ -1319,10 +1376,13 @@ def main() -> int:
         score = job.get("score", 0)
         role_band = _norm(job.get("role_band"))
         apply_url = _norm(job.get("apply_url"))
+        job_id = _norm(job.get("job_id"))
 
         lines.append(f"## {title} — {score} [{role_band}]")
         if apply_url:
             lines.append(f"[Apply link]({apply_url})")
+        if job_id:
+            lines.append(f"(job_id: {job_id})")
 
         fit = job.get("fit_signals") or []
         risk = job.get("risk_signals") or []

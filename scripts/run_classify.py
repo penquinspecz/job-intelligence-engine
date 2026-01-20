@@ -158,6 +158,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                 "location": job.location,
                 "team": job.team,
                 "relevance": labeled_result["relevance"],
+                "job_id": labeled_result.get("job_id"),
+                "location_norm": labeled_result.get("location_norm"),
+                "is_us_or_remote_us_guess": labeled_result.get("is_us_or_remote_us_guess"),
+                "us_guess_reason": labeled_result.get("us_guess_reason"),
             }
         )
 

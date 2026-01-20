@@ -54,6 +54,115 @@ jobs:
           echo "Collected artifacts:"
           ls -R ci_artifacts
 
+      - name: Write smoke summary
+        run: |
+          python - <<'PY'
+          import glob
+          import json
+          import os
+          from pathlib import Path
+          
+          report_path = Path("ci_artifacts/run_report.json")
+          if not report_path.exists():
+              raise SystemExit("Missing ci_artifacts/run_report.json")
+          
+          with report_path.open("r", encoding="utf-8") as handle:
+              report = json.load(handle)
+          
+          def first_value(*paths):
+              for path in paths:
+                  cursor = report
+                  ok = True
+                  for key in path:
+                      if isinstance(cursor, dict) and key in cursor:
+                          cursor = cursor[key]
+                      else:
+                          ok = False
+                          break
+                  if ok and cursor is not None:
+                      return cursor
+              return None
+          
+          run_id = first_value(("run_id",), ("id",))
+          timestamp = first_value(("started_at",), ("timestamp",), ("run_timestamp",))
+          
+          provenance = first_value(("selection", "scrape_provenance"), ("provenance_by_provider",)) or {}
+          provider_lines = []
+          if isinstance(provenance, dict) and provenance:
+              for provider, meta in sorted(provenance.items()):
+                  mode = meta.get("scrape_mode") or meta.get("mode") or "unknown"
+                  status = mode
+                  if meta.get("live_status_code") and mode == "live":
+                      status = f"{mode} (status {meta['live_status_code']})"
+                  if meta.get("error"):
+                      status = f"{status} (error)"
+                  provider_lines.append(f"- `{provider}`: {status}")
+          
+          scraped_count = first_value(("selection", "scrape_job_count"), ("scrape_job_count",))
+          classified_count = first_value(("selection", "classified_job_count"), ("classified_job_count",))
+          
+          ranked_count = None
+          ranked_candidates = sorted(
+              glob.glob("ci_artifacts/*ranked_jobs*cs*.json")
+              + glob.glob("ci_artifacts/*ranked_jobs*.cs.json")
+          )
+          if ranked_candidates:
+              try:
+                  with open(ranked_candidates[0], "r", encoding="utf-8") as handle:
+                      data = json.load(handle)
+                  if isinstance(data, list):
+                      ranked_count = len(data)
+              except Exception:
+                  ranked_count = sum(
+                      1 for line in open(ranked_candidates[0], "r", encoding="utf-8") if line.strip()
+                  )
+          
+          shortlist_count = None
+          shortlist_candidates = sorted(
+              glob.glob("ci_artifacts/*shortlist*cs*.md") + glob.glob("ci_artifacts/*shortlist*.cs.md")
+          )
+          if shortlist_candidates:
+              shortlist_count = sum(
+                  1
+                  for line in open(shortlist_candidates[0], "r", encoding="utf-8")
+                  if line.strip().startswith("- ")
+              )
+          
+          us_only_fallback = (
+              report.get("selection", {}).get("us_only_fallback", {}).get("fallback_applied")
+          )
+          
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+          lines = ["### Docker smoke summary", ""]
+          if run_id:
+              lines.append(f"- Run ID: `{run_id}`")
+          if timestamp:
+              lines.append(f"- Timestamp: `{timestamp}`")
+          if provider_lines:
+              lines.append("- Providers:")
+              lines.extend(provider_lines)
+          if scraped_count is not None or classified_count is not None:
+              lines.append(
+                  "- Counts: "
+                  f"scraped={scraped_count if scraped_count is not None else 'n/a'}, "
+                  f"classified={classified_count if classified_count is not None else 'n/a'}"
+              )
+          if ranked_count is not None or shortlist_count is not None:
+              lines.append(
+                  "- Profile `cs`: "
+                  f"ranked={ranked_count if ranked_count is not None else 'n/a'}, "
+                  f"shortlist={shortlist_count if shortlist_count is not None else 'n/a'}"
+              )
+          if us_only_fallback:
+              lines.append("- US-only fallback: applied")
+          else:
+              lines.append("- US-only fallback: no fallback")
+          
+          if summary_path:
+              with open(summary_path, "a", encoding="utf-8") as handle:
+                  handle.write("\n".join(lines) + "\n")
+          PY
+
       - name: Upload smoke artifacts
         uses: actions/upload-artifact@v4
         with:

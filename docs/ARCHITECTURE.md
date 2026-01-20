@@ -33,3 +33,13 @@ Stages (in order):
 - Use `scripts/replay_run.py` with a run report to verify input/output hashes.
 - The run report documents selected inputs, outputs, and selection reasons.
 - For scoring-only replay, re-run `scripts/score_jobs.py` with the recorded `--in_path` and compare output hashes.
+
+Determinism & Reproducibility Guarantees
+
+All scrapes produce provenance metadata
+
+Snapshot-backed providers are deterministic by default
+
+Job identity is stable across classify/enrich/score
+
+CI enforces multi-provider golden outputs

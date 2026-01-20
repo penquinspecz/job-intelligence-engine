@@ -4,6 +4,16 @@ import json
 from ji_engine.utils.job_identity import job_identity
 
 
+def _hash_payload(payload: dict) -> str:
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def test_job_identity_prefers_job_id():
+    job = {"job_id": "ABC-123", "apply_url": "https://example.com/a"}
+    assert job_identity(job) == "abc-123"
+
+
 def test_job_identity_prefers_apply_url():
     job = {"apply_url": " https://example.com/a ", "title": "A", "location": "SF"}
     assert job_identity(job) == "https://example.com/a"
@@ -14,22 +24,23 @@ def test_job_identity_falls_back_to_detail_url():
     assert job_identity(job) == "/jobs/123"
 
 
-def test_job_identity_falls_back_to_title_location():
+def test_job_identity_falls_back_to_content_hash():
     job = {"title": " Role ", "location": "  Remote  "}
-    assert job_identity(job) == "role|remote"
+    expected = _hash_payload(
+        {"title": "role", "location": "remote", "team": "", "description": ""}
+    )
+    assert job_identity(job) == expected
 
 
-def test_job_identity_strips_extra_fields():
+def test_job_identity_changes_with_description():
     base = {"title": "Role", "location": "Remote"}
     variant = {"title": "Role", "location": "Remote", "description": "desc"}
-    assert job_identity(base) == job_identity(variant)
+    assert job_identity(base) != job_identity(variant)
 
 
 def test_job_identity_returns_hash_when_nothing_else():
     job = {"description": "Only description"}
-    expected = hashlib.sha256(
-        json.dumps(job, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
-    ).hexdigest()
+    expected = _hash_payload({"title": "", "location": "", "team": "", "description": "only description"})
     assert job_identity(job) == expected
 
 

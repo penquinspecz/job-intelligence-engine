@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 
 class JobSource(str, Enum):
     OPENAI = "openai"
+    ASHBY = "ashby"
     # Future: ANTHROPIC = "anthropic", etc.
 
 
@@ -26,6 +27,7 @@ class RawJobPosting:
     detail_url: Optional[str]
     raw_text: str
     scraped_at: datetime
+    job_id: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)

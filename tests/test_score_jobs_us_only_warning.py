@@ -10,7 +10,7 @@ def _write_jobs(path: Path, jobs: list[dict]) -> None:
     path.write_text(json.dumps(jobs), encoding="utf-8")
 
 
-def test_us_only_warns_when_all_filtered_out(tmp_path, monkeypatch, caplog) -> None:
+def test_us_only_skips_when_no_location_signals(tmp_path, monkeypatch, caplog) -> None:
     data_dir = tmp_path / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
     state_dir = tmp_path / "state"
@@ -33,7 +33,7 @@ def test_us_only_warns_when_all_filtered_out(tmp_path, monkeypatch, caplog) -> N
     score_jobs = importlib.reload(score_jobs)
     monkeypatch.setattr(score_jobs, "load_profiles", lambda path: json.loads((data_dir / "profiles.json").read_text()))
 
-    caplog.set_level("WARNING")
+    caplog.set_level("INFO")
     monkeypatch.setattr(
         sys,
         "argv",
@@ -57,5 +57,4 @@ def test_us_only_warns_when_all_filtered_out(tmp_path, monkeypatch, caplog) -> N
 
     rc = score_jobs.main()
     assert rc is None or rc == 0
-    assert "US-only filter removed all jobs" in caplog.text
-    assert "did you pass labeled input instead of enriched" in caplog.text.lower()
+    assert "US-only filter skipped (no location signals in input)." in caplog.text

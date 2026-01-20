@@ -110,6 +110,18 @@ Notes:
 - No secrets are baked into the image; use env vars or task/env files.
 - Snapshots under `data/openai_snapshots/` can be baked into the image; other data is excluded.
 
+## Updating provider snapshots
+
+Use `scripts/update_snapshots.py` to refresh provider snapshots (uses stdlib `urllib`).
+
+```bash
+# Refresh OpenAI snapshot with defaults
+.venv/bin/python scripts/update_snapshots.py --provider openai
+
+# Custom target directory / user agent
+.venv/bin/python scripts/update_snapshots.py --provider openai --out_dir data/openai_snapshots --user_agent "jobintel/1.0"
+```
+
 Canonical entrypoint:
 - Use `scripts/run_daily.py` for the pipeline. Legacy runners (`run_full_pipeline.py`, `run_openai_pipeline.py`) are deprecated and exit non-zero with a message.
 

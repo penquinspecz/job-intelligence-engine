@@ -6,6 +6,12 @@ Run reports are written to:
 
 - `state/runs/<run_id>.json`
 
+selection.scrape_provenance
+
+us_only_fallback behavior (when it can happen, when it won’t)
+
+Snapshot provenance fields (hash, mode, source)
+
 ## Schema overview
 
 Top-level fields:

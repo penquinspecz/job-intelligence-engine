@@ -2,7 +2,6 @@
 
 import json
 import os
-import re
 import time
 from datetime import datetime
 from pathlib import Path
@@ -10,6 +9,8 @@ from typing import Any, Dict, List, Optional
 
 import requests
 from bs4 import BeautifulSoup
+
+from ji_engine.utils.job_id import extract_job_id_from_url
 
 # Debug mode flag
 DEBUG = os.getenv("JI_DEBUG") == "1"
@@ -66,9 +67,7 @@ def _extract_job_id_from_url(url: str) -> Optional[str]:
     Pattern: /openai/([0-9a-f-]{36})/application
     Example: https://jobs.ashbyhq.com/openai/0c22b805-3976-492e-81f2-7cf91f63a630/application
     """
-    pattern = r"/openai/([0-9a-f-]{36})/application"
-    m = re.search(pattern, url, re.IGNORECASE)
-    return m.group(1) if m else None
+    return extract_job_id_from_url(url)
 
 
 def _html_to_text(description_html: str) -> str:
@@ -249,18 +248,19 @@ def enrich_jobs(
 
     for i, job in enumerate(labeled_jobs, 1):
         apply_url = job.get("apply_url", "")
+        job_id = job.get("job_id") or extract_job_id_from_url(apply_url)
         if not apply_url:
             print(f"  [{i}/{len(labeled_jobs)}] Skipping - no apply_url")
-            enriched.append({**job, "jd_text": None, "fetched_at": None})
+            enriched.append({**job, "job_id": job_id, "jd_text": None, "fetched_at": None})
             continue
 
         print(f"  [{i}/{len(labeled_jobs)}] Processing: {job.get('title', 'Unknown')}")
 
-        job_id = _extract_job_id_from_url(apply_url)
+        job_id = job_id or _extract_job_id_from_url(apply_url)
         if not job_id:
             print("    ⚠️  Cannot extract jobPostingId from URL - not enrichable")
             print(f"    URL: {apply_url}")
-            enriched.append({**job, "jd_text": None, "fetched_at": None})
+            enriched.append({**job, "job_id": job_id, "jd_text": None, "fetched_at": None})
             continue
 
         api_data = _fetch_job_data_from_api(job_id, ASHBY_GQL_URL, cache_dir)
@@ -300,6 +300,7 @@ def enrich_jobs(
         enriched.append(
             {
                 **job,
+                "job_id": job_id,
                 "title": clean_title,
                 "location": location,
                 "team": team,

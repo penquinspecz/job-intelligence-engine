@@ -7,6 +7,8 @@ from typing import Any, Dict, List
 
 from ji_engine.models import RawJobPosting
 from ji_engine.profile_loader import CandidateProfile
+from ji_engine.utils.job_id import extract_job_id_from_url
+from ji_engine.utils.location_normalize import normalize_location_guess
 
 
 def _location_is_valid_us(job: RawJobPosting, profile: CandidateProfile) -> bool:
@@ -195,12 +197,18 @@ def score_title_relevance(job: RawJobPosting, profile: CandidateProfile) -> str:
 
 def label_jobs(jobs: List[RawJobPosting], profile: CandidateProfile) -> List[Dict[str, Any]]:
     """Return labeled jobs with relevance tags."""
-    return [
-        {
-            "title": job.title,
-            "apply_url": job.apply_url,
-            "location": job.location,
-            "relevance": score_title_relevance(job, profile),
-        }
-        for job in jobs
-    ]
+    labeled: List[Dict[str, Any]] = []
+    for job in jobs:
+        location_meta = normalize_location_guess(job.title, job.location)
+        job_id = extract_job_id_from_url(job.apply_url)
+        labeled.append(
+            {
+                "title": job.title,
+                "apply_url": job.apply_url,
+                "location": job.location,
+                "relevance": score_title_relevance(job, profile),
+                "job_id": job_id,
+                **location_meta,
+            }
+        )
+    return labeled

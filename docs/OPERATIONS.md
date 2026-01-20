@@ -94,3 +94,29 @@ Examples:
 python scripts/set_job_status.py --profile cs --job-id job_123 --status applied --note "Reached out."
 python scripts/set_job_status.py --profile cs --url https://example.com/jobs/123 --status ignore
 ```
+
+A “Quality Gates” section:
+
+make gates is the canonical local + CI validation path
+
+Order matters: format-check → lint → test
+
+CI mirrors local gates exactly (by design)
+
+Snapshot behavior:
+
+Providers may run in live or snapshot mode
+
+Snapshots are first-class artifacts with:
+
+atomic writes
+
+sha256 verification
+
+sidecar metadata
+
+Determinism guarantees:
+
+Snapshot + provider config + profile ⇒ deterministic output
+
+Golden E2E tests enforce this

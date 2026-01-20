@@ -17,8 +17,6 @@ import json
 import logging
 import os
 import sys
-import re
-import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -31,6 +29,7 @@ from ji_engine.config import ASHBY_CACHE_DIR, ENRICHED_JOBS_JSON, LABELED_JOBS_J
 from ji_engine.integrations.ashby_graphql import fetch_job_posting
 from ji_engine.integrations.html_to_text import html_to_text
 from ji_engine.utils.atomic_write import atomic_write_text
+from ji_engine.utils.job_id import extract_job_id_from_url
 from collections import Counter
 
 logger = logging.getLogger(__name__)
@@ -46,9 +45,7 @@ def _extract_job_id_from_url(url: str) -> Optional[str]:
     Extract jobPostingId from apply_url using regex pattern.
     Pattern: /openai/([0-9a-f-]{36})/application
     """
-    pattern = r"/openai/([0-9a-f-]{36})/application"
-    match = re.search(pattern, url, re.IGNORECASE)
-    return match.group(1) if match else None
+    return extract_job_id_from_url(url)
 
 
 def _derive_fallback_url(apply_url: str) -> str:
@@ -179,18 +176,19 @@ def _enrich_single(
     status_key in {"enriched", "unavailable", "failed"} for stats aggregation.
     """
     apply_url = job.get("apply_url", "")
+    job_id = job.get("job_id") or _extract_job_id_from_url(apply_url)
     if not apply_url:
         logger.info(f" [{index}/{total}] Skipping - no apply_url")
-        updated_job = {**job, "jd_text": None, "fetched_at": None}
+        updated_job = {**job, "job_id": job_id, "jd_text": None, "fetched_at": None}
         return updated_job, None, "failed"
 
     logger.info(f" [{index}/{total}] Processing: {job.get('title', 'Unknown')}")
 
-    job_id = _extract_job_id_from_url(apply_url)
+    job_id = job_id or _extract_job_id_from_url(apply_url)
     if not job_id:
         logger.info(" ⚠️ Cannot extract jobPostingId from URL - not enrichable")
         logger.info(f" URL: {apply_url}")
-        updated_job = {**job, "jd_text": None, "fetched_at": None}
+        updated_job = {**job, "job_id": job_id, "jd_text": None, "fetched_at": None}
         return updated_job, None, "failed"
 
     fallback_url = _derive_fallback_url(apply_url)
@@ -202,6 +200,7 @@ def _enrich_single(
         api_data = None
 
     updated_job, fallback_needed = _apply_api_response(job, api_data, fallback_url)
+    updated_job["job_id"] = job_id
     jd_text = updated_job.get("jd_text")
     unavailable_reason: Optional[str] = None
 

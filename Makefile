@@ -1,4 +1,4 @@
-.PHONY: test lint docker-build docker-run-local report
+.PHONY: test lint format-check gates docker-build docker-run-local report snapshot snapshot-openai
 
 # Prefer repo venv if present; fall back to system python3.
 PY ?= .venv/bin/python
@@ -13,7 +13,12 @@ test:
 	$(PY) -m pytest -q
 
 lint:
-	$(PY) -m ruff check .
+	$(PY) -m ruff check src
+
+format-check:
+	$(PY) -m ruff format --check src
+
+gates: format-check lint test
 
 docker-build:
 	docker build -t jobintel:local .
@@ -31,3 +36,10 @@ report:
 		--entrypoint python \
 		jobintel:local \
 		-m scripts.report_changes --profile $(PROFILE) --limit $(LIMIT)
+
+snapshot-openai:
+	$(PY) scripts/update_snapshots.py --provider openai
+
+snapshot:
+	@if [ -z "$(provider)" ]; then echo "Usage: make snapshot provider=<name>"; exit 2; fi
+	$(PY) scripts/update_snapshots.py --provider $(provider)
