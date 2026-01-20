@@ -13,14 +13,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build image
-        run: docker build -t jobintel:ci .
+        run: docker build -t jobintel:local .
 
       - name: Smoke test run_daily (no webhook)
         run: |
           docker run --rm \
-            -v "$GITHUB_WORKSPACE/data:/app/data" \
-            -v "$GITHUB_WORKSPACE/state:/app/state" \
-            jobintel:ci --profiles cs --us_only --no_post --no_enrich --providers openai
+            jobintel:local --providers openai --profiles cs --us_only --no_post --no_enrich
 
       - name: Verify history artifacts
         run: |
