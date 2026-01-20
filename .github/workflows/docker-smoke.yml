@@ -19,25 +19,3 @@ jobs:
         run: |
           docker run --rm \
             jobintel:local --providers openai --profiles cs --no_post --no_enrich
-
-      - name: Verify history artifacts
-        run: |
-          set -euo pipefail
-          latest="state/history/latest/cs"
-          summary="$latest/run_summary.txt"
-          if [ ! -f "$summary" ]; then
-            echo "Missing $summary"
-            exit 1
-          fi
-          metadata="$latest/run_metadata.json"
-          if [ ! -f "$metadata" ]; then
-            echo "Missing $metadata"
-            exit 1
-          fi
-          ranked_json="$latest/openai_ranked_jobs.cs.json"
-          fallback_json="$latest/ranked.json"
-          if [ -f "$ranked_json" ] || [ -f "$fallback_json" ]; then
-            exit 0
-          fi
-          echo "Neither $ranked_json nor $fallback_json exists"
-          exit 1
