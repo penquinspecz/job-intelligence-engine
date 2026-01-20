@@ -15,7 +15,45 @@ jobs:
       - name: Build image
         run: docker build -t jobintel:local .
 
+      - name: Prepare CI artifact dirs
+        run: |
+          mkdir -p ci_data ci_state ci_artifacts
+
       - name: Smoke test run_daily (no webhook)
         run: |
           docker run --rm \
+            -v "$PWD/ci_data:/app/data" \
+            -v "$PWD/ci_state:/app/state" \
             jobintel:local --providers openai --profiles cs --no_post --no_enrich
+
+      - name: Collect smoke artifacts
+        run: |
+          run_report="$(ls -1 ci_state/runs/*.json 2>/dev/null | sort | tail -n 1)"
+          if [ -z "$run_report" ]; then
+            echo "Missing run report in ci_state/runs/"
+            exit 1
+          fi
+          cp "$run_report" ci_artifacts/run_report.json
+          if ! ls -1 ci_data/*ranked_jobs*.json >/dev/null 2>&1; then
+            echo "Missing ranked jobs JSON in ci_data/"
+            ls -la ci_data
+            find ci_data -maxdepth 1 -type f | sort
+            exit 1
+          fi
+          cp -f ci_data/*ranked_jobs*.json ci_artifacts/ || true
+          cp -f ci_data/*ranked_jobs*.csv ci_artifacts/ || true
+          cp -f ci_data/*ranked_families*.json ci_artifacts/ || true
+          cp -f ci_data/*shortlist*.md ci_artifacts/ || true
+          cp -f ci_data/*_scrape_meta.json ci_artifacts/ || true
+          cp -f ci_data/*.score_meta.json ci_artifacts/ || true
+          cp -f ci_data/*run_summary*.txt ci_artifacts/ || true
+          cp -f ci_data/*run_report*.md ci_artifacts/ || true
+          echo "Collected artifacts:"
+          ls -R ci_artifacts
+
+      - name: Upload smoke artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: jobintel-smoke-artifacts
+          path: ci_artifacts/
+          retention-days: 7
