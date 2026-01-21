@@ -7,6 +7,10 @@ Usage (from repo root, with venv active):
 """
 
 from __future__ import annotations
+try:
+    import _bootstrap  # type: ignore
+except ModuleNotFoundError:
+    from scripts import _bootstrap  # noqa: F401
 
 import argparse
 import json

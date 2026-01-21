@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+try:
+    import _bootstrap  # type: ignore
+except ModuleNotFoundError:
+    from scripts import _bootstrap  # noqa: F401
 
 """
 Entry point to run the job enrichment pipeline.
