@@ -32,6 +32,79 @@ def _require_file(path: Path) -> None:
         raise RuntimeError(f"Empty required file: {path}")
 
 
+def _validate_delta_summary(
+    report: dict,
+    providers: List[str],
+    profiles: List[str],
+    artifacts: Path,
+) -> None:
+    delta_summary = report.get("delta_summary")
+    if not isinstance(delta_summary, dict):
+        raise RuntimeError("run_report.json missing delta_summary")
+
+    provider_profile = delta_summary.get("provider_profile")
+    if not isinstance(provider_profile, dict):
+        raise RuntimeError("delta_summary.provider_profile missing or invalid")
+
+    for provider in providers:
+        provider_map = provider_profile.get(provider)
+        if not isinstance(provider_map, dict):
+            raise RuntimeError(f"delta_summary.provider_profile missing provider={provider}")
+        for profile in profiles:
+            entry = provider_map.get(profile)
+            if not isinstance(entry, dict):
+                raise RuntimeError(f"delta_summary missing entry for {provider}/{profile}")
+
+            labeled_path = artifacts / f"{provider}_labeled_jobs.json"
+            if provider == "openai":
+                labeled_path = artifacts / "openai_labeled_jobs.json"
+            labeled_jobs = _load_json(labeled_path)
+            if not isinstance(labeled_jobs, list):
+                raise RuntimeError(f"{labeled_path.name} must be a list")
+
+            ranked_path = artifacts / f"{provider}_ranked_jobs.{profile}.json"
+            if provider == "openai":
+                ranked_path = artifacts / f"openai_ranked_jobs.{profile}.json"
+            ranked_jobs = _load_json(ranked_path)
+            if not isinstance(ranked_jobs, list):
+                raise RuntimeError(f"{ranked_path.name} must be a list")
+
+            if entry.get("labeled_total") != len(labeled_jobs):
+                raise RuntimeError(
+                    f"delta_summary labeled_total mismatch for {provider}/{profile}: "
+                    f"report={entry.get('labeled_total')} labeled_jobs={len(labeled_jobs)}"
+                )
+            if entry.get("ranked_total") != len(ranked_jobs):
+                raise RuntimeError(
+                    f"delta_summary ranked_total mismatch for {provider}/{profile}: "
+                    f"report={entry.get('ranked_total')} ranked_jobs={len(ranked_jobs)}"
+                )
+
+            baseline_id = entry.get("baseline_run_id")
+            new_count = int(entry.get("new_job_count", 0))
+            removed_count = int(entry.get("removed_job_count", 0))
+            changed_count = int(entry.get("changed_job_count", 0))
+            unchanged_count = int(entry.get("unchanged_job_count", 0))
+            change_fields = entry.get("change_fields") or {}
+            field_sum = sum(int(change_fields.get(key, 0)) for key in ("title", "location", "team", "url"))
+
+            if baseline_id is None:
+                if any(val != 0 for val in (new_count, removed_count, changed_count, unchanged_count, field_sum)):
+                    raise RuntimeError(
+                        f"delta_summary expected zero counts for baseline-missing {provider}/{profile}"
+                    )
+            else:
+                if new_count + changed_count + unchanged_count != len(ranked_jobs):
+                    raise RuntimeError(
+                        f"delta_summary counts do not match ranked_total for {provider}/{profile}: "
+                        f"new+changed+unchanged={new_count + changed_count + unchanged_count} ranked_total={len(ranked_jobs)}"
+                    )
+                if field_sum < changed_count:
+                    raise RuntimeError(
+                        f"delta_summary change_fields sum {field_sum} < changed_job_count {changed_count} "
+                        f"for {provider}/{profile}"
+                    )
+
 def _validate_run_report(
     report: dict,
     providers: List[str],
@@ -129,6 +202,7 @@ def main(argv: List[str] | None = None) -> int:
     if not isinstance(run_report, dict):
         raise RuntimeError("run_report.json must be an object")
     _validate_run_report(run_report, providers, profiles, args.min_ranked, artifacts)
+    _validate_delta_summary(run_report, providers, profiles, artifacts)
 
     return 0
 

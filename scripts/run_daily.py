@@ -38,6 +38,7 @@ import urllib.request
 from ji_engine.utils.dotenv import load_dotenv
 from ji_engine.utils.job_identity import job_identity
 from ji_engine.utils.content_fingerprint import content_fingerprint
+from jobintel.delta import compute_delta
 from ji_engine.config import (
     DATA_DIR,
     STATE_DIR,
@@ -449,6 +450,7 @@ def _persist_run_metadata(
     scoring_inputs_by_provider: Optional[Dict[str, Dict[str, Dict[str, Optional[str]]]]] = None,
     scoring_input_selection_by_provider: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None,
     outputs_by_provider: Optional[Dict[str, Dict[str, Dict[str, Dict[str, Optional[str]]]]]] = None,
+    delta_summary: Optional[Dict[str, Any]] = None,
 ) -> Path:
     run_report_schema_version = "1"
     inputs: Dict[str, Dict[str, Optional[str]]] = {
@@ -512,6 +514,8 @@ def _persist_run_metadata(
         "git_sha": _best_effort_git_sha(),
         "image_tag": os.environ.get("IMAGE_TAG"),
     }
+    if delta_summary is not None:
+        payload["delta_summary"] = delta_summary
     payload["success"] = telemetry.get("success", False)
     if telemetry.get("failed_stage"):
         payload["failed_stage"] = telemetry["failed_stage"]
@@ -553,6 +557,68 @@ def _classified_counts_by_provider(providers: List[str]) -> Dict[str, int]:
         if count is not None:
             counts[provider] = count
     return counts
+
+
+def _baseline_latest_dir(provider: str, profile: str) -> Path:
+    base_provider = provider if provider != "openai" else None
+    return _latest_profile_dir(profile, base_provider)
+
+
+def _baseline_ranked_path(provider: str, profile: str, baseline_dir: Path) -> Path:
+    return baseline_dir / f"{provider}_ranked_jobs.{profile}.json"
+
+
+def _baseline_run_info(baseline_dir: Path) -> Tuple[Optional[str], Optional[str]]:
+    meta_path = baseline_dir / "run_metadata.json"
+    if not meta_path.exists():
+        return None, None
+    try:
+        payload = json.loads(meta_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None, str(meta_path)
+    run_id = payload.get("run_id") if isinstance(payload, dict) else None
+    return run_id, str(meta_path)
+
+
+def _build_delta_summary(run_id: str, providers: List[str], profiles: List[str]) -> Dict[str, Any]:
+    summary: Dict[str, Any] = {
+        "baseline_run_id": None,
+        "baseline_run_path": None,
+        "current_run_id": run_id,
+        "provider_profile": {},
+    }
+    first_baseline: Optional[Tuple[str, str]] = None
+
+    for provider in providers:
+        summary["provider_profile"].setdefault(provider, {})
+        for profile in profiles:
+            baseline_dir = _baseline_latest_dir(provider, profile)
+            baseline_ranked = _baseline_ranked_path(provider, profile, baseline_dir)
+            baseline_run_id, baseline_run_path = _baseline_run_info(baseline_dir)
+            if not baseline_ranked.exists():
+                baseline_run_id = None
+                baseline_run_path = None
+            if baseline_run_id and baseline_run_path and first_baseline is None:
+                first_baseline = (baseline_run_id, baseline_run_path)
+
+            current_labeled = _provider_labeled_jobs_json(provider)
+            current_ranked = _provider_ranked_jobs_json(provider, profile)
+            delta = compute_delta(
+                current_labeled,
+                current_ranked,
+                None,
+                baseline_ranked if baseline_ranked.exists() else None,
+                provider,
+                profile,
+            )
+            delta["baseline_run_id"] = baseline_run_id
+            delta["baseline_run_path"] = baseline_run_path
+            delta["current_run_id"] = run_id
+            summary["provider_profile"][provider][profile] = delta
+
+    if first_baseline:
+        summary["baseline_run_id"], summary["baseline_run_path"] = first_baseline
+    return summary
 
 
 def _file_metadata(path: Path) -> Dict[str, Optional[str]]:
@@ -1324,6 +1390,7 @@ def main() -> int:
                 }
             provider_outputs[provider] = outputs_for_provider
 
+        delta_summary = _build_delta_summary(run_id, providers, profiles_list)
         run_metadata_path = _persist_run_metadata(
             run_id,
             telemetry,
@@ -1338,6 +1405,7 @@ def main() -> int:
             scoring_inputs_by_provider=scoring_inputs_by_provider,
             scoring_input_selection_by_provider=scoring_input_selection_by_provider,
             outputs_by_provider=provider_outputs,
+            delta_summary=delta_summary,
         )
         if openai_only:
             for profile in profiles_list:
