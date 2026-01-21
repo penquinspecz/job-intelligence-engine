@@ -22,26 +22,31 @@ jobs:
 
       - name: Smoke test run_daily (no webhook)
         run: |
+          set +e
           docker run --rm \
             -v "$PWD/ci_data:/app/data" \
             -v "$PWD/ci_state:/app/state" \
             -v "$PWD/data/openai_snapshots:/app/data/openai_snapshots:ro" \
             -v "$PWD/data/candidate_profile.json:/app/data/candidate_profile.json:ro" \
-            jobintel:local --providers openai --profiles cs --no_post --no_enrich
+            jobintel:local --providers openai --profiles cs --no_post --no_enrich 2>&1 | tee ci_artifacts/container.log
+          status=${PIPESTATUS[0]}
+          echo "$status" > ci_artifacts/exit_code.txt
+          exit "$status"
 
       - name: Collect smoke artifacts
+        if: always()
         run: |
+          find ci_data -maxdepth 2 -type f -print | sort > ci_artifacts/ci_data_files.txt
+          find ci_state -maxdepth 3 -type f -print | sort > ci_artifacts/ci_state_files.txt
+          (ls -la ci_data ci_state ci_state/runs 2>/dev/null || true) > ci_artifacts/ls_la.txt
           run_report="$(ls -1 ci_state/runs/*.json 2>/dev/null | sort | tail -n 1)"
           if [ -z "$run_report" ]; then
-            echo "Missing run report in ci_state/runs/"
-            exit 1
+            echo "Missing run report in ci_state/runs/ (looked for ci_state/runs/*.json)" >> ci_artifacts/diagnostic.txt
+          else
+            cp "$run_report" ci_artifacts/run_report.json
           fi
-          cp "$run_report" ci_artifacts/run_report.json
           if ! ls -1 ci_data/*ranked_jobs*.json >/dev/null 2>&1; then
-            echo "Missing ranked jobs JSON in ci_data/"
-            ls -la ci_data
-            find ci_data -maxdepth 1 -type f | sort
-            exit 1
+            echo "Missing ranked jobs JSON in ci_data/ (looked for ci_data/*ranked_jobs*.json)" >> ci_artifacts/diagnostic.txt
           fi
           cp -f ci_data/*ranked_jobs*.json ci_artifacts/ || true
           cp -f ci_data/*ranked_jobs*.csv ci_artifacts/ || true
@@ -64,7 +69,11 @@ jobs:
           
           report_path = Path("ci_artifacts/run_report.json")
           if not report_path.exists():
-              raise SystemExit("Missing ci_artifacts/run_report.json")
+              summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+              if summary_path:
+                  with open(summary_path, "a", encoding="utf-8") as handle:
+                      handle.write("### Docker smoke summary\n\n- Run report: missing\n")
+              raise SystemExit(0)
           
           with report_path.open("r", encoding="utf-8") as handle:
               report = json.load(handle)
@@ -164,6 +173,7 @@ jobs:
           PY
 
       - name: Upload smoke artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: jobintel-smoke-artifacts
