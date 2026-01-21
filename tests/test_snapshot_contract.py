@@ -7,6 +7,7 @@ from ji_engine.providers.registry import load_providers_config
 
 def test_openai_snapshot_contract() -> None:
     snapshot_path = Path("data/openai_snapshots/index.html")
+    assert snapshot_path.exists(), f"Missing snapshot fixture: {snapshot_path}"
     html = snapshot_path.read_text(encoding="utf-8")
     provider = OpenAICareersProvider(mode="SNAPSHOT", data_dir="data")
     jobs = provider._parse_html(html)
@@ -24,7 +25,11 @@ def test_ashby_snapshots_exist() -> None:
     providers = load_providers_config(Path("config/providers.json"))
     ashby_entries = [p for p in providers if p.get("type") == "ashby"]
     assert ashby_entries
+    missing: list[str] = []
     for entry in ashby_entries:
         snapshot_path = Path(entry["snapshot_path"])
-        assert snapshot_path.exists()
+        if not snapshot_path.exists():
+            missing.append(str(snapshot_path))
+            continue
         assert snapshot_path.stat().st_size > 0
+    assert not missing, f"Missing ashby snapshot fixtures: {', '.join(sorted(missing))}"

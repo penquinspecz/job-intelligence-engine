@@ -23,7 +23,8 @@ data/openai_shortlist*.md
 
 # Keep snapshots + profile (needed for offline-ish runs)
 # (DO NOT ignore these)
-!data/openai_snapshots/
+!data/*_snapshots/
+!data/*_snapshots/**
 !data/candidate_profile.json
 
 # If you have big raw dumps elsewhere, ignore them explicitly, not with "*"
