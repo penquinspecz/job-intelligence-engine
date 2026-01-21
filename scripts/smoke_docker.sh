@@ -4,6 +4,17 @@ set -euo pipefail
 CONTAINER_NAME=${CONTAINER_NAME:-jobintel_smoke}
 ARTIFACT_DIR=${ARTIFACT_DIR:-smoke_artifacts}
 IMAGE_TAG=${IMAGE_TAG:-jobintel:local}
+SMOKE_SKIP_BUILD=${SMOKE_SKIP_BUILD:-0}
+
+if [ "${1:-}" = "--skip-build" ]; then
+  SMOKE_SKIP_BUILD=1
+  shift
+fi
+
+if [ "$#" -ne 0 ]; then
+  echo "Usage: $0 [--skip-build]"
+  exit 2
+fi
 
 mkdir -p "$ARTIFACT_DIR"
 
@@ -12,8 +23,16 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "==> Build image ($IMAGE_TAG)"
-docker build -t "$IMAGE_TAG" .
+if [ "$SMOKE_SKIP_BUILD" = "1" ]; then
+  if ! docker image inspect "$IMAGE_TAG" >/dev/null 2>&1; then
+    echo "Missing image '$IMAGE_TAG'. Build it first (docker build -t $IMAGE_TAG .) or omit --skip-build."
+    exit 1
+  fi
+  echo "==> Using existing image ($IMAGE_TAG)"
+else
+  echo "==> Build image ($IMAGE_TAG)"
+  docker build -t "$IMAGE_TAG" .
+fi
 
 echo "==> Validate baked-in snapshots"
 docker run --rm --entrypoint python "$IMAGE_TAG" \

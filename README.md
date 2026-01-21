@@ -209,11 +209,19 @@ make smoke
 ./scripts/smoke_docker.sh
 ```
 
+Skip the image build (reuse existing `jobintel:local`):
+
+```bash
+make smoke-fast
+./scripts/smoke_docker.sh --skip-build
+```
+
 Override defaults with env vars:
 
 ```bash
 CONTAINER_NAME=jobintel_smoke_alt ./scripts/smoke_docker.sh
 ARTIFACT_DIR=smoke_out ./scripts/smoke_docker.sh
+SMOKE_SKIP_BUILD=1 ./scripts/smoke_docker.sh
 ```
 
 ## Smoke contract

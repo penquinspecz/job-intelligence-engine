@@ -46,3 +46,6 @@ snapshot:
 
 smoke:
 	./scripts/smoke_docker.sh
+
+smoke-fast:
+	SMOKE_SKIP_BUILD=1 ./scripts/smoke_docker.sh
