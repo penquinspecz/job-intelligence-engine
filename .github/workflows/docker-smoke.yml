@@ -43,7 +43,7 @@ jobs:
             -e JOBINTEL_STATE_DIR=/app/state \
             -v "$PWD/ci_data:/app/data" \
             -v "$PWD/ci_state:/app/state" \
-            jobintel:local --providers openai --profiles cs --no_post --no_enrich >/dev/null
+            jobintel:local --providers openai --profiles cs --offline --no_post --no_enrich >/dev/null
           docker start -a "$container_name" 2>&1 | tee ci_artifacts/container.log
           status=${PIPESTATUS[0]}
           echo "$status" > ci_artifacts/exit_code.txt
