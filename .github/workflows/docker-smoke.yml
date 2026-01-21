@@ -18,12 +18,17 @@ jobs:
       - name: Prepare CI artifact dirs
         run: |
           mkdir -p ci_data ci_state ci_artifacts
-          if ls -d data/*_snapshots >/dev/null 2>&1; then
-            cp -R data/*_snapshots ci_data/
+          if [ -d data/openai_snapshots ]; then
+            cp -R data/openai_snapshots ci_data/
+          fi
+          if [ -d data/anthropic_snapshots ]; then
+            cp -R data/anthropic_snapshots ci_data/
           fi
           if [ -f data/candidate_profile.json ]; then
             cp data/candidate_profile.json ci_data/
           fi
+          ls -la ci_data/openai_snapshots/index.html || true
+          ls -la ci_data/anthropic_snapshots/index.html || true
           chmod -R a+rwX ci_data ci_state ci_artifacts
 
       - name: Smoke test run_daily (no webhook)
