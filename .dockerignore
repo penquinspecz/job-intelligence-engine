@@ -1,4 +1,4 @@
-# Python junk
+# ---- Python junk ----
 __pycache__/
 *.pyc
 *.pyo
@@ -8,23 +8,29 @@ __pycache__/
 .venv/
 venv/
 
-# Git + editor
+# ---- Git + editor ----
 .git/
 .gitignore
 .DS_Store
 .vscode/
 .idea/
 
-# Local outputs
+# ---- Default: do NOT ignore the whole data/ dir ----
+
+# ---- Local generated outputs (safe to ignore) ----
 data/openai_enriched_jobs_ai.json
 data/openai_ranked_jobs*.json
 data/openai_ranked_jobs*.csv
 data/openai_shortlist*.md
+data/*_raw_jobs.json
+data/*_enriched_jobs*.json
+data/*_ranked_jobs*.json
+data/*_ranked_jobs*.csv
+data/*_shortlist*.md
 
-# Keep snapshots + profile (needed for offline-ish runs)
-# (DO NOT ignore these)
+# ---- Always include snapshot fixtures + candidate profile ----
+!data/
+!data/**
 !data/*_snapshots/
 !data/*_snapshots/**
 !data/candidate_profile.json
-
-# If you have big raw dumps elsewhere, ignore them explicitly, not with "*"

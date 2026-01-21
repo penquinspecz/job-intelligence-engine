@@ -27,9 +27,15 @@ COPY scripts /app/scripts
 COPY config /app/config
 COPY docs /app/docs
 COPY tests /app/tests
-# Optionally bake snapshots for offline/snapshot runs (other data excluded by .dockerignore)
-COPY --chown=app:app data/*_snapshots /app/data/
+# Copy committed snapshot fixtures (deterministic/offline)
+COPY --chown=app:app data/openai_snapshots/ /app/data/openai_snapshots/
+COPY --chown=app:app data/anthropic_snapshots/ /app/data/anthropic_snapshots/
 COPY --chown=app:app data/candidate_profile.json /app/data/candidate_profile.json
+
+# Debug: prove fixtures exist during build
+RUN ls -la /app/data && \
+    ls -la /app/data/openai_snapshots && \
+    ls -la /app/data/anthropic_snapshots
 
 # Run tests during build (deterministic, offline)
 RUN python -m pytest -q

@@ -10,7 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       JOBINTEL_DATA_DIR: ${{ github.workspace }}/data
-      JOBINTEL_STATE_DIR: ${{ runner.temp }}/ci_state
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
@@ -19,7 +18,9 @@ jobs:
           python-version: 3.11
           cache: "pip"
       - name: Prepare state dir
-        run: mkdir -p "${{ runner.temp }}/ci_state"
+        run: |
+          echo "JOBINTEL_STATE_DIR=$RUNNER_TEMP/ci_state" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/ci_state"
       - name: Install dependencies
         run: |
           python -m pip install -U pip
