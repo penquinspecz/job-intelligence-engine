@@ -200,6 +200,22 @@ Mounting `/app/state` alongside `/app/data` keeps `state/history` persisted betw
 find state -maxdepth 10 -type f
 ```
 
+## Local Docker smoke
+
+Run the same containerized smoke flow as CI (offline, baked snapshots/state):
+
+```bash
+make smoke
+./scripts/smoke_docker.sh
+```
+
+Override defaults with env vars:
+
+```bash
+CONTAINER_NAME=jobintel_smoke_alt ./scripts/smoke_docker.sh
+ARTIFACT_DIR=smoke_out ./scripts/smoke_docker.sh
+```
+
 ## Dev commands
 
 ```bash

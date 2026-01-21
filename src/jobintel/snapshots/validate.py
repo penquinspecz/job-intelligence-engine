@@ -8,8 +8,8 @@ from typing import Iterable, List, Tuple
 MIN_BYTES_DEFAULT = 50_000
 MIN_BYTES_BY_PROVIDER = {
     "openai": MIN_BYTES_DEFAULT,
-    "anthropic": 5_000,
-    "ashby": 5_000,
+    "anthropic": 500,
+    "ashby": 500,
 }
 BLOCKED_MARKERS = (
     "captcha",

@@ -1,4 +1,4 @@
-.PHONY: test lint format-check gates docker-build docker-run-local report snapshot snapshot-openai
+.PHONY: test lint format-check gates docker-build docker-run-local report snapshot snapshot-openai smoke
 
 # Prefer repo venv if present; fall back to system python3.
 PY ?= .venv/bin/python
@@ -43,3 +43,6 @@ snapshot-openai:
 snapshot:
 	@if [ -z "$(provider)" ]; then echo "Usage: make snapshot provider=<name>"; exit 2; fi
 	$(PY) scripts/update_snapshots.py --provider $(provider)
+
+smoke:
+	./scripts/smoke_docker.sh

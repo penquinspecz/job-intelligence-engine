@@ -72,3 +72,6 @@ data/state/*.json
 
 # Local AI cache
 /data/ai_cache/
+
+# Local smoke outputs
+smoke_artifacts/
