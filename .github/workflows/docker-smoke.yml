@@ -8,6 +8,8 @@ on:
 jobs:
   smoke:
     runs-on: ubuntu-latest
+    env:
+      CONTAINER_NAME: jobintel_smoke
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,238 +27,59 @@ jobs:
       - name: Build image
         run: docker build -t jobintel:local .
 
-      - name: Prepare CI artifact dirs
+      - name: Validate baked-in snapshots
         run: |
-          mkdir -p ci_data ci_state ci_artifacts
-          if [ -d data/openai_snapshots ]; then
-            cp -R data/openai_snapshots ci_data/
-          fi
-          if [ -d data/anthropic_snapshots ]; then
-            cp -R data/anthropic_snapshots ci_data/
-          fi
-          if [ -f data/candidate_profile.json ]; then
-            cp data/candidate_profile.json ci_data/
-          fi
-          ls -la ci_data/openai_snapshots/index.html || true
-          ls -la ci_data/anthropic_snapshots/index.html || true
-          chmod -R a+rwX ci_data ci_state ci_artifacts
-
-      - name: Validate snapshots
-        run: |
-          python -m src.jobintel.cli snapshots validate --all --data-dir ci_data
+          docker run --rm jobintel:local \
+            python -m src.jobintel.cli snapshots validate --all --data-dir /app/data
 
       - name: Smoke test run_daily (no webhook)
         run: |
           set +e
-          mkdir -p ci_artifacts
-          container_name="jobintel_smoke"
-          docker rm -f "$container_name" >/dev/null 2>&1 || true
-          docker create --name "$container_name" \
+          mkdir -p smoke_artifacts
+          docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+          docker create --name "$CONTAINER_NAME" \
             --user "$(id -u):$(id -g)" \
             -e JOBINTEL_DATA_DIR=/app/data \
             -e JOBINTEL_STATE_DIR=/app/state \
-            -v "$PWD/ci_data:/app/data" \
-            -v "$PWD/ci_state:/app/state" \
             jobintel:local --providers openai --profiles cs --offline --no_post --no_enrich >/dev/null
-          docker start -a "$container_name" 2>&1 | tee ci_artifacts/container.log
+          docker start -a "$CONTAINER_NAME" 2>&1 | tee smoke_artifacts/container.log
           status=${PIPESTATUS[0]}
-          echo "$status" > ci_artifacts/exit_code.txt
-          docker rm "$container_name" >/dev/null 2>&1 || true
+          echo "$status" > smoke_artifacts/exit_code.txt
+          if [ "$status" -ne 0 ]; then
+            echo "Container failed; last 80 lines of logs:"
+            tail -n 80 smoke_artifacts/container.log || true
+          fi
           exit "$status"
 
       - name: Assert smoke outputs
-        if: always()
         run: |
           set -e
-          run_report="$(ls -1 ci_state/runs/*.json 2>/dev/null | sort | tail -n 1)"
-          if [ -z "$run_report" ]; then
-            echo "Missing run report in ci_state/runs/ (looked for ci_state/runs/*.json)"
-            echo "ci_state contents:"
-            ls -la ci_state || true
-            echo "ci_state/runs contents:"
-            ls -la ci_state/runs || true
-            exit 1
-          fi
-          if ! ls -1 ci_data/*ranked_jobs*.json >/dev/null 2>&1; then
-            echo "Missing ranked jobs JSON in ci_data/ (looked for ci_data/*ranked_jobs*.json)"
-            echo "ci_data contents:"
-            ls -la ci_data || true
+          mkdir -p smoke_artifacts
+          missing=0
+          for path in /app/data/openai_labeled_jobs.json /app/data/openai_ranked_jobs.cs.json /app/data/openai_ranked_jobs.cs.csv; do
+            if ! docker cp "$CONTAINER_NAME:$path" "smoke_artifacts/$(basename "$path")" 2>/dev/null; then
+              echo "Missing output: $path"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "Available /app/data contents:"
+            docker cp "$CONTAINER_NAME:/app/data" smoke_artifacts/data 2>/dev/null || true
+            ls -la smoke_artifacts/data 2>/dev/null || true
+            echo "Last 80 lines of container logs:"
+            tail -n 80 smoke_artifacts/container.log || true
             exit 1
           fi
 
-      - name: Collect smoke artifacts
+      - name: Cleanup smoke container
         if: always()
         run: |
-          mkdir -p ci_data ci_state ci_artifacts
-          sudo chown -R "$(id -u):$(id -g)" ci_data ci_state 2>/dev/null || true
-          chmod -R u+rwX,go+rX ci_data ci_state 2>/dev/null || true
-          chmod -R u+rwX,go+rX ci_artifacts 2>/dev/null || true
-          find ci_data -maxdepth 2 -type f -print | sort > ci_artifacts/ci_data_files.txt
-          find ci_state -maxdepth 3 -type f -print | sort > ci_artifacts/ci_state_files.txt
-          (ls -la . ci_data ci_state ci_state/runs 2>/dev/null || true) > ci_artifacts/ls_la.txt
-          run_report="$(ls -1 ci_state/runs/*.json 2>/dev/null | sort | tail -n 1)"
-          if [ -z "$run_report" ]; then
-            echo "Missing run report in ci_state/runs/ (looked for ci_state/runs/*.json)" >> ci_artifacts/diagnostic.txt
-          else
-            cp "$run_report" ci_artifacts/run_report.json
-          fi
-          if ! ls -1 ci_data/*ranked_jobs*.json >/dev/null 2>&1; then
-            echo "Missing ranked jobs JSON in ci_data/ (looked for ci_data/*ranked_jobs*.json)" >> ci_artifacts/diagnostic.txt
-          fi
-          cp -f ci_data/*ranked_jobs*.json ci_artifacts/ || true
-          cp -f ci_data/*ranked_jobs*.csv ci_artifacts/ || true
-          cp -f ci_data/*ranked_families*.json ci_artifacts/ || true
-          cp -f ci_data/*shortlist*.md ci_artifacts/ || true
-          cp -f ci_data/*_scrape_meta.json ci_artifacts/ || true
-          cp -f ci_data/*.score_meta.json ci_artifacts/ || true
-          cp -f ci_data/*run_summary*.txt ci_artifacts/ || true
-          cp -f ci_data/*run_report*.md ci_artifacts/ || true
-          echo "Collected artifacts:"
-          ls -R ci_artifacts
-
-      - name: Write smoke summary
-        if: always()
-        run: |
-          python - <<'PY'
-          import glob
-          import json
-          import os
-          from pathlib import Path
-          
-          report_path = Path("ci_artifacts/run_report.json")
-          if not report_path.exists():
-              summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
-              if summary_path:
-                  with open(summary_path, "a", encoding="utf-8") as handle:
-                      handle.write("### Docker smoke summary\n\n- Run report: missing\n")
-              raise SystemExit(0)
-          
-          with report_path.open("r", encoding="utf-8") as handle:
-              report = json.load(handle)
-          
-          def first_value(*paths):
-              for path in paths:
-                  cursor = report
-                  ok = True
-                  for key in path:
-                      if isinstance(cursor, dict) and key in cursor:
-                          cursor = cursor[key]
-                      else:
-                          ok = False
-                          break
-                  if ok and cursor is not None:
-                      return cursor
-              return None
-          
-          run_id = first_value(("run_id",), ("id",))
-          timestamp = first_value(("started_at",), ("timestamp",), ("run_timestamp",))
-          
-          provenance = first_value(("selection", "scrape_provenance"), ("provenance_by_provider",)) or {}
-          provider_lines = []
-          if isinstance(provenance, dict) and provenance:
-              for provider, meta in sorted(provenance.items()):
-                  mode = meta.get("scrape_mode") or meta.get("mode") or "unknown"
-                  status = mode
-                  if meta.get("live_status_code") and mode == "live":
-                      status = f"{mode} (status {meta['live_status_code']})"
-                  if meta.get("error"):
-                      status = f"{status} (error)"
-                  provider_lines.append(f"- `{provider}`: {status}")
-          
-          scraped_count = first_value(("selection", "scrape_job_count"), ("scrape_job_count",))
-          classified_count = first_value(("selection", "classified_job_count"), ("classified_job_count",))
-          
-          ranked_count = None
-          ranked_candidates = sorted(
-              glob.glob("ci_artifacts/*ranked_jobs*cs*.json")
-              + glob.glob("ci_artifacts/*ranked_jobs*.cs.json")
-          )
-          if ranked_candidates:
-              try:
-                  with open(ranked_candidates[0], "r", encoding="utf-8") as handle:
-                      data = json.load(handle)
-                  if isinstance(data, list):
-                      ranked_count = len(data)
-              except Exception:
-                  ranked_count = sum(
-                      1 for line in open(ranked_candidates[0], "r", encoding="utf-8") if line.strip()
-                  )
-          
-          shortlist_count = None
-          shortlist_candidates = sorted(
-              glob.glob("ci_artifacts/*shortlist*cs*.md") + glob.glob("ci_artifacts/*shortlist*.cs.md")
-          )
-          if shortlist_candidates:
-              shortlist_count = sum(
-                  1
-                  for line in open(shortlist_candidates[0], "r", encoding="utf-8")
-                  if line.strip().startswith("- ")
-              )
-          
-          us_only_fallback = (
-              report.get("selection", {}).get("us_only_fallback", {}).get("fallback_applied")
-          )
-          
-          summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
-          lines = ["### Docker smoke summary", ""]
-          if run_id:
-              lines.append(f"- Run ID: `{run_id}`")
-          if timestamp:
-              lines.append(f"- Timestamp: `{timestamp}`")
-          if provider_lines:
-              lines.append("- Providers:")
-              lines.extend(provider_lines)
-          if scraped_count is not None or classified_count is not None:
-              lines.append(
-                  "- Counts: "
-                  f"scraped={scraped_count if scraped_count is not None else 'n/a'}, "
-                  f"classified={classified_count if classified_count is not None else 'n/a'}"
-              )
-          if ranked_count is not None or shortlist_count is not None:
-              lines.append(
-                  "- Profile `cs`: "
-                  f"ranked={ranked_count if ranked_count is not None else 'n/a'}, "
-                  f"shortlist={shortlist_count if shortlist_count is not None else 'n/a'}"
-              )
-          if us_only_fallback:
-              lines.append("- US-only fallback: applied")
-          else:
-              lines.append("- US-only fallback: no fallback")
-          
-          if summary_path:
-              with open(summary_path, "a", encoding="utf-8") as handle:
-                  handle.write("\n".join(lines) + "\n")
-          PY
+          docker rm "$CONTAINER_NAME" >/dev/null 2>&1 || true
 
       - name: Upload smoke artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: jobintel-smoke-artifacts
-          path: ci_artifacts/
+          path: smoke_artifacts/
           retention-days: 7
-
-      - name: Verify smoke outputs
-        if: always()
-        run: |
-          if [ ! -f ci_artifacts/exit_code.txt ]; then
-            echo "No container exit code recorded; skipping output checks."
-            exit 0
-          fi
-          if [ "$(cat ci_artifacts/exit_code.txt)" -ne 0 ]; then
-            echo "Container exited non-zero; skipping output checks."
-            exit 0
-          fi
-          missing=0
-          run_report="$(ls -1 ci_state/runs/*.json 2>/dev/null | sort | tail -n 1)"
-          if [ -z "$run_report" ]; then
-            echo "Missing run report in ci_state/runs/ (looked for ci_state/runs/*.json)"
-            missing=1
-          fi
-          if ! ls -1 ci_data/*ranked_jobs*.json >/dev/null 2>&1; then
-            echo "Missing ranked jobs JSON in ci_data/ (looked for ci_data/*ranked_jobs*.json)"
-            missing=1
-          fi
-          if [ "$missing" -ne 0 ]; then
-            exit 1
-          fi
