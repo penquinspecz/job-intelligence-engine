@@ -216,6 +216,12 @@ make smoke-fast
 ./scripts/smoke_docker.sh --skip-build
 ```
 
+Multi-provider smoke (bounded profiles):
+
+```bash
+./scripts/smoke_docker.sh --providers openai,anthropic --profiles cs
+```
+
 Override defaults with env vars:
 
 ```bash

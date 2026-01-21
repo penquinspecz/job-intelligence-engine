@@ -32,75 +32,103 @@ def _require_file(path: Path) -> None:
         raise RuntimeError(f"Empty required file: {path}")
 
 
-def _validate_run_report(report: dict, labeled_count: int) -> None:
-    providers = report.get("providers") or []
-    if "openai" not in providers:
-        raise RuntimeError("run_report.json missing provider=openai")
+def _validate_run_report(
+    report: dict,
+    providers: List[str],
+    profiles: List[str],
+    min_ranked: int,
+    artifacts: Path,
+) -> None:
+    report_providers = report.get("providers") or []
+    for provider in providers:
+        if provider not in report_providers:
+            raise RuntimeError(f"run_report.json missing provider={provider}")
 
     selection = report.get("selection") or {}
     provenance = selection.get("scrape_provenance") or report.get("provenance_by_provider") or {}
-    openai_meta = provenance.get("openai") or {}
-    scrape_mode = (openai_meta.get("scrape_mode") or "").lower()
-    if scrape_mode != "snapshot":
-        raise RuntimeError(f"run_report.json scrape_mode expected SNAPSHOT, got {scrape_mode or 'missing'}")
-
-    classified_count = selection.get("classified_job_count")
-    if classified_count is None:
-        by_provider = selection.get("classified_job_count_by_provider") or {}
-        if "openai" in by_provider:
-            classified_count = by_provider["openai"]
-    if classified_count is None:
-        tried = ["selection.classified_job_count", "selection.classified_job_count_by_provider.openai"]
+    classified_by_provider = selection.get("classified_job_count_by_provider")
+    if not isinstance(classified_by_provider, dict):
+        tried = ["selection.classified_job_count_by_provider"]
         keys = sorted(report.keys())
         raise RuntimeError(
-            "run_report.json missing classified_job_count "
+            "run_report.json missing classified_job_count_by_provider "
             f"(tried {', '.join(tried)}; top-level keys: {', '.join(keys)})"
         )
-    if int(classified_count) != labeled_count:
-        raise RuntimeError(
-            f"classified_job_count mismatch: report={classified_count} labeled_jobs={labeled_count}"
-        )
+
+    for provider in providers:
+        meta = provenance.get(provider) or {}
+        scrape_mode = (meta.get("scrape_mode") or "").lower()
+        if scrape_mode != "snapshot":
+            raise RuntimeError(
+                f"run_report.json scrape_mode expected SNAPSHOT for {provider}, got {scrape_mode or 'missing'}"
+            )
+
+        labeled_path = artifacts / f"{provider}_labeled_jobs.json"
+        if provider == "openai":
+            labeled_path = artifacts / "openai_labeled_jobs.json"
+        _require_file(labeled_path)
+
+        labeled_jobs = _load_json(labeled_path)
+        if not isinstance(labeled_jobs, list) or not labeled_jobs:
+            raise RuntimeError(f"{labeled_path.name} must be a non-empty list")
+
+        if provider not in classified_by_provider:
+            raise RuntimeError(
+                f"run_report.json missing classified_job_count_by_provider.{provider}"
+            )
+        if int(classified_by_provider[provider]) != len(labeled_jobs):
+            raise RuntimeError(
+                f"classified_job_count mismatch for {provider}: "
+                f"report={classified_by_provider[provider]} labeled_jobs={len(labeled_jobs)}"
+            )
+
+        for profile in profiles:
+            ranked_json_path = artifacts / f"{provider}_ranked_jobs.{profile}.json"
+            ranked_csv_path = artifacts / f"{provider}_ranked_jobs.{profile}.csv"
+            if provider == "openai":
+                ranked_json_path = artifacts / f"openai_ranked_jobs.{profile}.json"
+                ranked_csv_path = artifacts / f"openai_ranked_jobs.{profile}.csv"
+            _require_file(ranked_json_path)
+            _require_file(ranked_csv_path)
+
+            ranked_jobs = _load_json(ranked_json_path)
+            if not isinstance(ranked_jobs, list):
+                raise RuntimeError(f"{ranked_json_path.name} must be a list")
+            if len(ranked_jobs) < min_ranked:
+                raise RuntimeError(
+                    f"{ranked_json_path.name} has {len(ranked_jobs)} items (min {min_ranked})"
+                )
+
+            csv_rows = _count_csv_rows(ranked_csv_path)
+            if csv_rows != len(ranked_jobs):
+                raise RuntimeError(
+                    f"{ranked_csv_path.name} rows {csv_rows} != ranked JSON length {len(ranked_jobs)}"
+                )
 
 
 def main(argv: List[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Validate deterministic smoke artifacts.")
     ap.add_argument("artifacts_dir", help="Path to smoke_artifacts directory.")
     ap.add_argument("--min-ranked", type=int, default=5, help="Minimum ranked jobs required.")
+    ap.add_argument("--providers", default="openai", help="Comma-separated provider ids.")
+    ap.add_argument("--profiles", default="cs", help="Comma-separated profiles.")
     args = ap.parse_args(argv)
 
     artifacts = Path(args.artifacts_dir)
-    labeled_path = artifacts / "openai_labeled_jobs.json"
-    ranked_json_path = artifacts / "openai_ranked_jobs.cs.json"
-    ranked_csv_path = artifacts / "openai_ranked_jobs.cs.csv"
+    providers = [p.strip() for p in args.providers.split(",") if p.strip()]
+    profiles = [p.strip() for p in args.profiles.split(",") if p.strip()]
+    if not providers:
+        raise RuntimeError("No providers specified for smoke contract check")
+    if not profiles:
+        raise RuntimeError("No profiles specified for smoke contract check")
     run_report_path = artifacts / "run_report.json"
 
-    _require_file(labeled_path)
-    _require_file(ranked_json_path)
-    _require_file(ranked_csv_path)
     _require_file(run_report_path)
-
-    labeled_jobs = _load_json(labeled_path)
-    if not isinstance(labeled_jobs, list) or not labeled_jobs:
-        raise RuntimeError("openai_labeled_jobs.json must be a non-empty list")
-
-    ranked_jobs = _load_json(ranked_json_path)
-    if not isinstance(ranked_jobs, list):
-        raise RuntimeError("openai_ranked_jobs.cs.json must be a list")
-    if len(ranked_jobs) < args.min_ranked:
-        raise RuntimeError(
-            f"openai_ranked_jobs.cs.json has {len(ranked_jobs)} items (min {args.min_ranked})"
-        )
-
-    csv_rows = _count_csv_rows(ranked_csv_path)
-    if csv_rows != len(ranked_jobs):
-        raise RuntimeError(
-            f"openai_ranked_jobs.cs.csv rows {csv_rows} != ranked JSON length {len(ranked_jobs)}"
-        )
 
     run_report = _load_json(run_report_path)
     if not isinstance(run_report, dict):
         raise RuntimeError("run_report.json must be an object")
-    _validate_run_report(run_report, len(labeled_jobs))
+    _validate_run_report(run_report, providers, profiles, args.min_ranked, artifacts)
 
     return 0
 

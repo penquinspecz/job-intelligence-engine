@@ -32,7 +32,7 @@ def test_smoke_contract_check_ok(tmp_path: Path) -> None:
             "providers": ["openai"],
             "selection": {
                 "scrape_provenance": {"openai": {"scrape_mode": "snapshot"}},
-                "classified_job_count": len(labeled),
+                "classified_job_count_by_provider": {"openai": len(labeled)},
             },
         },
     )
@@ -52,7 +52,7 @@ def test_smoke_contract_check_missing_file(tmp_path: Path) -> None:
             "providers": ["openai"],
             "selection": {
                 "scrape_provenance": {"openai": {"scrape_mode": "snapshot"}},
-                "classified_job_count": 1,
+                "classified_job_count_by_provider": {"openai": 1},
             },
         },
     )
@@ -80,5 +80,5 @@ def test_smoke_contract_check_missing_classified_count(tmp_path: Path) -> None:
         },
     )
 
-    with pytest.raises(RuntimeError, match="missing classified_job_count"):
+    with pytest.raises(RuntimeError, match="missing classified_job_count_by_provider"):
         smoke_contract_check.main([str(artifacts)])

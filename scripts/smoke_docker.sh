@@ -5,16 +5,29 @@ CONTAINER_NAME=${CONTAINER_NAME:-jobintel_smoke}
 ARTIFACT_DIR=${ARTIFACT_DIR:-smoke_artifacts}
 IMAGE_TAG=${IMAGE_TAG:-jobintel:local}
 SMOKE_SKIP_BUILD=${SMOKE_SKIP_BUILD:-0}
+PROVIDERS=${PROVIDERS:-openai}
+PROFILES=${PROFILES:-cs}
 
-if [ "${1:-}" = "--skip-build" ]; then
-  SMOKE_SKIP_BUILD=1
-  shift
-fi
-
-if [ "$#" -ne 0 ]; then
-  echo "Usage: $0 [--skip-build]"
-  exit 2
-fi
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --skip-build)
+      SMOKE_SKIP_BUILD=1
+      shift
+      ;;
+    --providers)
+      PROVIDERS="${2:-}"
+      shift 2
+      ;;
+    --profiles)
+      PROFILES="${2:-}"
+      shift 2
+      ;;
+    *)
+      echo "Usage: $0 [--skip-build] [--providers <ids>] [--profiles <profiles>]"
+      exit 2
+      ;;
+  esac
+done
 
 mkdir -p "$ARTIFACT_DIR"
 
@@ -42,7 +55,7 @@ echo "==> Run smoke container ($CONTAINER_NAME)"
 docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
 
 docker create --name "$CONTAINER_NAME" \
-  "$IMAGE_TAG" --providers openai --profiles cs --offline --no_post --no_enrich >/dev/null
+  "$IMAGE_TAG" --providers "$PROVIDERS" --profiles "$PROFILES" --offline --no_post --no_enrich >/dev/null
 
 set +e
 docker start -a "$CONTAINER_NAME" 2>&1 | tee "$ARTIFACT_DIR/container.log"
@@ -80,7 +93,7 @@ fi
 
 PYTHON=${PYTHON:-python3}
 echo "==> Smoke contract check"
-$PYTHON scripts/smoke_contract_check.py "$ARTIFACT_DIR"
+$PYTHON scripts/smoke_contract_check.py "$ARTIFACT_DIR" --providers "$PROVIDERS" --profiles "$PROFILES"
 
 if [ "$status" -ne 0 ] || [ "$missing" -ne 0 ]; then
   echo "Smoke failed (exit_code=$status, missing_outputs=$missing)"
