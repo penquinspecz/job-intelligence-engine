@@ -9,11 +9,7 @@ _DEFAULT_DATA_DIR = REPO_ROOT / "data"
 _ENV_DATA_DIR = os.environ.get("JOBINTEL_DATA_DIR")
 _STATE_DIR_OVERRIDE = os.environ.get("JOBINTEL_STATE_DIR")
 DATA_DIR = Path(_ENV_DATA_DIR).expanduser() if _ENV_DATA_DIR else _DEFAULT_DATA_DIR
-STATE_DIR = (
-    Path(_STATE_DIR_OVERRIDE).expanduser()
-    if _STATE_DIR_OVERRIDE
-    else Path("/app/state" if os.environ.get("CI") else REPO_ROOT / "state")
-)
+STATE_DIR = Path(_STATE_DIR_OVERRIDE).expanduser() if _STATE_DIR_OVERRIDE else REPO_ROOT / "state"
 SNAPSHOT_DIR = DATA_DIR / "openai_snapshots"
 HISTORY_DIR = STATE_DIR / "history"
 RUN_METADATA_DIR = STATE_DIR / "runs"

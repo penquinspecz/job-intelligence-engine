@@ -36,6 +36,7 @@ jobs:
       - name: Collect smoke artifacts
         if: always()
         run: |
+          mkdir -p ci_data ci_state ci_artifacts
           find ci_data -maxdepth 2 -type f -print | sort > ci_artifacts/ci_data_files.txt
           find ci_state -maxdepth 3 -type f -print | sort > ci_artifacts/ci_state_files.txt
           (ls -la ci_data ci_state ci_state/runs 2>/dev/null || true) > ci_artifacts/ls_la.txt
