@@ -142,7 +142,7 @@ jobs:
           path: smoke_artifacts/**
           retention-days: 7
 
-      - name: Gate: fail if smoke failed
+      - name: "Gate: fail if smoke failed"
         if: always()
         run: |
           code=1

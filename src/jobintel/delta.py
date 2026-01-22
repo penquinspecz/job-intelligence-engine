@@ -3,8 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
-
+from typing import Any, Dict, Iterable, List, Optional
 
 FIELDS = ("title", "location", "team", "url")
 MAX_ID_LIST = 20
