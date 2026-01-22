@@ -9,6 +9,8 @@ from pathlib import Path
 import os
 from typing import Any, List
 
+from scripts.schema_validate import validate_report
+
 
 SMOKE_CONTRACT_VERSION = 1
 
@@ -233,6 +235,17 @@ def main(argv: List[str] | None = None) -> int:
         raise RuntimeError(
             f"run_report_schema_version {schema_version} < minimum {args.min_schema_version}"
         )
+
+    schema_path = Path(__file__).resolve().parents[1] / "schemas" / f"run_report.schema.v{schema_version}.json"
+    if not schema_path.exists():
+        raise RuntimeError(f"Missing schema file: {schema_path}")
+    schema = _load_json(schema_path)
+    if not isinstance(schema, dict):
+        raise RuntimeError(f"Schema file is not an object: {schema_path}")
+    schema_errors = validate_report(run_report, schema)
+    if schema_errors:
+        msg = "; ".join(schema_errors[:6])
+        raise RuntimeError(f"run_report.json failed schema validation: {msg}")
     _validate_run_report(run_report, providers, profiles, args.min_ranked, artifacts)
     _validate_delta_summary(run_report, providers, profiles, artifacts)
 

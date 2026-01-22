@@ -260,6 +260,10 @@ enforces exact schema version `1` by default; override with
 `--min-schema-version` or `--require-schema-version` (or env
 `SMOKE_MIN_SCHEMA_VERSION` / `SMOKE_REQUIRE_SCHEMA_VERSION`) during migrations.
 
+Versioned JSON schemas live under `schemas/` (for example,
+`schemas/run_report.schema.v1.json`). The smoke contract validates run reports
+against the matching schema file before applying deeper invariants.
+
 To adjust thresholds intentionally, pass a new minimum:
 
 ```bash

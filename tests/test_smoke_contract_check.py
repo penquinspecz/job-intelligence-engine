@@ -31,9 +31,11 @@ def test_smoke_contract_check_ok(tmp_path: Path) -> None:
         {
             "providers": ["openai"],
             "run_report_schema_version": 1,
+            "run_id": "run-1",
             "selection": {
                 "scrape_provenance": {"openai": {"scrape_mode": "snapshot"}},
                 "classified_job_count_by_provider": {"openai": len(labeled)},
+                "classified_job_count": len(labeled),
             },
             "delta_summary": {
                 "baseline_run_id": None,
@@ -78,9 +80,11 @@ def test_smoke_contract_check_missing_file(tmp_path: Path) -> None:
         {
             "providers": ["openai"],
             "run_report_schema_version": 1,
+            "run_id": "run-1",
             "selection": {
                 "scrape_provenance": {"openai": {"scrape_mode": "snapshot"}},
                 "classified_job_count_by_provider": {"openai": 1},
+                "classified_job_count": 1,
             },
             "delta_summary": {
                 "baseline_run_id": "run-0",
@@ -131,11 +135,15 @@ def test_smoke_contract_check_missing_classified_count(tmp_path: Path) -> None:
         {
             "providers": ["openai"],
             "run_report_schema_version": 1,
-            "selection": {"scrape_provenance": {"openai": {"scrape_mode": "snapshot"}}},
+            "run_id": "run-1",
+            "selection": {
+                "scrape_provenance": {"openai": {"scrape_mode": "snapshot"}},
+                "classified_job_count": len(labeled),
+            },
         },
     )
 
-    with pytest.raises(RuntimeError, match="missing classified_job_count_by_provider"):
+    with pytest.raises(RuntimeError, match="classified_job_count_by_provider"):
         smoke_contract_check.main([str(artifacts)])
 
 
@@ -153,9 +161,11 @@ def test_smoke_contract_check_missing_delta_summary(tmp_path: Path) -> None:
         {
             "providers": ["openai"],
             "run_report_schema_version": 1,
+            "run_id": "run-1",
             "selection": {
                 "scrape_provenance": {"openai": {"scrape_mode": "snapshot"}},
                 "classified_job_count_by_provider": {"openai": len(labeled)},
+                "classified_job_count": len(labeled),
             },
         },
     )
@@ -177,9 +187,11 @@ def test_smoke_contract_check_missing_schema_version(tmp_path: Path) -> None:
         artifacts / "run_report.json",
         {
             "providers": ["openai"],
+            "run_id": "run-1",
             "selection": {
                 "scrape_provenance": {"openai": {"scrape_mode": "snapshot"}},
                 "classified_job_count_by_provider": {"openai": len(labeled)},
+                "classified_job_count": len(labeled),
             },
             "delta_summary": {
                 "baseline_run_id": None,
@@ -208,9 +220,11 @@ def test_smoke_contract_check_wrong_schema_version(tmp_path: Path) -> None:
         {
             "providers": ["openai"],
             "run_report_schema_version": 0,
+            "run_id": "run-1",
             "selection": {
                 "scrape_provenance": {"openai": {"scrape_mode": "snapshot"}},
                 "classified_job_count_by_provider": {"openai": len(labeled)},
+                "classified_job_count": len(labeled),
             },
             "delta_summary": {
                 "baseline_run_id": None,
@@ -238,10 +252,12 @@ def test_smoke_contract_check_min_schema_version(tmp_path: Path) -> None:
         artifacts / "run_report.json",
         {
             "providers": ["openai"],
-            "run_report_schema_version": 2,
+            "run_report_schema_version": 1,
+            "run_id": "run-1",
             "selection": {
                 "scrape_provenance": {"openai": {"scrape_mode": "snapshot"}},
                 "classified_job_count_by_provider": {"openai": len(labeled)},
+                "classified_job_count": len(labeled),
             },
             "delta_summary": {
                 "baseline_run_id": None,
@@ -273,5 +289,5 @@ def test_smoke_contract_check_min_schema_version(tmp_path: Path) -> None:
     )
 
     assert smoke_contract_check.main(
-        [str(artifacts), "--require-schema-version", "0", "--min-schema-version", "2"]
+        [str(artifacts), "--require-schema-version", "0", "--min-schema-version", "1"]
     ) == 0
