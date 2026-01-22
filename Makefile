@@ -1,4 +1,4 @@
-.PHONY: test lint format-check gates docker-build docker-run-local report snapshot snapshot-openai smoke image smoke-fast smoke-ci image-ci
+.PHONY: test lint format-check gates docker-build docker-run-local report snapshot snapshot-openai smoke image smoke-fast smoke-ci image-ci ci ci-local docker-ok
 
 # Prefer repo venv if present; fall back to system python3.
 PY ?= .venv/bin/python
@@ -23,6 +23,12 @@ define docker_diag
 	echo "Docker host: $$host"
 endef
 
+docker-ok:
+	$(call docker_diag)
+	@if ! docker info >/dev/null 2>&1; then \
+		echo "Docker is not available for the active context. Fix Docker permissions or context."; \
+		exit 1; \
+	fi
 test:
 	$(PY) -m pytest -q
 
@@ -87,3 +93,13 @@ smoke-ci:
 	$(call docker_diag)
 	$(MAKE) image-ci
 	SMOKE_SKIP_BUILD=1 ./scripts/smoke_docker.sh --skip-build --providers openai --profiles cs
+
+ci: lint test docker-ok smoke-ci
+
+ci-local: lint test
+	@if $(MAKE) docker-ok >/dev/null 2>&1; then \
+		echo "Docker OK; running smoke-ci."; \
+		$(MAKE) smoke-ci; \
+	else \
+		echo "Docker unavailable; skipping smoke-ci for ci-local."; \
+	fi

@@ -2,11 +2,11 @@ from pathlib import Path
 
 import pytest
 
-from scripts.schema_validate import validate_report
+from scripts.schema_validate import resolve_schema_path, validate_report
 
 
 def _load_schema() -> dict:
-    schema_path = Path(__file__).resolve().parents[1] / "schemas" / "run_report.schema.v1.json"
+    schema_path = resolve_schema_path(1)
     return __import__("json").loads(schema_path.read_text(encoding="utf-8"))
 
 
@@ -53,3 +53,20 @@ def test_schema_validate_missing_required() -> None:
     assert errors
     assert any("classified_job_count" in err for err in errors)
     assert any("classified_job_count_by_provider" in err for err in errors)
+
+
+def test_resolve_schema_path_repo() -> None:
+    schema_path = resolve_schema_path(1)
+    assert schema_path.name == "run_report.schema.v1.json"
+    assert schema_path.exists()
+
+
+def test_resolve_schema_path_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    override_dir = tmp_path / "schemas"
+    override_dir.mkdir()
+    schema_path = override_dir / "run_report.schema.v1.json"
+    schema_path.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setenv("JOBINTEL_SCHEMA_DIR", str(override_dir))
+    resolved = resolve_schema_path(1)
+    assert resolved == schema_path

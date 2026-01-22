@@ -10,9 +10,9 @@ import os
 from typing import Any, List
 
 try:
-    from schema_validate import validate_report
+    from schema_validate import resolve_schema_path, validate_report
 except ImportError:  # pragma: no cover - fallback for module execution
-    from scripts.schema_validate import validate_report
+    from scripts.schema_validate import resolve_schema_path, validate_report
 
 
 SMOKE_CONTRACT_VERSION = 1
@@ -88,6 +88,15 @@ def _validate_delta_summary(
                     f"delta_summary ranked_total mismatch for {provider}/{profile}: "
                     f"report={entry.get('ranked_total')} ranked_jobs={len(ranked_jobs)}"
                 )
+            ranked_csv_path = artifacts / f"{provider}_ranked_jobs.{profile}.csv"
+            if provider == "openai":
+                ranked_csv_path = artifacts / f"openai_ranked_jobs.{profile}.csv"
+            csv_rows = _count_csv_rows(ranked_csv_path)
+            if entry.get("ranked_total") != csv_rows:
+                raise RuntimeError(
+                    f"delta_summary ranked_total mismatch for {provider}/{profile}: "
+                    f"report={entry.get('ranked_total')} ranked_csv_rows={csv_rows}"
+                )
 
             baseline_id = entry.get("baseline_run_id")
             new_count = int(entry.get("new_job_count", 0))
@@ -135,6 +144,17 @@ def _validate_run_report(
         raise RuntimeError(
             "run_report.json missing classified_job_count_by_provider "
             f"(tried {', '.join(tried)}; top-level keys: {', '.join(keys)})"
+        )
+    classified_total = selection.get("classified_job_count")
+    if not isinstance(classified_total, int):
+        raise RuntimeError("run_report.json missing classified_job_count")
+    expected_total = sum(
+        int(classified_by_provider.get(provider, 0)) for provider in providers
+    )
+    if classified_total != expected_total:
+        raise RuntimeError(
+            "classified_job_count mismatch: "
+            f"report={classified_total} expected_sum={expected_total}"
         )
 
     for provider in providers:
@@ -239,9 +259,7 @@ def main(argv: List[str] | None = None) -> int:
             f"run_report_schema_version {schema_version} < minimum {args.min_schema_version}"
         )
 
-    schema_path = Path(__file__).resolve().parents[1] / "schemas" / f"run_report.schema.v{schema_version}.json"
-    if not schema_path.exists():
-        raise RuntimeError(f"Missing schema file: {schema_path}")
+    schema_path = resolve_schema_path(schema_version)
     schema = _load_json(schema_path)
     if not isinstance(schema, dict):
         raise RuntimeError(f"Schema file is not an object: {schema_path}")
@@ -249,6 +267,11 @@ def main(argv: List[str] | None = None) -> int:
     if schema_errors:
         msg = "; ".join(schema_errors[:6])
         raise RuntimeError(f"run_report.json failed schema validation: {msg}")
+    if run_report.get("run_report_schema_version") != schema_version:
+        raise RuntimeError(
+            "run_report_schema_version does not match schema version "
+            f"(report={run_report.get('run_report_schema_version')}, schema={schema_version})"
+        )
     _validate_run_report(run_report, providers, profiles, args.min_ranked, artifacts)
     _validate_delta_summary(run_report, providers, profiles, artifacts)
 

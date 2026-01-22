@@ -277,6 +277,11 @@ To adjust thresholds intentionally, pass a new minimum:
 python3 scripts/smoke_contract_check.py smoke_artifacts --min-ranked 10
 ```
 
+## Local CI
+
+`make ci` is strict and matches GitHub Actions (includes Docker smoke).
+`make ci-local` skips Docker smoke when Docker is unavailable.
+
 ## Delta summary
 
 Each run report includes a `delta_summary` section with per-provider/profile deltas between the current run and the latest available baseline. When no baseline is available, `baseline_run_id` and `baseline_run_path` are null and all delta counts are zero (unchanged is zero).

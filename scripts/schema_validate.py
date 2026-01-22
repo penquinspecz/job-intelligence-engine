@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -68,6 +69,27 @@ def _coerce_int(value: Any) -> Optional[int]:
     if isinstance(value, int) and not isinstance(value, bool):
         return value
     return None
+
+
+def resolve_schema_path(version: int) -> Path:
+    filename = f"run_report.schema.v{version}.json"
+    attempted: List[Path] = []
+    override = os.environ.get("JOBINTEL_SCHEMA_DIR")
+    if override:
+        attempted.append(Path(override) / filename)
+    attempted.append(Path(__file__).resolve().parents[1] / "schemas" / filename)
+    attempted.append(Path.cwd() / "schemas" / filename)
+
+    for candidate in attempted:
+        if candidate.exists():
+            return candidate
+
+    attempted_display = ", ".join(str(p.resolve()) for p in attempted)
+    raise RuntimeError(
+        "Schema file not found for version "
+        f"{version}. Tried: {attempted_display}. "
+        "Ensure schemas are available or set JOBINTEL_SCHEMA_DIR."
+    )
 
 
 def _validate_delta_summary(report: Dict[str, Any], errors: List[str]) -> None:
