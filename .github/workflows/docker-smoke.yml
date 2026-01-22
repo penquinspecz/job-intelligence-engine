@@ -24,25 +24,39 @@ jobs:
             exit 1
           fi
 
-      - name: Smoke test (scripted)
-        continue-on-error: true
+      - name: Build image
         run: |
-          ./scripts/smoke_docker.sh
+          docker build -t jobintel:local .
 
-      - name: Tail smoke logs on failure
-        if: failure()
+      - name: Run smoke (containerized)
+        id: smoke
+        continue-on-error: true
+        env:
+          SMOKE_SKIP_BUILD: "1"
         run: |
-          tail -n 120 smoke_artifacts/container.log || true
+          ./scripts/smoke_docker.sh --skip-build --providers openai --profiles cs
+
+      - name: Tail logs on failure
+        if: steps.smoke.outcome != 'success'
+        run: |
+          if [ -f smoke_artifacts/exit_code.txt ]; then
+            echo "Smoke exit code: $(cat smoke_artifacts/exit_code.txt)"
+          fi
+          if [ -f smoke_artifacts/container.log ]; then
+            echo "---- tail smoke_artifacts/container.log (last 200 lines) ----"
+            tail -n 200 smoke_artifacts/container.log || true
+          fi
+        continue-on-error: true
 
       - name: Upload smoke artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: jobintel-smoke-artifacts
-          path: smoke_artifacts/
+          path: smoke_artifacts/**
           retention-days: 7
 
-      - name: Fail if smoke failed
+      - name: Gate: fail if smoke failed
         if: always()
         run: |
           code=1
@@ -58,5 +72,6 @@ jobs:
           done
           if [ "$code" -ne 0 ] || [ "$missing" -ne 0 ]; then
             echo "Smoke failed (exit_code=$code, missing_outputs=$missing)"
+            ls -la smoke_artifacts || true
             exit 1
           fi
