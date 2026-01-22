@@ -2,6 +2,7 @@
 
 # Prefer repo venv if present; fall back to system python3.
 PY ?= .venv/bin/python
+JOBINTEL_IMAGE_TAG ?= jobintel:local
 ifeq ($(wildcard $(PY)),)
 PY = python3
 endif
@@ -43,27 +44,27 @@ gates: format-check lint test
 docker-build:
 	$(call check_buildkit)
 	$(call docker_diag)
-	docker build -t jobintel:local --build-arg RUN_TESTS=0 .
+	docker build -t $(JOBINTEL_IMAGE_TAG) --build-arg RUN_TESTS=0 .
 
 image: docker-build
 
 image-ci:
 	$(call check_buildkit)
 	$(call docker_diag)
-	docker build -t jobintel:local --build-arg RUN_TESTS=1 .
+	docker build -t $(JOBINTEL_IMAGE_TAG) --build-arg RUN_TESTS=1 .
 
 docker-run-local:
 	docker run --rm \
 		-v "$$PWD/data:/app/data" \
 		-v "$$PWD/state:/app/state" \
-		jobintel:local \
+		$(JOBINTEL_IMAGE_TAG) \
 		--profiles cs --us_only --no_post --no_enrich
 
 report:
 	docker run --rm \
 		-v "$$PWD/state:/app/state" \
 		--entrypoint python \
-		jobintel:local \
+		$(JOBINTEL_IMAGE_TAG) \
 		-m scripts.report_changes --profile $(PROFILE) --limit $(LIMIT)
 
 snapshot-openai:
@@ -77,22 +78,22 @@ smoke:
 	$(call check_buildkit)
 	$(call docker_diag)
 	$(MAKE) image
-	SMOKE_SKIP_BUILD=1 ./scripts/smoke_docker.sh --skip-build
+	IMAGE_TAG=$(JOBINTEL_IMAGE_TAG) SMOKE_SKIP_BUILD=1 ./scripts/smoke_docker.sh --skip-build
 
 smoke-fast:
 	$(call check_buildkit)
 	$(call docker_diag)
-	@docker image inspect jobintel:local >/dev/null 2>&1 || ( \
-		echo "jobintel:local image missing; building with make image..."; \
+	@docker image inspect $(JOBINTEL_IMAGE_TAG) >/dev/null 2>&1 || ( \
+		echo "$(JOBINTEL_IMAGE_TAG) image missing; building with make image..."; \
 		$(MAKE) image; \
 	)
-	SMOKE_SKIP_BUILD=1 ./scripts/smoke_docker.sh
+	IMAGE_TAG=$(JOBINTEL_IMAGE_TAG) SMOKE_SKIP_BUILD=1 ./scripts/smoke_docker.sh
 
 smoke-ci:
 	$(call check_buildkit)
 	$(call docker_diag)
 	$(MAKE) image-ci
-	SMOKE_SKIP_BUILD=1 ./scripts/smoke_docker.sh --skip-build --providers openai --profiles cs
+	IMAGE_TAG=$(JOBINTEL_IMAGE_TAG) SMOKE_SKIP_BUILD=1 ./scripts/smoke_docker.sh --skip-build --providers openai --profiles cs
 
 ci: lint test docker-ok smoke-ci
 

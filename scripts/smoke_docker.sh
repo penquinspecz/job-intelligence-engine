@@ -3,7 +3,7 @@ set -euo pipefail
 
 CONTAINER_NAME=${CONTAINER_NAME:-jobintel_smoke}
 ARTIFACT_DIR=${ARTIFACT_DIR:-smoke_artifacts}
-IMAGE_TAG=${IMAGE_TAG:-jobintel:local}
+IMAGE_TAG=${IMAGE_TAG:-${JOBINTEL_IMAGE_TAG:-jobintel:local}}
 SMOKE_SKIP_BUILD=${SMOKE_SKIP_BUILD:-0}
 PROVIDERS=${PROVIDERS:-openai}
 PROFILES=${PROFILES:-cs}
@@ -54,6 +54,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
+echo "==> Image tag: $IMAGE_TAG"
+
 if [ "$SMOKE_SKIP_BUILD" = "1" ]; then
   if ! docker image inspect "$IMAGE_TAG" >/dev/null 2>&1; then
     echo "Missing image '$IMAGE_TAG'. Build it first (docker build -t $IMAGE_TAG .) or omit --skip-build."
@@ -87,7 +89,7 @@ if [ "$preflight_status" -ne 0 ]; then
   echo "Last error output:"
   echo "$last_output"
   echo "Preflight bypasses the image ENTRYPOINT; failures mean python is missing or"
-  echo "the jobintel:local tag may have been overwritten by a non-jobintel image."
+  echo "the $IMAGE_TAG tag may have been overwritten by a non-jobintel image."
   echo "Rebuild with: make image"
   exit 1
 fi

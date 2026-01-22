@@ -212,6 +212,9 @@ make smoke
 
 Do not reuse the `jobintel:local` tag for unrelated builds. Use a different tag
 (for example `sanity-build`) to avoid overwriting the smoke image.
+Override the image tag when needed:
+`make image JOBINTEL_IMAGE_TAG=jobintel:dev`
+`make smoke-fast JOBINTEL_IMAGE_TAG=jobintel:dev`
 
 BuildKit is required (the Dockerfile uses `RUN --mount=type=cache`), so
 `DOCKER_BUILDKIT=0` is unsupported. Docker Desktop on macOS uses BuildKit by
