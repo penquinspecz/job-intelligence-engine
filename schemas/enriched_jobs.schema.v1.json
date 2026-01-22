@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "enriched_jobs schema v1",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["enrichment"],
+    "properties": {
+      "enrichment": {
+        "type": "object",
+        "required": [
+          "inferred_seniority",
+          "inferred_remote",
+          "inferred_domain_tags",
+          "normalized_location"
+        ],
+        "properties": {
+          "inferred_seniority": { "type": "string" },
+          "inferred_remote": { "type": "string" },
+          "inferred_domain_tags": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "inferred_level": { "type": ["string", "null"] },
+          "normalized_location": { "type": ["string", "null"] }
+        },
+        "additionalProperties": true
+      }
+    },
+    "additionalProperties": true
+  },
+  "additionalProperties": true
+}

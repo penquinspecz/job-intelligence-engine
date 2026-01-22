@@ -9,6 +9,8 @@ from typing import Any, Dict, List, Optional
 
 
 def _type_ok(value: Any, expected: str) -> bool:
+    if isinstance(expected, list):
+        return any(_type_ok(value, item) for item in expected)
     if expected == "object":
         return isinstance(value, dict)
     if expected == "array":
@@ -21,6 +23,8 @@ def _type_ok(value: Any, expected: str) -> bool:
         return isinstance(value, bool)
     if expected == "number":
         return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if expected == "null":
+        return value is None
     return False
 
 
@@ -71,8 +75,8 @@ def _coerce_int(value: Any) -> Optional[int]:
     return None
 
 
-def resolve_schema_path(version: int) -> Path:
-    filename = f"run_report.schema.v{version}.json"
+def resolve_named_schema_path(schema_name: str, version: int) -> Path:
+    filename = f"{schema_name}.schema.v{version}.json"
     attempted: List[Path] = []
     override = os.environ.get("JOBINTEL_SCHEMA_DIR")
     if override:
@@ -86,10 +90,14 @@ def resolve_schema_path(version: int) -> Path:
 
     attempted_display = ", ".join(str(p.resolve()) for p in attempted)
     raise RuntimeError(
-        "Schema file not found for version "
-        f"{version}. Tried: {attempted_display}. "
+        f"Schema file not found for {schema_name} version {version}. "
+        f"Tried: {attempted_display}. "
         "Ensure schemas are available or set JOBINTEL_SCHEMA_DIR."
     )
+
+
+def resolve_schema_path(version: int) -> Path:
+    return resolve_named_schema_path("run_report", version)
 
 
 def _validate_delta_summary(report: Dict[str, Any], errors: List[str]) -> None:
@@ -150,6 +158,12 @@ def validate_report(report: Dict[str, Any], schema: Dict[str, Any]) -> List[str]
     errors: List[str] = []
     _validate_node(report, schema, "", errors)
     _validate_delta_summary(report, errors)
+    return errors
+
+
+def validate_payload(payload: Any, schema: Dict[str, Any]) -> List[str]:
+    errors: List[str] = []
+    _validate_node(payload, schema, "", errors)
     return errors
 
 

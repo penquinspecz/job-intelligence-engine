@@ -20,6 +20,11 @@ from pathlib import Path
 from ji_engine.config import ENRICHED_JOBS_JSON, LABELED_JOBS_JSON
 from jobintel.enrichment import enrich_jobs
 
+try:
+    from schema_validate import resolve_named_schema_path, validate_payload
+except ImportError:  # pragma: no cover - script execution fallback
+    from scripts.schema_validate import resolve_named_schema_path, validate_payload
+
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Deterministic enrichment step.")
@@ -49,6 +54,15 @@ def main() -> None:
         json.dumps(enriched_jobs, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+
+    schema_path = resolve_named_schema_path("enriched_jobs", 1)
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    errors = validate_payload(enriched_jobs, schema)
+    if errors:
+        print("Enriched schema validation failed:")
+        for err in errors[:8]:
+            print(f"- {err}")
+        sys.exit(2)
 
     print(f"Enriched {len(enriched_jobs)} jobs -> {output_path}")
 

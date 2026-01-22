@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "alerts schema v1",
+  "type": "object",
+  "required": ["counts", "new_jobs", "removed_jobs", "score_changes", "title_or_location_changes"],
+  "properties": {
+    "counts": {
+      "type": "object",
+      "required": ["new", "removed", "score_changes", "title_or_location_changes"],
+      "properties": {
+        "new": { "type": "integer" },
+        "removed": { "type": "integer" },
+        "score_changes": { "type": "integer" },
+        "title_or_location_changes": { "type": "integer" }
+      },
+      "additionalProperties": true
+    },
+    "new_jobs": { "type": "array" },
+    "removed_jobs": { "type": "array" },
+    "score_changes": { "type": "array" },
+    "title_or_location_changes": { "type": "array" }
+  },
+  "additionalProperties": true
+}
