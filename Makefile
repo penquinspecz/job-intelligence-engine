@@ -36,7 +36,7 @@ test:
 	$(PY) -m pytest -q
 
 lint:
-	$(PY) -m ruff check src
+	$(PY) -m ruff check src scripts tests
 
 format-check:
 	$(PY) -m ruff format --check src
