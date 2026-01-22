@@ -31,6 +31,7 @@ COPY scripts /app/scripts
 COPY config /app/config
 COPY docs /app/docs
 COPY tests /app/tests
+COPY schemas /app/schemas
 # Copy committed snapshot fixtures (deterministic/offline)
 COPY --chown=app:app data/openai_snapshots/ /app/data/openai_snapshots/
 COPY --chown=app:app data/anthropic_snapshots/ /app/data/anthropic_snapshots/
