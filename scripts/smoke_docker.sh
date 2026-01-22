@@ -7,6 +7,7 @@ IMAGE_TAG=${IMAGE_TAG:-${JOBINTEL_IMAGE_TAG:-jobintel:local}}
 SMOKE_SKIP_BUILD=${SMOKE_SKIP_BUILD:-0}
 SMOKE_PROVIDERS=${SMOKE_PROVIDERS:-openai}
 SMOKE_PROFILES=${SMOKE_PROFILES:-cs}
+SMOKE_NO_ENRICH=-e
 PROVIDERS=${PROVIDERS:-$SMOKE_PROVIDERS}
 PROFILES=${PROFILES:-$SMOKE_PROFILES}
 SMOKE_TAIL_LINES=${SMOKE_TAIL_LINES:-0}
@@ -121,7 +122,8 @@ docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
 
 set +e
 docker create --name "$CONTAINER_NAME" \
-  "$IMAGE_TAG" --providers "$PROVIDERS" --profiles "$PROFILES" --offline --no_post --no_enrich >/dev/null
+  "$IMAGE_TAG" --providers "$PROVIDERS" --profiles "$PROFILES" --offline --no_post \
+  $(if [ "$SMOKE_NO_ENRICH" = "1" ]; then echo "--no_enrich"; fi) >/dev/null
 create_status=$?
 set -e
 if [ "$create_status" -eq 0 ]; then
