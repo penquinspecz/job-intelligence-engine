@@ -36,6 +36,12 @@ jobs:
         run: |
           make image-ci
 
+      - name: Smoke Config
+        run: |
+          make print-config
+          docker version || true
+          docker info || true
+
       - name: Run smoke (containerized)
         id: smoke
         continue-on-error: true

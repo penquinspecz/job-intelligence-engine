@@ -3,6 +3,8 @@
 # Prefer repo venv if present; fall back to system python3.
 PY ?= .venv/bin/python
 JOBINTEL_IMAGE_TAG ?= jobintel:local
+SMOKE_PROVIDERS ?= openai
+SMOKE_PROFILES ?= cs
 ifeq ($(wildcard $(PY)),)
 PY = python3
 endif
@@ -78,7 +80,8 @@ smoke:
 	$(call check_buildkit)
 	$(call docker_diag)
 	$(MAKE) image
-	IMAGE_TAG=$(JOBINTEL_IMAGE_TAG) SMOKE_SKIP_BUILD=1 ./scripts/smoke_docker.sh --skip-build --providers openai --profiles cs
+	IMAGE_TAG=$(JOBINTEL_IMAGE_TAG) SMOKE_SKIP_BUILD=1 SMOKE_PROVIDERS=$(SMOKE_PROVIDERS) SMOKE_PROFILES=$(SMOKE_PROFILES) \
+		./scripts/smoke_docker.sh --skip-build --providers $(SMOKE_PROVIDERS) --profiles $(SMOKE_PROFILES)
 
 smoke-fast:
 	$(call check_buildkit)
@@ -87,14 +90,22 @@ smoke-fast:
 		echo "$(JOBINTEL_IMAGE_TAG) image missing; building with make image..."; \
 		$(MAKE) image; \
 	)
-	IMAGE_TAG=$(JOBINTEL_IMAGE_TAG) SMOKE_SKIP_BUILD=1 ./scripts/smoke_docker.sh --providers openai --profiles cs
+	IMAGE_TAG=$(JOBINTEL_IMAGE_TAG) SMOKE_SKIP_BUILD=1 SMOKE_PROVIDERS=$(SMOKE_PROVIDERS) SMOKE_PROFILES=$(SMOKE_PROFILES) \
+		./scripts/smoke_docker.sh --providers $(SMOKE_PROVIDERS) --profiles $(SMOKE_PROFILES)
 
 smoke-ci:
 	$(call check_buildkit)
 	$(call docker_diag)
 	$(MAKE) image-ci
-	IMAGE_TAG=$(JOBINTEL_IMAGE_TAG) SMOKE_SKIP_BUILD=1 ./scripts/smoke_docker.sh --skip-build --providers openai --profiles cs
+	IMAGE_TAG=$(JOBINTEL_IMAGE_TAG) SMOKE_SKIP_BUILD=1 SMOKE_PROVIDERS=$(SMOKE_PROVIDERS) SMOKE_PROFILES=$(SMOKE_PROFILES) \
+		./scripts/smoke_docker.sh --skip-build --providers $(SMOKE_PROVIDERS) --profiles $(SMOKE_PROFILES)
 
 ci: lint test docker-ok smoke-ci
 
 ci-local: lint test
+
+print-config:
+	@echo "JOBINTEL_IMAGE_TAG=$(JOBINTEL_IMAGE_TAG)"
+	@echo "SMOKE_PROVIDERS=$(SMOKE_PROVIDERS)"
+	@echo "SMOKE_PROFILES=$(SMOKE_PROFILES)"
+	$(call docker_diag)

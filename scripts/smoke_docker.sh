@@ -5,8 +5,10 @@ CONTAINER_NAME=${CONTAINER_NAME:-jobintel_smoke}
 ARTIFACT_DIR=${ARTIFACT_DIR:-smoke_artifacts}
 IMAGE_TAG=${IMAGE_TAG:-${JOBINTEL_IMAGE_TAG:-jobintel:local}}
 SMOKE_SKIP_BUILD=${SMOKE_SKIP_BUILD:-0}
-PROVIDERS=${PROVIDERS:-openai}
-PROFILES=${PROFILES:-cs}
+SMOKE_PROVIDERS=${SMOKE_PROVIDERS:-openai}
+SMOKE_PROFILES=${SMOKE_PROFILES:-cs}
+PROVIDERS=${PROVIDERS:-$SMOKE_PROVIDERS}
+PROFILES=${PROFILES:-$SMOKE_PROFILES}
 SMOKE_TAIL_LINES=${SMOKE_TAIL_LINES:-0}
 container_created=0
 status=1
@@ -19,6 +21,18 @@ fi
 write_exit_code() {
   mkdir -p "$ARTIFACT_DIR"
   echo "$status" > "$ARTIFACT_DIR/exit_code.txt"
+}
+
+write_docker_context() {
+  mkdir -p "$ARTIFACT_DIR"
+  {
+    echo "context: $(docker context show 2>/dev/null || echo unknown)"
+    echo "host: $(docker context inspect "$(docker context show 2>/dev/null || echo default)" --format '{{json .Endpoints.docker.Host}}' 2>/dev/null || echo unknown)"
+    echo "docker version:"
+    docker version 2>/dev/null || true
+    echo "docker info:"
+    docker info 2>/dev/null || true
+  } > "$ARTIFACT_DIR/docker_context.txt"
 }
 
 while [ "$#" -gt 0 ]; do
@@ -55,6 +69,10 @@ cleanup() {
 trap cleanup EXIT
 
 echo "==> Image tag: $IMAGE_TAG"
+context="$(docker context show 2>/dev/null || echo unknown)"
+host="$(docker context inspect "$context" --format '{{json .Endpoints.docker.Host}}' 2>/dev/null || echo unknown)"
+echo "==> Config: image=$IMAGE_TAG providers=$PROVIDERS profiles=$PROFILES skip_build=$SMOKE_SKIP_BUILD context=$context host=$host"
+write_docker_context
 
 if [ "$SMOKE_SKIP_BUILD" = "1" ]; then
   if ! docker image inspect "$IMAGE_TAG" >/dev/null 2>&1; then
@@ -109,7 +127,7 @@ set -e
 if [ "$create_status" -eq 0 ]; then
   container_created=1
   set +e
-  docker start -a "$CONTAINER_NAME" 2>&1 | tee "$ARTIFACT_DIR/container.log"
+  docker start -a "$CONTAINER_NAME" 2>&1 | tee "$ARTIFACT_DIR/smoke.log"
   status=${PIPESTATUS[0]}
   set -e
 else
@@ -119,7 +137,7 @@ fi
 
 if [ "$status" -ne 0 ] && [ "${SMOKE_TAIL_LINES:-0}" -gt 0 ]; then
   echo "Container failed; last ${SMOKE_TAIL_LINES} lines of logs:"
-  tail -n "$SMOKE_TAIL_LINES" "$ARTIFACT_DIR/container.log" || true
+  tail -n "$SMOKE_TAIL_LINES" "$ARTIFACT_DIR/smoke.log" || true
 fi
 
 echo "==> Collect outputs"
