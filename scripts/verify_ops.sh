@@ -21,13 +21,7 @@ fail() {
 }
 
 command -v aws >/dev/null 2>&1 || { fail "aws CLI is required."; }
-PYTHON_BIN="${PYTHON_BIN:-}"
-if [[ -z "${PYTHON_BIN}" ]]; then
-  PYTHON_BIN="$(command -v python3 || command -v python || true)"
-fi
-if [[ -z "${PYTHON_BIN}" ]]; then
-  fail "python3 (or python) is required for JSON parsing."
-fi
+command -v jq >/dev/null 2>&1 || { fail "jq is required for JSON parsing. Install via: brew install jq"; }
 
 if [[ -z "${BUCKET}" ]]; then
   fail "BUCKET is required (or set JOBINTEL_S3_BUCKET)."
@@ -39,15 +33,7 @@ if [[ "${STATUS}" -ne 0 ]]; then
 fi
 
 pretty_json() {
-  if command -v jq >/dev/null 2>&1; then
-    jq .
-  else
-    "${PYTHON_BIN}" - <<'PY'
-import json
-import sys
-print(json.dumps(json.load(sys.stdin), indent=2, sort_keys=True))
-PY
-  fi
+  jq .
 }
 
 missing_ptr=0
@@ -73,38 +59,7 @@ latest_run_id=$(aws s3api list-objects-v2 \
   --region "${REGION}" \
   --query "Contents[].Key" \
   --output json | \
-  "${PYTHON_BIN}" - <<'PY'
-import json
-import sys
-from datetime import datetime
-
-def parse_run_id(key: str) -> str | None:
-    marker = "/runs/"
-    if marker not in key:
-        return None
-    rest = key.split(marker, 1)[1]
-    run_id = rest.split("/", 1)[0]
-    return run_id or None
-
-keys = json.load(sys.stdin) if not sys.stdin.closed else []
-run_ids = {parse_run_id(k) for k in keys}
-run_ids.discard(None)
-
-candidates = []
-for run_id in run_ids:
-    try:
-        dt = datetime.fromisoformat(run_id.replace("Z", "+00:00"))
-        candidates.append((dt, run_id))
-    except Exception:
-        candidates.append((run_id, run_id))
-
-if not candidates:
-    print("", end="")
-else:
-    candidates.sort()
-    print(candidates[-1][1], end="")
-PY
-)
+  jq -r '.[]? | capture("/runs/(?<rid>[^/]+)/") | .rid' | sort | tail -n 1)
 
 if [[ -z "${latest_run_id}" ]]; then
   echo "\nLatest run_id: (none)"
@@ -128,42 +83,28 @@ fi
 
 if [[ -n "${run_report}" ]]; then
   echo "\nRun report summary:"
-  "${PYTHON_BIN}" - <<PY
-import json
-import os
-
-data = json.loads("""${run_report}""")
-provider = os.environ.get("PROVIDER", "openai")
-profile = os.environ.get("PROFILE", "cs")
-
-print("success:", data.get("success"))
-print("baseline_run_id:", data.get("delta_summary", {}).get("baseline_run_id"))
-print("baseline_run_path:", data.get("delta_summary", {}).get("baseline_run_path"))
-
-diff_counts = data.get("diff_counts", {})
-if isinstance(diff_counts, dict) and profile in diff_counts:
-    print("diff_counts[profile]:", diff_counts.get(profile))
-else:
-    provider_profiles = data.get("providers", {}).get(provider, {}).get("profiles", {})
-    print("diff_counts[provider/profile]:", provider_profiles.get(profile, {}).get("diff_counts"))
-
-prov = data.get("provenance_by_provider", {})
-meta = prov.get(provider, {})
-print("provenance.live_http_status:", meta.get("live_http_status"))
-print("provenance.live_status_code:", meta.get("live_status_code"))
-print("provenance.scrape_mode:", meta.get("scrape_mode"))
-print("provenance.unavailable_reason:", meta.get("unavailable_reason"))
-print("provenance.error:", meta.get("error"))
-PY
+  echo "success: $(printf '%s' "${run_report}" | jq -r '.success')"
+  echo "baseline_run_id: $(printf '%s' "${run_report}" | jq -r '.delta_summary.baseline_run_id')"
+  echo "baseline_run_path: $(printf '%s' "${run_report}" | jq -r '.delta_summary.baseline_run_path')"
+  diff_counts=$(printf '%s' "${run_report}" | jq -c --arg pr "${PROFILE}" '.diff_counts[$pr] // empty')
+  if [[ -n "${diff_counts}" ]]; then
+    echo "diff_counts[profile]: ${diff_counts}"
+  else
+    provider_diff=$(printf '%s' "${run_report}" | jq -c --arg p "${PROVIDER}" --arg pr "${PROFILE}" '.providers[$p].profiles[$pr].diff_counts // empty')
+    if [[ -n "${provider_diff}" ]]; then
+      echo "diff_counts[provider/profile]: ${provider_diff}"
+    fi
+  fi
+  echo "provenance.live_http_status: $(printf '%s' "${run_report}" | jq -r --arg p "${PROVIDER}" '.provenance_by_provider[$p].live_http_status')"
+  echo "provenance.live_status_code: $(printf '%s' "${run_report}" | jq -r --arg p "${PROVIDER}" '.provenance_by_provider[$p].live_status_code')"
+  echo "provenance.scrape_mode: $(printf '%s' "${run_report}" | jq -r --arg p "${PROVIDER}" '.provenance_by_provider[$p].scrape_mode')"
+  echo "provenance.unavailable_reason: $(printf '%s' "${run_report}" | jq -r --arg p "${PROVIDER}" '.provenance_by_provider[$p].unavailable_reason')"
+  echo "provenance.error: $(printf '%s' "${run_report}" | jq -r --arg p "${PROVIDER}" '.provenance_by_provider[$p].error')"
 fi
 
 success=""
 if [[ -n "${run_report}" ]]; then
-  success=$("${PYTHON_BIN}" - <<PY
-import json
-print(json.loads("""${run_report}""").get("success"))
-PY
-)
+  success=$(printf '%s' "${run_report}" | jq -r '.success')
 fi
 
 if [[ -n "${run_report}" && "${success}" != "True" && "${success}" != "true" ]]; then

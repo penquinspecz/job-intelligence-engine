@@ -24,7 +24,7 @@ fail() {
 }
 
 command -v aws >/dev/null 2>&1 || fail "aws CLI is required."
-command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1 || fail "python3 (or python) is required."
+command -v jq >/dev/null 2>&1 || fail "jq is required for JSON parsing. Install via: brew install jq"
 
 if [[ -z "${CLUSTER_ARN}" || -z "${TASK_ARN}" ]]; then
   fail "CLUSTER_ARN and TASK_ARN are required."
@@ -40,29 +40,14 @@ if [[ -z "${resp}" ]]; then
   fail "aws ecs describe-tasks failed."
 fi
 
-task_def_arn=$(python3 - <<PY 2>/dev/null || python - <<PY
-import json
-import sys
+task_def_arn=$(printf '%s' "${resp}" | jq -r '.tasks[0].taskDefinitionArn // ""')
 
-data=json.loads("""${resp}""")
-print(data.get("tasks", [{}])[0].get("taskDefinitionArn", ""))
-PY
-)
-
-python3 - <<PY 2>/dev/null || python - <<PY
-import json
-
-data=json.loads("""${resp}""")
-
-task=data.get("tasks", [{}])[0]
-print("lastStatus:", task.get("lastStatus"))
-print("stoppedReason:", task.get("stoppedReason"))
-for container in task.get("containers", []):
-    print("container:", container.get("name"))
-    print("  exitCode:", container.get("exitCode"))
-    print("  image:", container.get("image"))
-    print("  imageDigest:", container.get("imageDigest"))
-PY
+printf '%s' "${resp}" | jq -r '
+  .tasks[0] as $t |
+  "lastStatus: \($t.lastStatus)",
+  "stoppedReason: \($t.stoppedReason)",
+  ($t.containers[]? | "container: \(.name)\n  exitCode: \(.exitCode)\n  image: \(.image)\n  imageDigest: \(.imageDigest)")
+'
 
 if [[ -z "${task_def_arn}" ]]; then
   fail "Unable to resolve task definition ARN."
@@ -73,34 +58,26 @@ if [[ -z "${taskdef}" ]]; then
   fail "aws ecs describe-task-definition failed."
 fi
 
-python3 - <<PY 2>/dev/null || python - <<PY
-import json
-
-payload=json.loads("""${taskdef}""")
-container=payload.get("taskDefinition", {}).get("containerDefinitions", [{}])[0]
-print("taskDefinition:", payload.get("taskDefinition", {}).get("taskDefinitionArn"))
-print("image:", container.get("image"))
-print("environment:")
-wanted={"S3_PUBLISH_ENABLED","S3_PUBLISH_REQUIRE","JOBINTEL_S3_BUCKET","JOBINTEL_S3_PREFIX"}
-found=set()
-for env in container.get("environment", []):
-    name=env.get("name")
-    if name in wanted:
-        print(f"  {name}={env.get('value')}")
-        found.add(name)
-missing=sorted(wanted - found)
-if missing:
-    print("WARNING: missing env vars:", ", ".join(missing))
-PY
+printf '%s' "${taskdef}" | jq -r '
+  .taskDefinition as $td |
+  "taskDefinition: \($td.taskDefinitionArn)",
+  "image: \($td.containerDefinitions[0].image // "")",
+  "environment:",
+  ($td.containerDefinitions[0].environment // [] | map(select(.name == "S3_PUBLISH_ENABLED" or .name == "S3_PUBLISH_REQUIRE" or .name == "JOBINTEL_S3_BUCKET" or .name == "JOBINTEL_S3_PREFIX")) | .[] | "  \(.name)=\(.value)")
+'
+missing_envs=$(printf '%s' "${taskdef}" | jq -r '
+  .taskDefinition.containerDefinitions[0].environment // [] |
+  map(.name) as $names |
+  ["S3_PUBLISH_ENABLED","S3_PUBLISH_REQUIRE","JOBINTEL_S3_BUCKET","JOBINTEL_S3_PREFIX"] |
+  map(select(. as $n | ($names | index($n)) == null)) |
+  join(",")
+')
+if [[ -n "${missing_envs}" ]]; then
+  echo "WARNING: missing env vars: ${missing_envs}"
+fi
 
 if [[ -n "${EXPECT_IMAGE_SUBSTR}" ]]; then
-  image=$(python3 - <<PY 2>/dev/null || python - <<PY
-import json
-payload=json.loads("""${taskdef}""")
-container=payload.get("taskDefinition", {}).get("containerDefinitions", [{}])[0]
-print(container.get("image", ""))
-PY
-)
+  image=$(printf '%s' "${taskdef}" | jq -r '.taskDefinition.containerDefinitions[0].image // ""')
   if [[ "${image}" != *"${EXPECT_IMAGE_SUBSTR}"* ]]; then
     echo "WARNING: image does not match expected substring: ${EXPECT_IMAGE_SUBSTR}" >&2
   fi

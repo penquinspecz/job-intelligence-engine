@@ -1,0 +1,3 @@
+ruff
+pytest
+moto[s3]>=5.1.0

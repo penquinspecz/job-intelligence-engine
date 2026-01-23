@@ -5,6 +5,7 @@ BUCKET="${BUCKET:-${JOBINTEL_S3_BUCKET:-}}"
 PREFIX="${PREFIX:-${JOBINTEL_S3_PREFIX:-jobintel}}"
 PROVIDER="${PROVIDER:-openai}"
 PROFILE="${PROFILE:-cs}"
+command -v jq >/dev/null 2>&1 || { echo "jq is required. Install via: brew install jq" >&2; exit 2; }
 
 if [[ -z "${BUCKET}" ]]; then
   echo "BUCKET is required (or set JOBINTEL_S3_BUCKET)." >&2
@@ -35,38 +36,7 @@ latest_run_id=$(aws s3api list-objects-v2 \
   --prefix "${PREFIX}/runs/" \
   --query "Contents[].Key" \
   --output json | \
-  python - <<'PY'
-import json
-import sys
-from datetime import datetime
-
-def parse_run_id(key: str) -> str | None:
-    marker = "/runs/"
-    if marker not in key:
-        return None
-    rest = key.split(marker, 1)[1]
-    run_id = rest.split("/", 1)[0]
-    return run_id or None
-
-keys = json.load(sys.stdin) if not sys.stdin.closed else []
-run_ids = {parse_run_id(k) for k in keys}
-run_ids.discard(None)
-
-candidates = []
-for run_id in run_ids:
-    try:
-        dt = datetime.fromisoformat(run_id.replace("Z", "+00:00"))
-        candidates.append((dt, run_id))
-    except Exception:
-        candidates.append((run_id, run_id))
-
-if not candidates:
-    print("", end="")
-else:
-    candidates.sort()
-    print(candidates[-1][1], end="")
-PY
-)
+  jq -r '.[]? | capture("/runs/(?<rid>[^/]+)/") | .rid' | sort | tail -n 1)
 
 if [[ -z "${latest_run_id}" ]]; then
   echo "(none)"
@@ -77,12 +47,8 @@ echo "${latest_run_id}"
 
 echo "\nLatest run_report.json (diff_counts + baseline):"
 aws s3 cp "s3://${BUCKET}/${PREFIX}/runs/${latest_run_id}/run_report.json" - 2>/dev/null | \
-  python - <<'PY'
-import json
-import sys
-
-data = json.load(sys.stdin)
-print("success:", data.get("success"))
-print("baseline_run_id:", data.get("delta_summary", {}).get("baseline_run_id"))
-print("diff_counts:", data.get("diff_counts"))
-PY
+  jq -r '
+    "success: \(.success)",
+    "baseline_run_id: \(.delta_summary.baseline_run_id)",
+    "diff_counts: \(.diff_counts)"
+  '

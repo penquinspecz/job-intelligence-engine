@@ -77,6 +77,56 @@ Note: run shell helpers with bash on macOS if your default shell differs:
 bash ./scripts/run_ecs_once.sh
 ```
 
+## Deploy a new ECS task revision
+1) Build + push image (example for ECR):
+```bash
+git rev-parse HEAD
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin <account>.dkr.ecr.us-east-1.amazonaws.com
+docker build -t jobintel:<tag> .
+docker tag jobintel:<tag> <account>.dkr.ecr.us-east-1.amazonaws.com/jobintel:<tag>
+docker push <account>.dkr.ecr.us-east-1.amazonaws.com/jobintel:<tag>
+```
+2) (Optional) Rebuild local venv with Python 3.10 using pyenv:
+```bash
+pyenv install 3.10.13
+pyenv local 3.10.13
+python -m venv .venv
+./.venv/bin/pip install -U pip
+./.venv/bin/pip install -e ".[dev]"
+```
+2) Update Terraform image + apply:
+```bash
+cd ops/aws/infra
+terraform apply -var="container_image=<account>.dkr.ecr.us-east-1.amazonaws.com/jobintel:<tag>"
+```
+3) Run the new revision:
+```bash
+TASKDEF_REV=<newrev> bash ./scripts/run_ecs_once.sh
+```
+4) Verify pointers:
+```bash
+BUCKET=<bucket> PREFIX=jobintel bash ./scripts/verify_ops.sh
+```
+
+## Local dev quickstart (Python 3.10+)
+```bash
+pyenv install 3.10.14
+pyenv local 3.10.14
+python -m venv .venv
+./.venv/bin/pip install -U pip
+./.venv/bin/pip install -r requirements.txt -r requirements-dev.txt
+./.venv/bin/python -m ruff check src scripts tests
+./.venv/bin/python -m pytest -q
+```
+
+## Happy path ECS deploy + verify
+```bash
+./scripts/deploy_ecs_rev.sh
+TASKDEF_REV=<newrev> bash ./scripts/run_ecs_once.sh
+BUCKET=jobintel-prod1 PREFIX=jobintel bash ./scripts/verify_ops.sh
+./scripts/print_taskdef_env.sh TASKDEF_REV=<newrev>
+```
+
 Optional flags (env-only):
 ```bash
 TAIL_LOGS=1 LOOKBACK_MINUTES=60 PRINT_RUN_REPORT=1 \

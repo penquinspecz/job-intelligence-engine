@@ -31,13 +31,7 @@ fail() {
 }
 
 command -v aws >/dev/null 2>&1 || fail "aws CLI is required."
-PYTHON_BIN="${PYTHON_BIN:-}"
-if [[ -z "${PYTHON_BIN}" ]]; then
-  PYTHON_BIN="$(command -v python3 || command -v python || true)"
-fi
-if [[ -z "${PYTHON_BIN}" ]]; then
-  fail "python3 (or python) is required."
-fi
+command -v jq >/dev/null 2>&1 || fail "jq is required for JSON parsing. Install via: brew install jq"
 
 if [[ -z "${CLUSTER_ARN}" || -z "${TASK_FAMILY}" ]]; then
   fail "CLUSTER_ARN and TASK_FAMILY are required."
@@ -54,17 +48,8 @@ if [[ "${STATUS}" -ne 0 ]]; then
   exit 2
 fi
 
-subnets_json=$("${PYTHON_BIN}" - <<PY
-import json
-print(json.dumps([s.strip() for s in "${SUBNET_IDS}".split(",") if s.strip()]))
-PY
-)
-
-sg_json=$("${PYTHON_BIN}" - <<PY
-import json
-print(json.dumps([s.strip() for s in "${SECURITY_GROUP_IDS}".split(",") if s.strip()]))
-PY
-)
+subnets_json=$(printf '%s' "${SUBNET_IDS}" | jq -R 'split(",") | map(gsub("^\\s+|\\s+$";"")) | map(select(length>0))')
+sg_json=$(printf '%s' "${SECURITY_GROUP_IDS}" | jq -R 'split(",") | map(gsub("^\\s+|\\s+$";"")) | map(select(length>0))')
 
 if [[ -n "${TASKDEF_ARN}" && -n "${TASKDEF_REV}" ]]; then
   fail "Set only one of TASKDEF_ARN or TASKDEF_REV."
@@ -94,13 +79,7 @@ if [[ -z "${TASK_DEF_ARN}" || "${TASK_DEF_ARN}" == "None" ]]; then
 fi
 
 taskdef_desc=$(aws ecs describe-task-definition --task-definition "${TASK_DEF_ARN}" --region "${REGION}")
-taskdef_image=$("${PYTHON_BIN}" - <<PY
-import json
-payload=json.loads('''${taskdef_desc}''')
-containers = payload.get("taskDefinition", {}).get("containerDefinitions", [])
-print(containers[0].get("image") if containers else "")
-PY
-)
+taskdef_image=$(printf '%s' "${taskdef_desc}" | jq -r '.taskDefinition.containerDefinitions[0].image // ""')
 
 echo "Task definition: ${TASK_DEF_ARN}"
 echo "Task image: ${taskdef_image:-unknown}"
@@ -113,12 +92,7 @@ run_out=$(aws ecs run-task \
   --network-configuration "awsvpcConfiguration={subnets=${subnets_json},securityGroups=${sg_json},assignPublicIp=ENABLED}" \
   --region "${REGION}")
 
-task_arn=$("${PYTHON_BIN}" - <<PY
-import json
-payload=json.loads('''${run_out}''')
-print(payload.get('tasks', [{}])[0].get('taskArn', ''))
-PY
-)
+task_arn=$(printf '%s' "${run_out}" | jq -r '.tasks[0].taskArn // ""')
 
 if [[ -z "${task_arn}" ]]; then
   fail "Task failed to start (no taskArn)."
@@ -131,30 +105,32 @@ echo "Waiting for task to stop..."
 aws ecs wait tasks-stopped --cluster "${CLUSTER_ARN}" --tasks "${task_arn}" --region "${REGION}" || true
 
 desc=$(aws ecs describe-tasks --cluster "${CLUSTER_ARN}" --tasks "${task_arn}" --region "${REGION}")
+exit_code=$(printf '%s' "${desc}" | jq -r '.tasks[0].containers[0].exitCode // "None"')
+stopped_reason=$(printf '%s' "${desc}" | jq -r '.tasks[0].stoppedReason // ""')
 
-exit_code=$("${PYTHON_BIN}" - <<PY
-import json
-payload=json.loads('''${desc}''')
-containers = payload.get('tasks', [{}])[0].get('containers', [])
-print(containers[0].get('exitCode') if containers else None)
-PY
-)
+pointer_status_global="not_found"
+pointer_status_provider="not_found"
 
-stopped_reason=$("${PYTHON_BIN}" - <<PY
-import json
-payload=json.loads('''${desc}''')
-print(payload.get('tasks', [{}])[0].get('stoppedReason'))
-PY
-)
+check_pointer() {
+  local key="$1"
+  local status="not_found"
+  if aws s3api head-object --bucket "${BUCKET}" --key "${key}" --region "${REGION}" >/dev/null 2>&1; then
+    status="ok"
+  else
+    err=$(
+      aws s3api head-object --bucket "${BUCKET}" --key "${key}" --region "${REGION}" 2>&1 || true
+    )
+    if echo "${err}" | rg -qi "AccessDenied|403"; then
+      status="access_denied"
+    fi
+  fi
+  echo "${status}"
+}
 
-# Fetch latest run_report and last_success pointers
-last_success_global=$(aws s3 cp "s3://${BUCKET}/${PREFIX}/state/last_success.json" - 2>/dev/null || true)
-last_success_provider=$(aws s3 cp "s3://${BUCKET}/${PREFIX}/state/${PROVIDER}/${PROFILE}/last_success.json" - 2>/dev/null || true)
-
-pointer_written="no"
-if [[ -n "${last_success_provider}" || -n "${last_success_global}" ]]; then
-  pointer_written="yes"
-fi
+global_key="${PREFIX}/state/last_success.json"
+provider_key="${PREFIX}/state/${PROVIDER}/${PROFILE}/last_success.json"
+pointer_status_global=$(check_pointer "${global_key}")
+pointer_status_provider=$(check_pointer "${provider_key}")
 
 latest_run_id=$(aws s3api list-objects-v2 \
   --bucket "${BUCKET}" \
@@ -162,41 +138,12 @@ latest_run_id=$(aws s3api list-objects-v2 \
   --region "${REGION}" \
   --query "Contents[].Key" \
   --output json | \
-  "${PYTHON_BIN}" - <<'PY'
-import json
-import sys
-from datetime import datetime
-
-def parse_run_id(key: str) -> str | None:
-    marker = "/runs/"
-    if marker not in key:
-        return None
-    rest = key.split(marker, 1)[1]
-    run_id = rest.split("/", 1)[0]
-    return run_id or None
-
-keys = json.load(sys.stdin) if not sys.stdin.closed else []
-run_ids = {parse_run_id(k) for k in keys}
-run_ids.discard(None)
-
-candidates = []
-for run_id in run_ids:
-    try:
-        dt = datetime.fromisoformat(run_id.replace("Z", "+00:00"))
-        candidates.append((dt, run_id))
-    except Exception:
-        candidates.append((run_id, run_id))
-
-if not candidates:
-    print("", end="")
-else:
-    candidates.sort()
-    print(candidates[-1][1], end="")
-PY
-)
+  jq -r '.[]? | capture("/runs/(?<rid>[^/]+)/") | .rid' | sort | tail -n 1)
 
 run_report_uri="s3://${BUCKET}/${PREFIX}/runs/${latest_run_id}/run_report.json"
 run_report=$(aws s3 cp "${run_report_uri}" - 2>/dev/null || true)
+echo "run_id: ${latest_run_id:-unknown}"
+echo "run_report_uri: ${run_report_uri}"
 
 baseline_resolved="no"
 new_count="?"
@@ -204,75 +151,27 @@ changed_count="?"
 removed_count="?"
 
 if [[ -n "${run_report}" ]]; then
-  "${PYTHON_BIN}" - <<PY
-import json
-import os
-
-data=json.loads('''${run_report}''')
-provider=os.environ.get("PROVIDER","openai")
-profile=os.environ.get("PROFILE","cs")
-baseline = data.get("delta_summary", {})
-resolved = False
-for prov, profiles in (baseline.get("provider_profile", {}) or {}).items():
-    if prov != provider:
-        continue
-    for prof, entry in (profiles or {}).items():
-        if prof == profile:
-            resolved = bool(entry.get("baseline_resolved"))
-            print("baseline_resolved:", "yes" if resolved else "no")
-            print("diff_counts:", entry.get("new_job_count"), entry.get("changed_job_count"), entry.get("removed_job_count"))
-PY
+  echo "baseline_resolved: $(printf '%s' "${run_report}" | jq -r --arg p "${PROVIDER}" --arg pr "${PROFILE}" '.delta_summary.provider_profile[$p][$pr].baseline_resolved // false | if . then "yes" else "no" end')"
+  echo "diff_counts: $(printf '%s' "${run_report}" | jq -r --arg p "${PROVIDER}" --arg pr "${PROFILE}" '[.delta_summary.provider_profile[$p][$pr].new_job_count, .changed_job_count, .removed_job_count] | join(" ")')"
 fi
 
 if [[ -n "${run_report}" ]]; then
-  baseline_resolved=$("${PYTHON_BIN}" - <<PY
-import json, os
-
-data=json.loads('''${run_report}''')
-provider=os.environ.get("PROVIDER","openai")
-profile=os.environ.get("PROFILE","cs")
-entry = data.get("delta_summary", {}).get("provider_profile", {}).get(provider, {}).get(profile, {})
-print("yes" if entry.get("baseline_resolved") else "no")
-PY
-)
-  new_count=$("${PYTHON_BIN}" - <<PY
-import json, os
-
-data=json.loads('''${run_report}''')
-provider=os.environ.get("PROVIDER","openai")
-profile=os.environ.get("PROFILE","cs")
-entry = data.get("delta_summary", {}).get("provider_profile", {}).get(provider, {}).get(profile, {})
-print(entry.get("new_job_count", "?"))
-PY
-)
-  changed_count=$("${PYTHON_BIN}" - <<PY
-import json, os
-
-data=json.loads('''${run_report}''')
-provider=os.environ.get("PROVIDER","openai")
-profile=os.environ.get("PROFILE","cs")
-entry = data.get("delta_summary", {}).get("provider_profile", {}).get(provider, {}).get(profile, {})
-print(entry.get("changed_job_count", "?"))
-PY
-)
-  removed_count=$("${PYTHON_BIN}" - <<PY
-import json, os
-
-data=json.loads('''${run_report}''')
-provider=os.environ.get("PROVIDER","openai")
-profile=os.environ.get("PROFILE","cs")
-entry = data.get("delta_summary", {}).get("provider_profile", {}).get(provider, {}).get(profile, {})
-print(entry.get("removed_job_count", "?"))
-PY
-)
+  baseline_resolved=$(printf '%s' "${run_report}" | jq -r --arg p "${PROVIDER}" --arg pr "${PROFILE}" '.delta_summary.provider_profile[$p][$pr].baseline_resolved // false | if . then "yes" else "no" end')
+  new_count=$(printf '%s' "${run_report}" | jq -r --arg p "${PROVIDER}" --arg pr "${PROFILE}" '.delta_summary.provider_profile[$p][$pr].new_job_count // "?"')
+  changed_count=$(printf '%s' "${run_report}" | jq -r --arg p "${PROVIDER}" --arg pr "${PROFILE}" '.delta_summary.provider_profile[$p][$pr].changed_job_count // "?"')
+  removed_count=$(printf '%s' "${run_report}" | jq -r --arg p "${PROVIDER}" --arg pr "${PROFILE}" '.delta_summary.provider_profile[$p][$pr].removed_job_count // "?"')
 fi
 
 if [[ "${exit_code}" != "0" && "${exit_code}" != "None" ]]; then
   fail "Task exit_code=${exit_code}"
 fi
 
-if [[ "${pointer_written}" != "yes" ]]; then
-  fail "Baseline pointer missing (state/last_success.json)."
+echo "pointer_status_global: ${pointer_status_global}"
+echo "pointer_status_provider: ${pointer_status_provider}"
+if [[ "${exit_code}" == "0" && "${S3_PUBLISH_REQUIRE:-0}" == "1" ]]; then
+  if [[ "${pointer_status_global}" != "ok" || "${pointer_status_provider}" != "ok" ]]; then
+    fail "Baseline pointers missing or inaccessible after successful run."
+  fi
 fi
 
 if [[ "${baseline_resolved}" != "yes" ]]; then
@@ -280,25 +179,6 @@ if [[ "${baseline_resolved}" != "yes" ]]; then
 fi
 
 if [[ "${PRINT_RUN_REPORT}" == "1" ]]; then
-  pointer_json="${last_success_provider:-${last_success_global}}"
-  pointer_run_path=$("${PYTHON_BIN}" - <<PY
-import json
-import sys
-
-payload = '''${pointer_json}'''
-try:
-    data = json.loads(payload)
-except Exception:
-    data = {}
-run_path = (data or {}).get("run_path", "") or ""
-if run_path.startswith("/"):
-    run_path = run_path[1:]
-print(run_path, end="")
-PY
-)
-  if [[ -n "${pointer_run_path}" ]]; then
-    run_report_uri="s3://${BUCKET}/${pointer_run_path%/}/run_report.json"
-  fi
   echo "\nrun_report_uri: ${run_report_uri}"
 fi
 

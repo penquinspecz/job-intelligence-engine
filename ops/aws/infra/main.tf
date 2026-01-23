@@ -209,6 +209,7 @@ resource "aws_ecs_task_definition" "jobintel" {
         { name = "JOBINTEL_S3_BUCKET", value = var.s3_bucket },
         { name = "JOBINTEL_S3_PREFIX", value = var.s3_prefix },
         { name = "S3_PUBLISH_ENABLED", value = "1" },
+        { name = "S3_PUBLISH_REQUIRE", value = "1" },
         { name = "JOBINTEL_DASHBOARD_URL", value = var.jobintel_dashboard_url }
       ]
       logConfiguration = {
