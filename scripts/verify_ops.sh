@@ -1,19 +1,36 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ $# -ne 0 ]]; then
+  echo "This script uses env vars only; no positional args are accepted." >&2
+  echo "Example: BUCKET=<bucket> PREFIX=jobintel PROVIDER=openai PROFILE=cs ./scripts/verify_ops.sh" >&2
+  exit 2
+fi
+
 BUCKET="${BUCKET:-${JOBINTEL_S3_BUCKET:-}}"
 PREFIX="${PREFIX:-${JOBINTEL_S3_PREFIX:-jobintel}}"
 PROVIDER="${PROVIDER:-openai}"
 PROFILE="${PROFILE:-cs}"
 REGION="${REGION:-${AWS_REGION:-us-east-1}}"
 
-if ! command -v aws >/dev/null 2>&1; then
-  echo "aws CLI is required" >&2
-  exit 2
-fi
+STATUS=0
+fail() {
+  local msg="$1"
+  echo "FAIL: ${msg}" >&2
+  STATUS=1
+}
+
+command -v aws >/dev/null 2>&1 || { fail "aws CLI is required."; }
+command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1 || {
+  fail "python3 (or python) is required for JSON parsing."
+}
 
 if [[ -z "${BUCKET}" ]]; then
-  echo "BUCKET is required (or set JOBINTEL_S3_BUCKET)." >&2
+  fail "BUCKET is required (or set JOBINTEL_S3_BUCKET)."
+fi
+
+if [[ "${STATUS}" -ne 0 ]]; then
+  echo "Example: BUCKET=<bucket> PREFIX=jobintel PROVIDER=openai PROFILE=cs ./scripts/verify_ops.sh" >&2
   exit 2
 fi
 
@@ -21,7 +38,7 @@ pretty_json() {
   if command -v jq >/dev/null 2>&1; then
     jq .
   else
-    python - <<'PY'
+    python3 - <<'PY' 2>/dev/null || python - <<'PY'
 import json
 import sys
 print(json.dumps(json.load(sys.stdin), indent=2, sort_keys=True))
@@ -52,7 +69,7 @@ latest_run_id=$(aws s3api list-objects-v2 \
   --region "${REGION}" \
   --query "Contents[].Key" \
   --output json | \
-  python - <<'PY'
+  python3 - <<'PY' 2>/dev/null || python - <<'PY'
 import json
 import sys
 from datetime import datetime
@@ -87,21 +104,27 @@ PY
 
 if [[ -z "${latest_run_id}" ]]; then
   echo "\nLatest run_id: (none)"
-  exit 3
+  fail "No runs found under s3://${BUCKET}/${PREFIX}/runs/."
+  latest_run_id=""
 fi
 
-echo "\nLatest run_id: ${latest_run_id}"
+if [[ -n "${latest_run_id}" ]]; then
+  echo "\nLatest run_id: ${latest_run_id}"
+fi
 
 run_report_uri="s3://${BUCKET}/${PREFIX}/runs/${latest_run_id}/run_report.json"
-if ! aws s3 ls "${run_report_uri}" >/dev/null 2>&1; then
-  echo "run_report.json missing for latest run: ${run_report_uri}" >&2
-  exit 3
+if [[ -n "${latest_run_id}" ]] && ! aws s3 ls "${run_report_uri}" >/dev/null 2>&1; then
+  fail "run_report.json missing for latest run: ${run_report_uri}"
 fi
 
-run_report=$(aws s3 cp "${run_report_uri}" -)
+run_report=""
+if [[ -n "${latest_run_id}" ]]; then
+  run_report=$(aws s3 cp "${run_report_uri}" - 2>/dev/null || true)
+fi
 
-echo "\nRun report summary:"
-python - <<PY
+if [[ -n "${run_report}" ]]; then
+  echo "\nRun report summary:"
+  python3 - <<PY 2>/dev/null || python - <<PY
 import json
 import os
 
@@ -128,21 +151,29 @@ print("provenance.scrape_mode:", meta.get("scrape_mode"))
 print("provenance.unavailable_reason:", meta.get("unavailable_reason"))
 print("provenance.error:", meta.get("error"))
 PY
+fi
 
-success=$(python - <<PY
+success=""
+if [[ -n "${run_report}" ]]; then
+  success=$(python3 - <<PY 2>/dev/null || python - <<PY
 import json
 print(json.loads("""${run_report}""").get("success"))
 PY
 )
+fi
 
-if [[ "${success}" != "True" && "${success}" != "true" ]]; then
-  echo "Latest run is not successful." >&2
-  exit 4
+if [[ -n "${run_report}" && "${success}" != "True" && "${success}" != "true" ]]; then
+  fail "Latest run is not successful."
 fi
 
 if [[ "${missing_ptr}" -ne 0 ]]; then
-  echo "One or more baseline pointers are missing." >&2
-  exit 5
+  fail "One or more baseline pointers are missing."
 fi
 
-echo "\nOK: pointers present and latest run successful."
+echo "\nSummary:"
+if [[ "${STATUS}" -eq 0 ]]; then
+  echo "SUCCESS: pointers present and latest run successful."
+else
+  echo "FAIL: see messages above."
+fi
+exit "${STATUS}"

@@ -1,38 +1,46 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Usage:
+# Usage (env only):
 #   CLUSTER_ARN=... TASK_ARN=... REGION=us-east-1 ./scripts/ecs_verify_task.sh
-#   EXPECT_IMAGE_SUBSTR=jobintel ./scripts/ecs_verify_task.sh --cluster ... --task ... --region us-east-1
+#   EXPECT_IMAGE_SUBSTR=jobintel CLUSTER_ARN=... TASK_ARN=... ./scripts/ecs_verify_task.sh
 
 CLUSTER_ARN="${CLUSTER_ARN:-}"
 TASK_ARN="${TASK_ARN:-}"
 REGION="${REGION:-${AWS_REGION:-us-east-1}}"
 EXPECT_IMAGE_SUBSTR="${EXPECT_IMAGE_SUBSTR:-}"
 
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --cluster) CLUSTER_ARN="$2"; shift 2 ;;
-    --task) TASK_ARN="$2"; shift 2 ;;
-    --region) REGION="$2"; shift 2 ;;
-    --expect-image) EXPECT_IMAGE_SUBSTR="$2"; shift 2 ;;
-    *) echo "Unknown arg: $1" >&2; exit 2 ;;
-  esac
- done
-
-if ! command -v aws >/dev/null 2>&1; then
-  echo "aws CLI is required" >&2
+if [[ $# -ne 0 ]]; then
+  echo "This script uses env vars only; no positional args are accepted." >&2
+  echo "Example: CLUSTER_ARN=... TASK_ARN=... REGION=us-east-1 ./scripts/ecs_verify_task.sh" >&2
   exit 2
 fi
+
+STATUS=0
+fail() {
+  local msg="$1"
+  echo "FAIL: ${msg}" >&2
+  STATUS=1
+}
+
+command -v aws >/dev/null 2>&1 || fail "aws CLI is required."
+command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1 || fail "python3 (or python) is required."
 
 if [[ -z "${CLUSTER_ARN}" || -z "${TASK_ARN}" ]]; then
-  echo "CLUSTER_ARN and TASK_ARN are required." >&2
+  fail "CLUSTER_ARN and TASK_ARN are required."
+fi
+
+if [[ "${STATUS}" -ne 0 ]]; then
+  echo "Example: CLUSTER_ARN=... TASK_ARN=... REGION=us-east-1 ./scripts/ecs_verify_task.sh" >&2
   exit 2
 fi
 
-resp=$(aws ecs describe-tasks --cluster "${CLUSTER_ARN}" --tasks "${TASK_ARN}" --region "${REGION}")
+resp=$(aws ecs describe-tasks --cluster "${CLUSTER_ARN}" --tasks "${TASK_ARN}" --region "${REGION}" 2>/dev/null || true)
+if [[ -z "${resp}" ]]; then
+  fail "aws ecs describe-tasks failed."
+fi
 
-task_def_arn=$(python - <<PY
+task_def_arn=$(python3 - <<PY 2>/dev/null || python - <<PY
 import json
 import sys
 
@@ -41,7 +49,7 @@ print(data.get("tasks", [{}])[0].get("taskDefinitionArn", ""))
 PY
 )
 
-python - <<PY
+python3 - <<PY 2>/dev/null || python - <<PY
 import json
 
 data=json.loads("""${resp}""")
@@ -57,13 +65,15 @@ for container in task.get("containers", []):
 PY
 
 if [[ -z "${task_def_arn}" ]]; then
-  echo "Unable to resolve task definition ARN." >&2
-  exit 3
+  fail "Unable to resolve task definition ARN."
 fi
 
-taskdef=$(aws ecs describe-task-definition --task-definition "${task_def_arn}" --region "${REGION}")
+taskdef=$(aws ecs describe-task-definition --task-definition "${task_def_arn}" --region "${REGION}" 2>/dev/null || true)
+if [[ -z "${taskdef}" ]]; then
+  fail "aws ecs describe-task-definition failed."
+fi
 
-python - <<PY
+python3 - <<PY 2>/dev/null || python - <<PY
 import json
 
 payload=json.loads("""${taskdef}""")
@@ -84,7 +94,7 @@ if missing:
 PY
 
 if [[ -n "${EXPECT_IMAGE_SUBSTR}" ]]; then
-  image=$(python - <<PY
+  image=$(python3 - <<PY 2>/dev/null || python - <<PY
 import json
 payload=json.loads("""${taskdef}""")
 container=payload.get("taskDefinition", {}).get("containerDefinitions", [{}])[0]
@@ -95,3 +105,11 @@ PY
     echo "WARNING: image does not match expected substring: ${EXPECT_IMAGE_SUBSTR}" >&2
   fi
 fi
+
+echo "\nSummary:"
+if [[ "${STATUS}" -eq 0 ]]; then
+  echo "SUCCESS: ECS task inspected."
+else
+  echo "FAIL: see messages above."
+fi
+exit "${STATUS}"

@@ -34,6 +34,7 @@ from ji_engine.embeddings.simple import (
 from ji_engine.models import JobSource, RawJobPosting
 from ji_engine.pipeline.classifier import label_jobs
 from ji_engine.profile_loader import load_candidate_profile
+from ji_engine.utils.compat import zip_pairs
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +81,7 @@ def _reclassify_maybe(
     job_cache = cache.setdefault("job", {})
     changed = False
 
-    for job, labeled_result in zip(jobs, labeled):
+    for job, labeled_result in zip_pairs(jobs, labeled):
         if labeled_result.get("relevance") != "MAYBE":
             continue
         text = job.raw_text or job.title or ""
@@ -154,7 +155,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # Write labeled jobs to JSON file
     output_data = []
-    for job, labeled_result in zip(jobs, labeled):
+    for job, labeled_result in zip_pairs(jobs, labeled):
         output_data.append(
             {
                 "title": job.title,

@@ -1,5 +1,8 @@
 # AWS Deployment (Smoke)
 
+## Runtime requirements
+- Python 3.10+ (minimum supported version).
+
 ## Required env vars / secrets
 - `JOBINTEL_S3_BUCKET` (required)
 - `JOBINTEL_S3_PREFIX` (optional, default `jobintel`)

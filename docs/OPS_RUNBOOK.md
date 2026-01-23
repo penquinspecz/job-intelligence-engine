@@ -2,6 +2,7 @@
 
 ## Quick start
 ```bash
+pip install -e .[dev]
 BUCKET=<bucket> PREFIX=jobintel ./scripts/aws_debug_latest.py
 BUCKET=<bucket> PREFIX=jobintel PROVIDER=openai PROFILE=cs ./scripts/aws_debug_latest.py
 BUCKET=<bucket> PREFIX=jobintel PROVIDER=openai PROFILE=cs ./scripts/verify_s3_pointers.sh
@@ -61,6 +62,23 @@ LOG_GROUP=/ecs/jobintel REGION=us-east-1 LOOKBACK_MINUTES=60 FILTER=last_success
 ## ECS task inspection
 ```bash
 CLUSTER_ARN=<cluster> TASK_ARN=<task> REGION=us-east-1 ./scripts/ecs_verify_task.sh
+```
+
+## One-off ECS run wrapper
+```bash
+CLUSTER_ARN=<cluster> TASK_FAMILY=jobintel-daily REGION=us-east-1 \
+SUBNET_IDS=subnet-aaa,subnet-bbb SECURITY_GROUP_IDS=sg-123 \
+BUCKET=<bucket> PREFIX=jobintel PROVIDER=openai PROFILE=cs \
+./scripts/run_ecs_once.sh
+```
+
+Optional flags (env-only):
+```bash
+TAIL_LOGS=1 LOOKBACK_MINUTES=60 PRINT_RUN_REPORT=1 \
+CLUSTER_ARN=<cluster> TASK_FAMILY=jobintel-daily REGION=us-east-1 \
+SUBNET_IDS=subnet-aaa,subnet-bbb SECURITY_GROUP_IDS=sg-123 \
+BUCKET=<bucket> PREFIX=jobintel PROVIDER=openai PROFILE=cs \
+./scripts/run_ecs_once.sh
 ```
 
 ## Troubleshooting: diff_counts show all-new

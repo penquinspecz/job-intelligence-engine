@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.4
-FROM python:3.11-slim
+FROM python:3.10-slim
 
 WORKDIR /app
 ENV PYTHONPATH=/app/src
@@ -36,6 +36,9 @@ COPY schemas /app/schemas
 COPY --chown=app:app data/openai_snapshots/ /app/data/openai_snapshots/
 COPY --chown=app:app data/anthropic_snapshots/ /app/data/anthropic_snapshots/
 COPY --chown=app:app data/candidate_profile.json /app/data/candidate_profile.json
+
+# Install dev/test extras only when running tests in CI (moto, pytest, etc.)
+RUN if [ "$RUN_TESTS" = "1" ]; then pip install ".[dev]"; fi
 
 # Debug: prove fixtures exist during build
 RUN ls -la /app/data && \

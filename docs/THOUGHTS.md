@@ -8,3 +8,20 @@
 - opus and sonent seem more surgical, whilst still verbose, but terribl e at following instructions ansd wild token usage
 - codex model of AI usage makes vibe coding accessible for almost anyone
 - a lot of the work is just jockeying outputs and prompts between codex and chatgpt, BUT having prompt knowledge with chatgpt is impotant as it can easily start to drift from the strict chatgpt<>codex workflow if not kept on strict guardrails
+
+
+
+
+
+
+
+
+
+
+personal to-do
+- redo readme
+- come up with name, keep core engine name JIE
+- look at orchestration via rancher before introducing other apps (maybe this is a new chat?)
+- think about open source licensing 
+- think about website set up and landing page for apps
+- switch domain to .com from .net

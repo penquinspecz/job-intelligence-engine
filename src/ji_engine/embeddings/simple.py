@@ -8,6 +8,8 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
+from ji_engine.utils.compat import zip_pairs
+
 TOKEN_RE = re.compile(r"[a-z0-9]+")
 
 
@@ -59,7 +61,7 @@ def hash_embed(text: str, dim: int = 256) -> List[float]:
 def cosine_similarity(vec_a: List[float], vec_b: List[float]) -> float:
     if not vec_a or not vec_b or len(vec_a) != len(vec_b):
         return 0.0
-    dot = sum(a * b for a, b in zip(vec_a, vec_b))
+    dot = sum(a * b for a, b in zip_pairs(vec_a, vec_b))
     norm_a = math.sqrt(sum(a * a for a in vec_a))
     norm_b = math.sqrt(sum(b * b for b in vec_b))
     if norm_a == 0 or norm_b == 0:
