@@ -630,6 +630,15 @@ def _persist_run_metadata(
     provider_outputs = outputs_by_provider or {"openai": outputs_by_profile}
 
     selection = {"scrape_provenance": provenance_by_provider or {}}
+    if provenance_by_provider:
+        selection["provider_availability"] = {
+            provider: {
+                "status": meta.get("availability"),
+                "unavailable_reason": meta.get("unavailable_reason"),
+                "attempts_made": meta.get("attempts_made"),
+            }
+            for provider, meta in provenance_by_provider.items()
+        }
     classified_by_provider = _classified_counts_by_provider(provider_list)
     if classified_by_provider:
         selection["classified_job_count_by_provider"] = classified_by_provider
@@ -1436,6 +1445,26 @@ def _briefs_status_line(run_id: str, profile: str) -> Optional[str]:
     return f"AI briefs: generated for top {count}"
 
 
+def _all_providers_unavailable(provenance_by_provider: Dict[str, Dict[str, Any]], providers: List[str]) -> bool:
+    if not providers:
+        return False
+    for provider in providers:
+        meta = provenance_by_provider.get(provider) or {}
+        if meta.get("availability") != "unavailable":
+            return False
+    return True
+
+
+def _provider_unavailable_line(provider: str, meta: Dict[str, Any]) -> Optional[str]:
+    if meta.get("availability") != "unavailable":
+        return None
+    reason = meta.get("unavailable_reason") or "unknown"
+    attempts = meta.get("attempts_made")
+    if attempts is None:
+        return f"Provider unavailable: {provider} ({reason})"
+    return f"Provider unavailable: {provider} ({reason}, attempts={attempts})"
+
+
 def _resolve_profiles(args: argparse.Namespace) -> List[str]:
     """Resolve --profiles (comma-separated) else fallback to --profile."""
     profiles_arg = (args.profiles or "").strip()
@@ -1683,18 +1712,29 @@ def main() -> int:
         )
 
         s3_meta: Dict[str, Any] = {"status": "disabled"}
+        s3_failed = False
+        s3_exit_code: Optional[int] = None
         if os.environ.get("S3_PUBLISH_ENABLED", "0").strip() == "1":
             dry_run = os.environ.get("S3_PUBLISH_DRY_RUN", "0").strip() == "1"
             require_s3 = os.environ.get("S3_PUBLISH_REQUIRE", "0").strip() == "1"
-            s3_meta = publish_s3.publish_run(
-                run_id=run_id,
-                bucket=None,
-                prefix=None,
-                dry_run=dry_run,
-                require_s3=require_s3,
-            )
-            if isinstance(s3_meta, dict) and s3_meta.get("status") == "ok":
-                _update_run_metadata_s3(run_metadata_path, s3_meta)
+            try:
+                s3_meta = publish_s3.publish_run(
+                    run_id=run_id,
+                    bucket=None,
+                    prefix=None,
+                    dry_run=dry_run,
+                    require_s3=require_s3,
+                )
+                if isinstance(s3_meta, dict) and s3_meta.get("status") == "ok":
+                    _update_run_metadata_s3(run_metadata_path, s3_meta)
+            except SystemExit as exc:
+                s3_meta = {"status": "error", "reason": "publish_failed"}
+                s3_exit_code = _normalize_exit_code(exc.code)
+                s3_failed = require_s3
+            except Exception as exc:
+                s3_meta = {"status": "error", "reason": f"publish_failed:{exc.__class__.__name__}"}
+                s3_exit_code = 2
+                s3_failed = require_s3
 
         if os.environ.get("JOBINTEL_PRUNE") == "1":
             try:
@@ -1713,6 +1753,15 @@ def main() -> int:
             if env_dashboard:
                 dashboard_url = f"{env_dashboard}/runs/{run_id}"
 
+        provider_availability = {}
+        for provider in providers:
+            meta = provenance_by_provider.get(provider, {})
+            provider_availability[provider] = {
+                "status": meta.get("availability") or "unknown",
+                "unavailable_reason": meta.get("unavailable_reason"),
+                "attempts_made": meta.get("attempts_made"),
+            }
+
         logger.info(
             "RUN SUMMARY\n"
             "run_id=%s\n"
@@ -1722,7 +1771,8 @@ def main() -> int:
             "s3_bucket=%s\n"
             "s3_prefixes=%s\n"
             "dashboard_url=%s\n"
-            "discord_status=%s",
+            "discord_status=%s\n"
+            "provider_availability=%s",
             run_id,
             ",".join(providers),
             ",".join(profiles_list),
@@ -1731,7 +1781,10 @@ def main() -> int:
             json.dumps(s3_prefixes, sort_keys=True) if s3_prefixes else None,
             dashboard_url,
             json.dumps(discord_status_by_provider, sort_keys=True) if discord_status_by_provider else None,
+            json.dumps(provider_availability, sort_keys=True),
         )
+        if s3_failed:
+            raise SystemExit(s3_exit_code or 2)
 
     current_stage = "startup"
 
@@ -1975,6 +2028,9 @@ def main() -> int:
         ]
         record_stage(current_stage, lambda cmd=scrape_cmd: _run(cmd, stage=current_stage))
         provenance_by_provider = _load_scrape_provenance(providers)
+        all_unavailable = _all_providers_unavailable(provenance_by_provider, providers)
+        if all_unavailable:
+            logger.warning("All providers unavailable; suppressing Discord alerts.")
 
         if args.scrape_only:
             logger.info("Stopping after scrape (--scrape_only set)")
@@ -2145,13 +2201,20 @@ def main() -> int:
                         diff_counts_by_profile[profile] = diff_counts
                     logger.info("Changelog (%s) suppressed due to US-only fallback.", label)
                     _write_json(state_path, curr)
+                    extra_lines: List[str] = []
+                    unavailable_line = _provider_unavailable_line(
+                        provider, provenance_by_provider.get(provider, {})
+                    )
+                    if unavailable_line:
+                        extra_lines.append(unavailable_line)
                     discord_status = _post_run_summary(
                         provider,
                         profile,
                         ranked_json,
                         diff_counts,
                         args.min_score,
-                        no_post=args.no_post,
+                        no_post=args.no_post or all_unavailable,
+                        extra_lines=extra_lines or None,
                     )
                     discord_status_by_provider.setdefault(provider, {})[profile] = discord_status
                     if unavailable_summary:
@@ -2248,13 +2311,18 @@ def main() -> int:
                 briefs_line = _briefs_status_line(run_id, profile)
                 if briefs_line:
                     extra_lines.append(briefs_line)
+                unavailable_line = _provider_unavailable_line(
+                    provider, provenance_by_provider.get(provider, {})
+                )
+                if unavailable_line:
+                    extra_lines.append(unavailable_line)
                 discord_status = _post_run_summary(
                     provider,
                     profile,
                     ranked_json,
                     diff_counts,
                     args.min_score,
-                    no_post=args.no_post,
+                    no_post=args.no_post or all_unavailable,
                     extra_lines=extra_lines or None,
                 )
                 discord_status_by_provider.setdefault(provider, {})[profile] = discord_status
@@ -2321,18 +2389,21 @@ def main() -> int:
                             lines.append(f"  {j['apply_url']}")
                     lines.append("")
 
-                _dispatch_alerts(
-                    label,
-                    webhook,
-                    new_jobs,
-                    changed_jobs,
-                    removed_jobs,
-                    interesting_new,
-                    interesting_changed,
-                    lines,
-                    args,
-                    unavailable_summary,
-                )
+                if all_unavailable:
+                    logger.info("All providers unavailable; suppressing alerts.")
+                else:
+                    _dispatch_alerts(
+                        label,
+                        webhook,
+                        new_jobs,
+                        changed_jobs,
+                        removed_jobs,
+                        interesting_new,
+                        interesting_changed,
+                        lines,
+                        args,
+                        unavailable_summary,
+                    )
 
                 if unavailable_summary:
                     logger.info("Unavailable reasons: %s", unavailable_summary)

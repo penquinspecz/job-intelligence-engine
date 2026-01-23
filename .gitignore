@@ -78,3 +78,8 @@ data/state/*.json
 smoke_artifacts/
 
 # Personal notes (local-only)
+# Terraform local artifacts (aws infra)
+ops/aws/infra/.terraform/
+ops/aws/infra/terraform.tfstate*
+ops/aws/infra/terraform.tfvars
+ops/aws/infra/.terraform.lock.hcl

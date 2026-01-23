@@ -55,6 +55,8 @@ def test_run_daily_metadata_includes_provenance(tmp_path, monkeypatch) -> None:
     provenance = data["provenance_by_provider"]["openai"]
     assert provenance["provider"] == "openai"
     assert provenance["scrape_mode"] == "snapshot"
+    assert provenance["availability"] == "available"
+    assert provenance["attempts_made"] >= 1
     assert provenance["snapshot_path"]
     assert provenance["snapshot_sha256"]
     assert provenance["parsed_job_count"] > 0

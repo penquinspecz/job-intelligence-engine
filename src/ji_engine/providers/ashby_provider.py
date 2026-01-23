@@ -5,14 +5,13 @@ import re
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
 
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 
 from ji_engine.models import JobSource, RawJobPosting
 from ji_engine.providers.base import BaseJobProvider
+from ji_engine.providers.retry import fetch_urlopen_with_retry
 from jobintel.snapshots.validate import validate_snapshot_file
 
 _ASHBY_JOB_ID_RE = re.compile(r"/([0-9a-f-]{36})/application", re.IGNORECASE)
@@ -54,17 +53,11 @@ class AshbyProvider(BaseJobProvider):
         return self._parse_html(html)
 
     def _fetch_live_html(self) -> str:
-        req = Request(self.board_url, headers={"User-Agent": "job-intelligence-engine/0.1"})
-        try:
-            with urlopen(req, timeout=20) as resp:
-                status = getattr(resp, "status", 200)
-                if status != 200:
-                    raise RuntimeError(f"Live scrape failed with status {status} at {self.board_url}")
-                return resp.read().decode("utf-8")
-        except HTTPError as e:
-            raise RuntimeError(f"Live scrape failed with status {e.code} at {self.board_url}") from e
-        except URLError as e:
-            raise RuntimeError(f"Live scrape failed with error {e}") from e
+        return fetch_urlopen_with_retry(
+            self.board_url,
+            headers={"User-Agent": "job-intelligence-engine/0.1"},
+            timeout_s=20,
+        )
 
     def _parse_html(self, html: str) -> List[RawJobPosting]:
         soup = BeautifulSoup(html, "html.parser")

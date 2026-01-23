@@ -33,6 +33,21 @@ variable "container_image" {
   type = string
 }
 
+variable "openai_api_key_ssm_param" {
+  type    = string
+  default = ""
+}
+
+variable "discord_webhook_url_ssm_param" {
+  type    = string
+  default = ""
+}
+
+variable "ssm_kms_key_arn" {
+  type    = string
+  default = ""
+}
+
 variable "schedule_expression" {
   type    = string
   default = "rate(1 day)"
@@ -41,12 +56,6 @@ variable "schedule_expression" {
 variable "log_retention_days" {
   type    = number
   default = 30
-}
-
-variable "discord_webhook_url" {
-  type      = string
-  sensitive = true
-  default   = ""
 }
 
 variable "jobintel_dashboard_url" {

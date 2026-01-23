@@ -4,13 +4,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
-import requests
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 
 from ji_engine.config import SNAPSHOT_DIR
 from ji_engine.models import JobSource, RawJobPosting
 from ji_engine.providers.base import BaseJobProvider
+from ji_engine.providers.retry import fetch_text_with_retry
 from jobintel.snapshots.validate import validate_snapshot_file
 
 CAREERS_SEARCH_URL = "https://openai.com/careers/search/"
@@ -81,10 +81,11 @@ class OpenAICareersProvider(BaseJobProvider):
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9",
         }
-        resp = requests.get(CAREERS_SEARCH_URL, headers=headers, timeout=20)
-        if resp.status_code != 200:
-            raise RuntimeError(f"Live scrape failed with status {resp.status_code} at {CAREERS_SEARCH_URL}")
-        return resp.text
+        return fetch_text_with_retry(
+            CAREERS_SEARCH_URL,
+            headers=headers,
+            timeout_s=20,
+        )
 
     # ---------- Core HTML parsing ----------
 

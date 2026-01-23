@@ -20,6 +20,7 @@ from ji_engine.config import DATA_DIR, RAW_JOBS_JSON
 from ji_engine.providers.ashby_provider import AshbyProvider
 from ji_engine.providers.openai_provider import OpenAICareersProvider
 from ji_engine.providers.registry import load_providers_config
+from ji_engine.providers.retry import ProviderFetchError
 from ji_engine.providers.snapshot_json_provider import SnapshotJsonProvider
 
 _STATUS_CODE_RE = re.compile(r"status (\d+)")
@@ -138,6 +139,9 @@ def main(argv: List[str] | None = None) -> int:
             "scrape_mode": None,
             "live_status_code": None,
             "error": None,
+            "availability": "available",
+            "unavailable_reason": None,
+            "attempts_made": 0,
             "snapshot_path": None,
             "snapshot_sha256": None,
             "parsed_job_count": 0,
@@ -153,10 +157,25 @@ def main(argv: List[str] | None = None) -> int:
                 try:
                     raw_jobs = provider.scrape_live()
                     provenance["scrape_mode"] = "live"
+                    provenance["attempts_made"] = 1
+                except ProviderFetchError as e:
+                    err = str(e)
+                    provenance["live_status_code"] = e.status_code
+                    provenance["error"] = err
+                    provenance["attempts_made"] = e.attempts
+                    provenance["live_error_reason"] = e.reason
+                    provenance["live_unavailable_reason"] = e.reason
+                    logger.warning(f"[run_scrape] LIVE failed ({e!r}) → falling back to SNAPSHOT")
+                    provider = OpenAICareersProvider(mode="SNAPSHOT", data_dir=str(output_dir))
+                    raw_jobs = provider.load_from_snapshot()
+                    provenance["scrape_mode"] = "snapshot"
                 except Exception as e:
                     err = str(e)
                     provenance["live_status_code"] = _parse_status_code(err)
                     provenance["error"] = err
+                    provenance["attempts_made"] = 1
+                    provenance["live_error_reason"] = "network_error"
+                    provenance["live_unavailable_reason"] = "network_error"
                     logger.warning(f"[run_scrape] LIVE failed ({e!r}) → falling back to SNAPSHOT")
                     provider = OpenAICareersProvider(mode="SNAPSHOT", data_dir=str(output_dir))
                     raw_jobs = provider.load_from_snapshot()
@@ -171,6 +190,11 @@ def main(argv: List[str] | None = None) -> int:
             jobs = _normalize_jobs(raw_jobs)
             _write_raw_jobs(provider_id, jobs, output_dir)
             provenance["parsed_job_count"] = len(jobs)
+            if provenance.get("scrape_mode") == "snapshot" and provenance.get("attempts_made", 0) == 0:
+                provenance["attempts_made"] = 1
+            if len(jobs) == 0 and not snapshot_path.exists():
+                provenance["availability"] = "unavailable"
+                provenance["unavailable_reason"] = provenance.get("live_unavailable_reason") or "parse_error"
             _write_scrape_meta(provider_id, output_dir, provenance)
             # For backward compatibility, also write to canonical RAW_JOBS_JSON.
             if provider_id == "openai":
@@ -199,10 +223,31 @@ def main(argv: List[str] | None = None) -> int:
                     try:
                         raw_jobs = provider.scrape_live()
                         provenance["scrape_mode"] = "live"
+                        provenance["attempts_made"] = 1
+                    except ProviderFetchError as e:
+                        err = str(e)
+                        provenance["live_status_code"] = e.status_code
+                        provenance["error"] = err
+                        provenance["attempts_made"] = e.attempts
+                        provenance["live_error_reason"] = e.reason
+                        provenance["live_unavailable_reason"] = e.reason
+                        logger.warning(f"[run_scrape] LIVE failed ({e!r}) → falling back to SNAPSHOT")
+                        if not snapshot_path.exists():
+                            msg = (
+                                f"Snapshot not found at {snapshot_path} for provider {provider_id}. "
+                                "Add a snapshot file or update providers config."
+                            )
+                            logger.error(msg)
+                            raise SystemExit(2)
+                        raw_jobs = provider.load_from_snapshot()
+                        provenance["scrape_mode"] = "snapshot"
                     except Exception as e:
                         err = str(e)
                         provenance["live_status_code"] = _parse_status_code(err)
                         provenance["error"] = err
+                        provenance["attempts_made"] = 1
+                        provenance["live_error_reason"] = "network_error"
+                        provenance["live_unavailable_reason"] = "network_error"
                         logger.warning(f"[run_scrape] LIVE failed ({e!r}) → falling back to SNAPSHOT")
                         if not snapshot_path.exists():
                             msg = (
@@ -228,6 +273,8 @@ def main(argv: List[str] | None = None) -> int:
                 )
                 if snapshot_meta.get("fetched_at"):
                     provenance["fetched_at"] = snapshot_meta.get("fetched_at")
+                if provenance.get("scrape_mode") == "snapshot" and provenance.get("attempts_made", 0) == 0:
+                    provenance["attempts_made"] = 1
                 _write_scrape_meta(provider_id, output_dir, provenance)
             else:
                 if mode == "AUTO":
@@ -256,6 +303,8 @@ def main(argv: List[str] | None = None) -> int:
                 )
                 if snapshot_meta.get("fetched_at"):
                     provenance["fetched_at"] = snapshot_meta.get("fetched_at")
+                if provenance.get("attempts_made", 0) == 0:
+                    provenance["attempts_made"] = 1
                 _write_scrape_meta(provider_id, output_dir, provenance)
 
     return 0

@@ -1,4 +1,4 @@
-.PHONY: test lint format-check gates docker-build docker-run-local report snapshot snapshot-openai smoke image smoke-fast smoke-ci image-ci ci ci-local docker-ok daily debug-snapshots explain-smoke dashboard weekly publish-last aws-env-check aws-deploy aws-smoke aws-first-run
+.PHONY: test lint format-check gates docker-build docker-run-local report snapshot snapshot-openai smoke image smoke-fast smoke-ci image-ci ci ci-local docker-ok daily debug-snapshots explain-smoke dashboard weekly publish-last aws-env-check aws-deploy aws-smoke aws-first-run aws-schedule-status aws-oneoff-run aws-bootstrap aws-bootstrap-help
 
 # Prefer repo venv if present; fall back to system python3.
 PY ?= .venv/bin/python
@@ -187,3 +187,19 @@ aws-first-run:
 	@echo "  --task-definition jobintel-daily \\"
 	@echo "  --launch-type FARGATE \\"
 	@echo "  --network-configuration \"awsvpcConfiguration={subnets=[subnet-xxx],securityGroups=[sg-xxx],assignPublicIp=ENABLED}\""
+
+aws-schedule-status:
+	$(PY) scripts/aws_schedule_status.py
+
+aws-oneoff-run:
+	$(PY) scripts/aws_oneoff_run.py
+
+aws-bootstrap:
+	@if [ -z "$${IMAGE_URI:-}" ]; then echo "IMAGE_URI is required (ECR image URI)."; exit 2; fi
+	$(PY) scripts/aws_bootstrap_prod.py
+
+aws-bootstrap-help:
+	@echo "Required env: IMAGE_URI=<ecr image uri>"
+	@echo "Find cluster ARN: aws ecs list-clusters --region <region>"
+	@echo "Describe subnets: aws ec2 describe-subnets --region <region>"
+	@echo "Describe security groups: aws ec2 describe-security-groups --region <region>"
