@@ -12,6 +12,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 from ji_engine.config import RUN_METADATA_DIR
+from jobintel.aws_runs import build_state_payload, write_last_success_state, write_provider_last_success_state
 
 logger = logging.getLogger(__name__)
 DEFAULT_PREFIX = "jobintel"
@@ -105,6 +106,7 @@ def publish_run(
     prefix: Optional[str],
     dry_run: bool,
     require_s3: bool,
+    write_last_success: bool = True,
 ) -> Dict[str, Any]:
     resolved_bucket, resolved_prefix = _resolve_bucket_prefix(bucket, prefix)
     if not resolved_bucket:
@@ -120,6 +122,7 @@ def publish_run(
     run_dir = _run_dir(run_id)
     index = _load_index(run_id)
     client = boto3.client("s3")
+    logger.info("S3 publish target: s3://%s/%s", resolved_bucket, resolved_prefix)
 
     files = _collect_artifacts(run_dir)
     if not files:
@@ -131,6 +134,7 @@ def publish_run(
 
     latest_prefixes: Dict[str, Dict[str, str]] = {}
     providers = index.get("providers") if isinstance(index.get("providers"), dict) else {}
+    provider_profiles: Dict[str, str] = {}
     for provider, provider_payload in providers.items():
         profiles = provider_payload.get("profiles") if isinstance(provider_payload, dict) else {}
         for profile in profiles:
@@ -141,10 +145,44 @@ def publish_run(
             latest_prefix = f"{resolved_prefix}/latest/{provider}/{profile}".strip("/")
             _upload_files(client, resolved_bucket, latest_prefix, profile_dir, profile_files, dry_run)
             latest_prefixes.setdefault(provider, {})[profile] = latest_prefix
+            provider_profiles[f"{provider}:{profile}"] = run_id
 
     dashboard_url = os.environ.get("JOBINTEL_DASHBOARD_URL", "").strip().rstrip("/")
     if dashboard_url:
         dashboard_url = f"{dashboard_url}/runs/{run_id}"
+
+    run_path = f"{resolved_prefix.strip('/')}/runs/{run_id}".strip("/")
+    state_payload = build_state_payload(
+        run_id,
+        run_path,
+        index.get("timestamp"),
+        list(providers.keys()),
+        list({p for profiles in providers.values() for p in (profiles.get("profiles") or {}).keys()}),
+        schema_version=1,
+    )
+    state_payload["provider_profiles"] = provider_profiles
+    if not dry_run and write_last_success:
+        logger.info("writing baseline pointer: s3://%s/%s/state/last_success.json", resolved_bucket, resolved_prefix)
+        write_last_success_state(resolved_bucket, resolved_prefix, state_payload, client=client)
+        for provider, profiles in latest_prefixes.items():
+            for profile in profiles.keys():
+                logger.info(
+                    "writing baseline pointer: s3://%s/%s/state/%s/%s/last_success.json",
+                    resolved_bucket,
+                    resolved_prefix,
+                    provider,
+                    profile,
+                )
+                write_provider_last_success_state(
+                    resolved_bucket,
+                    resolved_prefix,
+                    provider,
+                    profile,
+                    state_payload,
+                    client=client,
+                )
+    elif not dry_run and not write_last_success:
+        logger.info("Skipping baseline pointer write (run not successful).")
 
     return {
         "status": "ok",

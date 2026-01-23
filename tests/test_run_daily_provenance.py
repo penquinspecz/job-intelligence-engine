@@ -53,6 +53,7 @@ def test_run_daily_metadata_includes_provenance(tmp_path, monkeypatch) -> None:
     assert metadata_files
     data = json.loads(metadata_files[-1].read_text(encoding="utf-8"))
     provenance = data["provenance_by_provider"]["openai"]
+    assert data["provenance"]["openai"]["provider_id"] == "openai"
     assert provenance["provider"] == "openai"
     assert provenance["scrape_mode"] == "snapshot"
     assert provenance["availability"] == "available"

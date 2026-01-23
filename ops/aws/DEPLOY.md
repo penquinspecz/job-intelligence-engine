@@ -114,6 +114,35 @@ make aws-oneoff-run
 ## EventBridge invoke role
 EventBridge uses a dedicated "events invoke role" to call `ecs:RunTask` and `iam:PassRole`.
 The container runtime still uses `task_role` and `execution_role` for S3/SSM/logs access.
+The task role also needs `s3:GetObject` for baseline resolution from `jobintel/state/last_success.json`
+and `jobintel/runs/...` history.
+
+## Baselines and deltas
+- First run: baseline is `none`, so new=N is expected.
+- Subsequent runs: baseline resolves from `s3://<bucket>/<prefix>/state/last_success.json` when available,
+  otherwise S3 runs history is used. This avoids `new=N` on identical replays.
+To inspect or reset baselines:
+```bash
+aws s3 cp s3://<bucket>/<prefix>/state/last_success.json -
+aws s3 cp s3://<bucket>/<prefix>/state/<provider>/<profile>/last_success.json -
+aws s3 rm s3://<bucket>/<prefix>/state/last_success.json
+aws s3 rm s3://<bucket>/<prefix>/state/<provider>/<profile>/last_success.json
+```
+
+Verification:
+- Check task role policy includes `s3:GetObject`:
+  ```bash
+  aws iam get-role-policy --role-name jobintel-task-role --policy-name jobintel-task-policy
+  ```
+- Run ECS task twice; the second run should not log `Changelog (cs): new=456` on unchanged inputs.
+  To quickly inspect pointers and the latest run report:
+  ```bash
+  BUCKET=<bucket> PREFIX=<prefix> PROVIDER=openai PROFILE=cs ./scripts/verify_s3_pointers.sh
+  ```
+
+## OpenAI scraping source
+- OpenAI jobs are sourced from the Ashby board: `https://jobs.ashbyhq.com/openai`.
+- The legacy `openai.com/careers` scraper is deprecated due to WAF/403 risk.
 
 ## Verify S3 uploads
 Expected keys:

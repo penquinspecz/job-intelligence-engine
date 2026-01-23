@@ -86,6 +86,7 @@ resource "aws_iam_role_policy" "task_policy" {
         Sid    = "S3Publish"
         Effect = "Allow"
         Action = [
+          "s3:GetObject",
           "s3:PutObject",
           "s3:ListBucket"
         ]

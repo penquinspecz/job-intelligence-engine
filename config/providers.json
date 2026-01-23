@@ -1,10 +1,12 @@
 [
   {
     "provider_id": "openai",
-    "type": "openai",
-    "careers_url": "https://openai.com/careers/search/",
+    "type": "ashby",
+    "board_url": "https://jobs.ashbyhq.com/openai",
     "mode": "snapshot",
-    "snapshot_path": "data/openai_snapshots/index.html"
+    "snapshot_dir": "data/openai_snapshots",
+    "snapshot_path": "data/openai_snapshots/index.html",
+    "live_enabled": true
   },
   {
     "provider_id": "anthropic",

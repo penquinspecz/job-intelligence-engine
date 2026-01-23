@@ -67,6 +67,15 @@ from jobintel.alerts import (
     write_alerts,
     write_last_seen,
 )
+from jobintel.aws_runs import (
+    BaselineInfo,
+    download_baseline_ranked,
+    get_most_recent_successful_run_id_before,
+    parse_pointer,
+    read_last_success_state,
+    read_provider_last_success_state,
+    s3_enabled,
+)
 from jobintel.delta import compute_delta
 from jobintel.discord_notify import build_run_summary_message, post_discord, resolve_webhook
 
@@ -663,6 +672,7 @@ def _persist_run_metadata(
         "stage_durations": telemetry.get("stages", {}),
         "diff_counts": diff_counts,
         "provenance_by_provider": provenance_by_provider or {},
+        "provenance": provenance_by_provider or {},
         "selection": selection,
         "inputs": inputs,
         "scoring_inputs_by_profile": scoring_inputs_by_profile,
@@ -741,6 +751,133 @@ def _baseline_run_info(baseline_dir: Path) -> Tuple[Optional[str], Optional[str]
     return run_id, str(meta_path)
 
 
+def _resolve_s3_baseline(
+    provider: str,
+    profile: str,
+    current_run_id: str,
+    *,
+    bucket: str,
+    prefix: str,
+) -> BaselineInfo:
+    def _warn_missing(run_id: str, source: str) -> None:
+        logger.warning(
+            "Baseline pointer found (%s) but artifacts missing for %s/%s run_id=%s",
+            source,
+            provider,
+            profile,
+            run_id,
+        )
+
+    state, status, key = read_provider_last_success_state(bucket, prefix, provider, profile)
+    logger.info(
+        "Baseline pointer read: s3://%s/%s status=%s",
+        bucket,
+        key,
+        status,
+    )
+    if isinstance(state, dict):
+        run_id = parse_pointer(state)
+        if run_id and run_id != current_run_id:
+            ranked_path = download_baseline_ranked(
+                bucket,
+                prefix,
+                run_id,
+                provider,
+                profile,
+                STATE_DIR / "baseline_cache",
+            )
+            if ranked_path:
+                logger.info(
+                    "Baseline pointer resolved (state_file) for %s/%s run_id=%s",
+                    provider,
+                    profile,
+                    run_id,
+                )
+                return BaselineInfo(
+                    run_id=run_id,
+                    source="state_file",
+                    path=state.get("run_path") or f"s3://{bucket}/{prefix.strip('/')}/runs/{run_id}/",
+                    ranked_path=ranked_path,
+                )
+            _warn_missing(run_id, "state_file")
+    elif status == "access_denied":
+        logger.warning(
+            "Baseline pointer access denied for %s/%s (s3://%s/%s)",
+            provider,
+            profile,
+            bucket,
+            key,
+        )
+
+    state, status, key = read_last_success_state(bucket, prefix)
+    logger.info(
+        "Baseline pointer read: s3://%s/%s status=%s",
+        bucket,
+        key,
+        status,
+    )
+    if isinstance(state, dict):
+        run_id = parse_pointer(state)
+        if run_id and run_id != current_run_id:
+            ranked_path = download_baseline_ranked(
+                bucket,
+                prefix,
+                run_id,
+                provider,
+                profile,
+                STATE_DIR / "baseline_cache",
+            )
+            if ranked_path:
+                logger.info(
+                    "Baseline pointer resolved (state_file) for %s/%s run_id=%s",
+                    provider,
+                    profile,
+                    run_id,
+                )
+                return BaselineInfo(
+                    run_id=run_id,
+                    source="state_file",
+                    path=state.get("run_path") or f"s3://{bucket}/{prefix.strip('/')}/runs/{run_id}/",
+                    ranked_path=ranked_path,
+                )
+            _warn_missing(run_id, "state_file")
+    elif status == "access_denied":
+        logger.warning(
+            "Baseline pointer access denied for %s/%s (s3://%s/%s)",
+            provider,
+            profile,
+            bucket,
+            key,
+        )
+
+    logger.info("Baseline pointer fallback: listing s3://%s/%s/runs/", bucket, prefix.strip("/"))
+    run_id = get_most_recent_successful_run_id_before(bucket, prefix, current_run_id)
+    if run_id:
+        ranked_path = download_baseline_ranked(
+            bucket,
+            prefix,
+            run_id,
+            provider,
+            profile,
+            STATE_DIR / "baseline_cache",
+        )
+        if ranked_path:
+            logger.info(
+                "Baseline pointer resolved (s3_latest) for %s/%s run_id=%s",
+                provider,
+                profile,
+                run_id,
+            )
+            return BaselineInfo(
+                run_id=run_id,
+                source="s3_latest",
+                path=f"s3://{bucket}/{prefix.strip('/')}/runs/{run_id}/",
+                ranked_path=ranked_path,
+            )
+        _warn_missing(run_id, "s3_latest")
+    return BaselineInfo(run_id=None, source="none", path=None, ranked_path=None)
+
+
 def _build_delta_summary(run_id: str, providers: List[str], profiles: List[str]) -> Dict[str, Any]:
     summary: Dict[str, Any] = {
         "baseline_run_id": None,
@@ -756,9 +893,28 @@ def _build_delta_summary(run_id: str, providers: List[str], profiles: List[str])
             baseline_dir = _baseline_latest_dir(provider, profile)
             baseline_ranked = _baseline_ranked_path(provider, profile, baseline_dir)
             baseline_run_id, baseline_run_path = _baseline_run_info(baseline_dir)
+            baseline_source = "explicit"
+            baseline_resolved = baseline_ranked.exists()
+            baseline_ranked_path = baseline_ranked if baseline_ranked.exists() else None
             if not baseline_ranked.exists():
                 baseline_run_id = None
                 baseline_run_path = None
+                baseline_source = "none"
+                if s3_enabled():
+                    bucket = os.environ.get("JOBINTEL_S3_BUCKET", "").strip()
+                    prefix = os.environ.get("JOBINTEL_S3_PREFIX", "jobintel").strip("/")
+                    if bucket:
+                        s3_info = _resolve_s3_baseline(
+                            provider, profile, run_id, bucket=bucket, prefix=prefix
+                        )
+                        if s3_info.run_id and s3_info.ranked_path:
+                            baseline_run_id = s3_info.run_id
+                            baseline_run_path = s3_info.path
+                            baseline_source = s3_info.source
+                            baseline_ranked_path = s3_info.ranked_path
+                            baseline_resolved = True
+                    else:
+                        logger.warning("S3 baseline enabled but JOBINTEL_S3_BUCKET is unset.")
             if baseline_run_id and baseline_run_path and first_baseline is None:
                 first_baseline = (baseline_run_id, baseline_run_path)
 
@@ -768,12 +924,14 @@ def _build_delta_summary(run_id: str, providers: List[str], profiles: List[str])
                 current_labeled,
                 current_ranked,
                 None,
-                baseline_ranked if baseline_ranked.exists() else None,
+                baseline_ranked_path,
                 provider,
                 profile,
             )
             delta["baseline_run_id"] = baseline_run_id
             delta["baseline_run_path"] = baseline_run_path
+            delta["baseline_source"] = baseline_source
+            delta["baseline_resolved"] = baseline_resolved
             delta["current_run_id"] = run_id
             summary["provider_profile"][provider][profile] = delta
 
@@ -1717,6 +1875,17 @@ def main() -> int:
         if os.environ.get("S3_PUBLISH_ENABLED", "0").strip() == "1":
             dry_run = os.environ.get("S3_PUBLISH_DRY_RUN", "0").strip() == "1"
             require_s3 = os.environ.get("S3_PUBLISH_REQUIRE", "0").strip() == "1"
+            resolved_bucket, resolved_prefix = publish_s3._resolve_bucket_prefix(None, None)
+            if resolved_bucket:
+                logger.info(
+                    "S3 publish enabled: s3://%s/%s (dry_run=%s require=%s)",
+                    resolved_bucket,
+                    resolved_prefix,
+                    dry_run,
+                    require_s3,
+                )
+            else:
+                logger.warning("S3 publish enabled but bucket is unset.")
             try:
                 s3_meta = publish_s3.publish_run(
                     run_id=run_id,
@@ -1724,6 +1893,7 @@ def main() -> int:
                     prefix=None,
                     dry_run=dry_run,
                     require_s3=require_s3,
+                    write_last_success=bool(telemetry.get("success", False)),
                 )
                 if isinstance(s3_meta, dict) and s3_meta.get("status") == "ok":
                     _update_run_metadata_s3(run_metadata_path, s3_meta)
@@ -2229,6 +2399,15 @@ def main() -> int:
                     continue
 
                 prev = _read_json(state_path) if state_exists else []
+                if not state_exists and s3_enabled():
+                    bucket = os.environ.get("JOBINTEL_S3_BUCKET", "").strip()
+                    prefix = os.environ.get("JOBINTEL_S3_PREFIX", "jobintel").strip("/")
+                    if bucket:
+                        s3_info = _resolve_s3_baseline(
+                            provider, profile, run_id, bucket=bucket, prefix=prefix
+                        )
+                        if s3_info.ranked_path and s3_info.ranked_path.exists():
+                            prev = _read_json(s3_info.ranked_path)
                 new_jobs, changed_jobs, removed_jobs, changed_fields = _diff(prev, curr)
 
                 # Append "Changes since last run" section to shortlist (filtered by min_alert_score)

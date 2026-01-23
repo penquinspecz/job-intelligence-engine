@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
@@ -18,7 +19,7 @@ CAREERS_SEARCH_URL = "https://openai.com/careers/search/"
 
 class OpenAICareersProvider(BaseJobProvider):
     """
-    Provider for OpenAI careers.
+    Provider for OpenAI careers (deprecated; prefer Ashby board scraping).
 
     For now we prioritize SNAPSHOT mode because the live site returns 403
     to our requests client. Live scraping is a best-effort bonus.
@@ -37,17 +38,28 @@ class OpenAICareersProvider(BaseJobProvider):
         snapshot, then parse.
         """
         if self.mode == "SNAPSHOT":
+            if os.environ.get("JOBINTEL_PROVENANCE_LOG", "0") != "1":
+                snapshot_path = self._snapshot_file()
+                mtime = snapshot_path.stat().st_mtime if snapshot_path.exists() else None
+                print(f"[OpenAICareersProvider] MODE=SNAPSHOT path={snapshot_path} mtime={mtime}")
             return self.load_from_snapshot()
 
         # LIVE path: best effort fetch, then persist snapshot for reuse
         try:
             html = self._fetch_live_html()
         except Exception as e:
+            if os.environ.get("JOBINTEL_PROVENANCE_LOG", "0") != "1":
+                print(f"[OpenAICareersProvider] MODE=LIVE failed reason={e!r} -> SNAPSHOT")
             print(f"[OpenAICareersProvider] LIVE blocked ({e}). Using snapshot.")
             return self.load_from_snapshot()
 
         SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
         self._snapshot_file().write_text(html, encoding="utf-8")
+        if os.environ.get("JOBINTEL_PROVENANCE_LOG", "0") != "1":
+            print(
+                "[OpenAICareersProvider] MODE=LIVE fetched_bytes=%d wrote_snapshot=%s"
+                % (len(html.encode("utf-8")), self._snapshot_file())
+            )
         return self._parse_html(html)
 
     def scrape_live(self) -> List[RawJobPosting]:
@@ -77,9 +89,15 @@ class OpenAICareersProvider(BaseJobProvider):
     def _fetch_live_html(self) -> str:
         """Fetch the careers page HTML from the live site."""
         headers = {
-            "User-Agent": "job-intelligence-engine/0.1 (+personal project)",
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            ),
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9",
+            "Referer": CAREERS_SEARCH_URL,
+            "Cache-Control": "no-cache",
         }
         return fetch_text_with_retry(
             CAREERS_SEARCH_URL,

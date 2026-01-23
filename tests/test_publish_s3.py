@@ -19,7 +19,10 @@ class DummyClient:
         self.calls = []
 
     def upload_file(self, Filename, Bucket, Key):
-        self.calls.append((Filename, Bucket, Key))
+        self.calls.append(("upload", Key))
+
+    def put_object(self, Bucket, Key, Body):
+        self.calls.append(("put", Key))
 
 
 def _setup_run(tmp_path: Path) -> tuple[str, Path]:
@@ -64,9 +67,13 @@ def test_publish_s3_uploads_runs_and_latest(tmp_path, monkeypatch):
     )
 
     publish_s3.main()
-    keys = [call[2] for call in client.calls]
+    keys = [call[1] for call in client.calls if call[0] == "upload"]
     assert any(key.startswith(f"jobintel/runs/{run_id}/") for key in keys)
     assert any(key.startswith("jobintel/latest/openai/cs/") for key in keys)
+    put_keys = [call[1] for call in client.calls if call[0] == "put"]
+    assert "jobintel/state/last_success.json" in put_keys
+    assert "jobintel/state/openai/cs/last_success.json" in put_keys
+    assert client.calls[-1][0] == "put"
 
 
 def test_publish_s3_dry_run(monkeypatch, tmp_path, caplog):

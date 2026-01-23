@@ -14,7 +14,7 @@ def load_providers_config(path: Path) -> List[Dict[str, Any]]:
         if not isinstance(item, dict):
             raise ValueError("provider entry must be a dict")
         provider_id = item.get("provider_id")
-        provider_type = (item.get("type") or "openai").lower()
+        provider_type = (item.get("type") or "snapshot").lower()
         careers_url = item.get("careers_url") or item.get("board_url")
         snapshot_path = item.get("snapshot_path")
         snapshot_dir = item.get("snapshot_dir")

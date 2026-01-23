@@ -376,6 +376,10 @@ Note: `publish_s3.py` only uploads artifacts under `state/history/**`; other sta
 - Trigger it with `ops/aws/eventbridge-rule.json` on a cron schedule.
 - After each run, schedule a second job (or step) that runs `python scripts/publish_s3.py --profile cs --latest --bucket ...` to upload the persisted history to S3.
 
+## Ops runbook
+
+See `docs/OPS_RUNBOOK.md` for one-off run debugging (ECS + S3 + Logs).
+
 
 ## Roadmap
 
