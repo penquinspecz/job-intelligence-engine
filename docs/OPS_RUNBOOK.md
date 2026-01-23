@@ -72,6 +72,11 @@ BUCKET=<bucket> PREFIX=jobintel PROVIDER=openai PROFILE=cs \
 ./scripts/run_ecs_once.sh
 ```
 
+Note: run shell helpers with bash on macOS if your default shell differs:
+```bash
+bash ./scripts/run_ecs_once.sh
+```
+
 Optional flags (env-only):
 ```bash
 TAIL_LOGS=1 LOOKBACK_MINUTES=60 PRINT_RUN_REPORT=1 \
@@ -88,3 +93,7 @@ BUCKET=<bucket> PREFIX=jobintel PROVIDER=openai PROFILE=cs \
 3. If baseline reads show `access_denied`, fix IAM and rerun.
 4. If pointers are stale, reset them:
    `aws s3 rm s3://<bucket>/jobintel/state/last_success.json`
+
+## Golden fixtures
+If deterministic output changes are intentional (e.g., parser improvements or JSON key ordering), update fixtures with:
+`./.venv/bin/python -m pytest tests/test_pipeline_*_golden_e2e.py --update-golden`

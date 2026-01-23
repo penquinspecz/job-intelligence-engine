@@ -9,6 +9,9 @@ fi
 
 CLUSTER_ARN="${CLUSTER_ARN:-}"
 TASK_FAMILY="${TASK_FAMILY:-}"
+TASKDEF_ARN="${TASKDEF_ARN:-}"
+TASKDEF_REV="${TASKDEF_REV:-}"
+REQUIRE_LATEST_TASKDEF="${REQUIRE_LATEST_TASKDEF:-1}"
 REGION="${REGION:-${AWS_REGION:-us-east-1}}"
 SUBNET_IDS="${SUBNET_IDS:-}"
 SECURITY_GROUP_IDS="${SECURITY_GROUP_IDS:-}"
@@ -28,7 +31,13 @@ fail() {
 }
 
 command -v aws >/dev/null 2>&1 || fail "aws CLI is required."
-command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1 || fail "python3 (or python) is required."
+PYTHON_BIN="${PYTHON_BIN:-}"
+if [[ -z "${PYTHON_BIN}" ]]; then
+  PYTHON_BIN="$(command -v python3 || command -v python || true)"
+fi
+if [[ -z "${PYTHON_BIN}" ]]; then
+  fail "python3 (or python) is required."
+fi
 
 if [[ -z "${CLUSTER_ARN}" || -z "${TASK_FAMILY}" ]]; then
   fail "CLUSTER_ARN and TASK_FAMILY are required."
@@ -45,33 +54,56 @@ if [[ "${STATUS}" -ne 0 ]]; then
   exit 2
 fi
 
-subnets_json=$(python3 - <<PY 2>/dev/null || python - <<PY
+subnets_json=$("${PYTHON_BIN}" - <<PY
 import json
 print(json.dumps([s.strip() for s in "${SUBNET_IDS}".split(",") if s.strip()]))
 PY
 )
 
-sg_json=$(python3 - <<PY 2>/dev/null || python - <<PY
+sg_json=$("${PYTHON_BIN}" - <<PY
 import json
 print(json.dumps([s.strip() for s in "${SECURITY_GROUP_IDS}".split(",") if s.strip()]))
 PY
 )
 
-# Resolve latest task definition ARN
-TASK_DEF_ARN=$(aws ecs list-task-definitions \
-  --family-prefix "${TASK_FAMILY}" \
-  --sort DESC \
-  --max-items 1 \
-  --region "${REGION}" \
-  --query 'taskDefinitionArns[0]' \
-  --output text)
+if [[ -n "${TASKDEF_ARN}" && -n "${TASKDEF_REV}" ]]; then
+  fail "Set only one of TASKDEF_ARN or TASKDEF_REV."
+fi
+
+if [[ -n "${TASKDEF_ARN}" ]]; then
+  TASK_DEF_ARN="${TASKDEF_ARN}"
+elif [[ -n "${TASKDEF_REV}" ]]; then
+  TASK_DEF_ARN="${TASK_FAMILY}:${TASKDEF_REV}"
+else
+  if [[ "${REQUIRE_LATEST_TASKDEF}" == "1" ]]; then
+    TASK_DEF_ARN=$(aws ecs list-task-definitions \
+      --family-prefix "${TASK_FAMILY}" \
+      --sort DESC \
+      --max-items 1 \
+      --region "${REGION}" \
+      --query 'taskDefinitionArns[0]' \
+      --output text)
+  else
+    TASK_DEF_ARN="${TASK_FAMILY}"
+  fi
+fi
 
 if [[ -z "${TASK_DEF_ARN}" || "${TASK_DEF_ARN}" == "None" ]]; then
   fail "No task definition found for family ${TASK_FAMILY}."
   echo "Summary:\nFAIL"; exit 1
 fi
 
+taskdef_desc=$(aws ecs describe-task-definition --task-definition "${TASK_DEF_ARN}" --region "${REGION}")
+taskdef_image=$("${PYTHON_BIN}" - <<PY
+import json
+payload=json.loads('''${taskdef_desc}''')
+containers = payload.get("taskDefinition", {}).get("containerDefinitions", [])
+print(containers[0].get("image") if containers else "")
+PY
+)
+
 echo "Task definition: ${TASK_DEF_ARN}"
+echo "Task image: ${taskdef_image:-unknown}"
 
 # Run task
 run_out=$(aws ecs run-task \
@@ -81,7 +113,7 @@ run_out=$(aws ecs run-task \
   --network-configuration "awsvpcConfiguration={subnets=${subnets_json},securityGroups=${sg_json},assignPublicIp=ENABLED}" \
   --region "${REGION}")
 
-task_arn=$(python3 - <<PY 2>/dev/null || python - <<PY
+task_arn=$("${PYTHON_BIN}" - <<PY
 import json
 payload=json.loads('''${run_out}''')
 print(payload.get('tasks', [{}])[0].get('taskArn', ''))
@@ -100,7 +132,7 @@ aws ecs wait tasks-stopped --cluster "${CLUSTER_ARN}" --tasks "${task_arn}" --re
 
 desc=$(aws ecs describe-tasks --cluster "${CLUSTER_ARN}" --tasks "${task_arn}" --region "${REGION}")
 
-exit_code=$(python3 - <<PY 2>/dev/null || python - <<PY
+exit_code=$("${PYTHON_BIN}" - <<PY
 import json
 payload=json.loads('''${desc}''')
 containers = payload.get('tasks', [{}])[0].get('containers', [])
@@ -108,7 +140,7 @@ print(containers[0].get('exitCode') if containers else None)
 PY
 )
 
-stopped_reason=$(python3 - <<PY 2>/dev/null || python - <<PY
+stopped_reason=$("${PYTHON_BIN}" - <<PY
 import json
 payload=json.loads('''${desc}''')
 print(payload.get('tasks', [{}])[0].get('stoppedReason'))
@@ -130,7 +162,7 @@ latest_run_id=$(aws s3api list-objects-v2 \
   --region "${REGION}" \
   --query "Contents[].Key" \
   --output json | \
-  python3 - <<'PY' 2>/dev/null || python - <<'PY'
+  "${PYTHON_BIN}" - <<'PY'
 import json
 import sys
 from datetime import datetime
@@ -172,7 +204,7 @@ changed_count="?"
 removed_count="?"
 
 if [[ -n "${run_report}" ]]; then
-  python3 - <<PY 2>/dev/null || python - <<PY
+  "${PYTHON_BIN}" - <<PY
 import json
 import os
 
@@ -193,7 +225,7 @@ PY
 fi
 
 if [[ -n "${run_report}" ]]; then
-  baseline_resolved=$(python3 - <<PY 2>/dev/null || python - <<PY
+  baseline_resolved=$("${PYTHON_BIN}" - <<PY
 import json, os
 
 data=json.loads('''${run_report}''')
@@ -203,7 +235,7 @@ entry = data.get("delta_summary", {}).get("provider_profile", {}).get(provider, 
 print("yes" if entry.get("baseline_resolved") else "no")
 PY
 )
-  new_count=$(python3 - <<PY 2>/dev/null || python - <<PY
+  new_count=$("${PYTHON_BIN}" - <<PY
 import json, os
 
 data=json.loads('''${run_report}''')
@@ -213,7 +245,7 @@ entry = data.get("delta_summary", {}).get("provider_profile", {}).get(provider, 
 print(entry.get("new_job_count", "?"))
 PY
 )
-  changed_count=$(python3 - <<PY 2>/dev/null || python - <<PY
+  changed_count=$("${PYTHON_BIN}" - <<PY
 import json, os
 
 data=json.loads('''${run_report}''')
@@ -223,7 +255,7 @@ entry = data.get("delta_summary", {}).get("provider_profile", {}).get(provider, 
 print(entry.get("changed_job_count", "?"))
 PY
 )
-  removed_count=$(python3 - <<PY 2>/dev/null || python - <<PY
+  removed_count=$("${PYTHON_BIN}" - <<PY
 import json, os
 
 data=json.loads('''${run_report}''')
@@ -249,7 +281,7 @@ fi
 
 if [[ "${PRINT_RUN_REPORT}" == "1" ]]; then
   pointer_json="${last_success_provider:-${last_success_global}}"
-  pointer_run_path=$(python3 - <<PY 2>/dev/null || python - <<PY
+  pointer_run_path=$("${PYTHON_BIN}" - <<PY
 import json
 import sys
 

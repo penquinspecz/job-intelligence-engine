@@ -5,6 +5,7 @@ from pathlib import Path
 
 import boto3
 import pytest
+from botocore.exceptions import ClientError
 
 import scripts.publish_s3 as publish_s3
 
@@ -146,3 +147,31 @@ def test_publish_s3_requires_bucket(monkeypatch, tmp_path):
     with pytest.raises(SystemExit) as exc:
         publish_s3.main()
     assert str(exc.value) == "2"
+
+
+def test_publish_s3_pointer_write_error(monkeypatch, tmp_path):
+    runs = tmp_path / "state" / "runs"
+    monkeypatch.setattr(publish_s3, "RUN_METADATA_DIR", runs)
+    run_id, _ = _setup_run(tmp_path)
+
+    class ErrorClient(DummyClient):
+        def put_object(self, Bucket, Key, Body):
+            if Key.endswith("state/last_success.json"):
+                raise ClientError(
+                    {"Error": {"Code": "AccessDenied", "Message": "denied"}}, "PutObject"
+                )
+            super().put_object(Bucket=Bucket, Key=Key, Body=Body)
+
+    client = ErrorClient()
+    monkeypatch.setattr(boto3, "client", lambda *args, **kwargs: client)
+
+    meta = publish_s3.publish_run(
+        run_id=run_id,
+        bucket="my-bucket",
+        prefix="jobintel",
+        dry_run=False,
+        require_s3=False,
+        write_last_success=True,
+    )
+    assert meta["status"] == "error"
+    assert meta["pointer_write"]["global"] == "error"

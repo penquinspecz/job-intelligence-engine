@@ -21,9 +21,13 @@ fail() {
 }
 
 command -v aws >/dev/null 2>&1 || { fail "aws CLI is required."; }
-command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1 || {
+PYTHON_BIN="${PYTHON_BIN:-}"
+if [[ -z "${PYTHON_BIN}" ]]; then
+  PYTHON_BIN="$(command -v python3 || command -v python || true)"
+fi
+if [[ -z "${PYTHON_BIN}" ]]; then
   fail "python3 (or python) is required for JSON parsing."
-}
+fi
 
 if [[ -z "${BUCKET}" ]]; then
   fail "BUCKET is required (or set JOBINTEL_S3_BUCKET)."
@@ -38,7 +42,7 @@ pretty_json() {
   if command -v jq >/dev/null 2>&1; then
     jq .
   else
-    python3 - <<'PY' 2>/dev/null || python - <<'PY'
+    "${PYTHON_BIN}" - <<'PY'
 import json
 import sys
 print(json.dumps(json.load(sys.stdin), indent=2, sort_keys=True))
@@ -69,7 +73,7 @@ latest_run_id=$(aws s3api list-objects-v2 \
   --region "${REGION}" \
   --query "Contents[].Key" \
   --output json | \
-  python3 - <<'PY' 2>/dev/null || python - <<'PY'
+  "${PYTHON_BIN}" - <<'PY'
 import json
 import sys
 from datetime import datetime
@@ -124,7 +128,7 @@ fi
 
 if [[ -n "${run_report}" ]]; then
   echo "\nRun report summary:"
-  python3 - <<PY 2>/dev/null || python - <<PY
+  "${PYTHON_BIN}" - <<PY
 import json
 import os
 
@@ -155,7 +159,7 @@ fi
 
 success=""
 if [[ -n "${run_report}" ]]; then
-  success=$(python3 - <<PY 2>/dev/null || python - <<PY
+  success=$("${PYTHON_BIN}" - <<PY
 import json
 print(json.loads("""${run_report}""").get("success"))
 PY

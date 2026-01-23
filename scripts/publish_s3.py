@@ -109,6 +109,7 @@ def publish_run(
     write_last_success: bool = True,
 ) -> Dict[str, Any]:
     resolved_bucket, resolved_prefix = _resolve_bucket_prefix(bucket, prefix)
+    pointer_write: Dict[str, Any] = {"global": "skipped", "provider_profile": {}, "error": None}
     if not resolved_bucket:
         logger.info("S3 bucket unset; skipping publish.")
         if require_s3:
@@ -117,6 +118,7 @@ def publish_run(
             "status": "skipped",
             "reason": "missing_bucket",
             "uploaded_files_count": 0,
+            "pointer_write": pointer_write,
         }
 
     run_dir = _run_dir(run_id)
@@ -161,7 +163,12 @@ def publish_run(
         schema_version=1,
     )
     state_payload["provider_profiles"] = provider_profiles
-    if not dry_run and write_last_success:
+    if dry_run:
+        pointer_write["global"] = "skipped"
+    elif not write_last_success:
+        logger.info("Skipping baseline pointer write (run not successful).")
+        pointer_write["global"] = "skipped"
+    else:
         try:
             logger.info(
                 "writing baseline pointer: s3://%s/%s/state/last_success.json",
@@ -174,42 +181,60 @@ def publish_run(
                 resolved_bucket,
                 resolved_prefix,
             )
-            for provider, profiles in latest_prefixes.items():
-                for profile in profiles.keys():
-                    logger.info(
-                        "writing baseline pointer: s3://%s/%s/state/%s/%s/last_success.json",
-                        resolved_bucket,
-                        resolved_prefix,
-                        provider,
-                        profile,
-                    )
-                    write_provider_last_success_state(
-                        resolved_bucket,
-                        resolved_prefix,
-                        provider,
-                        profile,
-                        state_payload,
-                        client=client,
-                    )
-                    logger.info(
-                        "baseline pointer write ok: s3://%s/%s/state/%s/%s/last_success.json",
-                        resolved_bucket,
-                        resolved_prefix,
-                        provider,
-                        profile,
-                    )
+            pointer_write["global"] = "ok"
         except ClientError as exc:
             logger.error("baseline pointer write failed: %s", exc)
-            raise
-    elif not dry_run and not write_last_success:
-        logger.info("Skipping baseline pointer write (run not successful).")
+            pointer_write["global"] = "error"
+            pointer_write["error"] = str(exc)
+        if pointer_write["global"] == "ok":
+            for provider, profiles in latest_prefixes.items():
+                for profile in profiles.keys():
+                    key = f"{provider}:{profile}"
+                    try:
+                        logger.info(
+                            "writing baseline pointer: s3://%s/%s/state/%s/%s/last_success.json",
+                            resolved_bucket,
+                            resolved_prefix,
+                            provider,
+                            profile,
+                        )
+                        write_provider_last_success_state(
+                            resolved_bucket,
+                            resolved_prefix,
+                            provider,
+                            profile,
+                            state_payload,
+                            client=client,
+                        )
+                        logger.info(
+                            "baseline pointer write ok: s3://%s/%s/state/%s/%s/last_success.json",
+                            resolved_bucket,
+                            resolved_prefix,
+                            provider,
+                            profile,
+                        )
+                        pointer_write["provider_profile"][key] = "ok"
+                    except ClientError as exc:
+                        logger.error("baseline pointer write failed: %s", exc)
+                        pointer_write["provider_profile"][key] = "error"
+                        pointer_write["error"] = str(exc)
+        else:
+            for provider, profiles in latest_prefixes.items():
+                for profile in profiles.keys():
+                    pointer_write["provider_profile"][f"{provider}:{profile}"] = "skipped"
+
+    status = "ok"
+    if pointer_write["global"] == "error" or "error" in pointer_write["provider_profile"].values():
+        status = "error"
 
     return {
-        "status": "ok",
+        "status": status,
+        "reason": "pointer_write_failed" if status == "error" else None,
         "bucket": resolved_bucket,
         "prefixes": build_s3_prefixes(resolved_prefix, run_id, latest_prefixes),
         "uploaded_files_count": uploaded,
         "dashboard_url": dashboard_url or None,
+        "pointer_write": pointer_write,
     }
 
 

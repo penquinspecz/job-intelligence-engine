@@ -60,7 +60,7 @@ from ji_engine.utils.location_normalize import normalize_location_guess
 from ji_engine.utils.user_state import load_user_state
 
 logger = logging.getLogger(__name__)
-JSON_DUMP_SETTINGS = {"ensure_ascii": False, "indent": 2, "separators": (", ", ": ")}
+JSON_DUMP_SETTINGS = {"ensure_ascii": False, "indent": 2, "separators": (", ", ": "), "sort_keys": True}
 CSV_FIELDNAMES = [
     "job_id",
     "score",

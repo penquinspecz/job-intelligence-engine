@@ -323,6 +323,65 @@ def _update_run_metadata_s3(path: Path, s3_meta: Dict[str, Any]) -> None:
     _write_json(path, payload)
 
 
+def _update_run_metadata_publish(
+    path: Path,
+    publish_section: Dict[str, Any],
+    *,
+    success_override: Optional[bool] = None,
+    status_override: Optional[str] = None,
+) -> None:
+    if not path.exists():
+        return
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        return
+    payload["publish"] = publish_section
+    if success_override is not None:
+        payload["success"] = success_override
+    if status_override is not None:
+        payload["status"] = status_override
+    _write_json(path, payload)
+
+
+def _pointer_write_ok(pointer_write: Any) -> bool:
+    if not isinstance(pointer_write, dict):
+        return False
+    if pointer_write.get("global") != "ok":
+        return False
+    provider_status = pointer_write.get("provider_profile", {})
+    if isinstance(provider_status, dict):
+        return all(status == "ok" for status in provider_status.values())
+    return False
+
+
+def _build_publish_section(
+    *,
+    s3_meta: Dict[str, Any],
+    enabled: bool,
+    required: bool,
+    bucket: Optional[str],
+    prefix: Optional[str],
+) -> Dict[str, Any]:
+    pointer_write = s3_meta.get("pointer_write") if isinstance(s3_meta, dict) else None
+    if not pointer_write:
+        pointer_write = {"global": "disabled", "provider_profile": {}, "error": None}
+    return {
+        "enabled": bool(enabled),
+        "required": bool(required),
+        "bucket": bucket,
+        "prefix": prefix,
+        "pointer_write": pointer_write,
+    }
+
+
+def _publish_contract_failed(publish_section: Dict[str, Any]) -> bool:
+    if not publish_section.get("enabled"):
+        return False
+    if not publish_section.get("required"):
+        return False
+    return not _pointer_write_ok(publish_section.get("pointer_write"))
+
+
 def _score_meta_path(ranked_json: Path) -> Path:
     return ranked_json.with_suffix(".score_meta.json")
 
@@ -1872,10 +1931,11 @@ def main() -> int:
         s3_meta: Dict[str, Any] = {"status": "disabled"}
         s3_failed = False
         s3_exit_code: Optional[int] = None
-        if os.environ.get("S3_PUBLISH_ENABLED", "0").strip() == "1":
+        publish_enabled = os.environ.get("S3_PUBLISH_ENABLED", "0").strip() == "1"
+        require_s3 = os.environ.get("S3_PUBLISH_REQUIRE", "0").strip() == "1"
+        resolved_bucket, resolved_prefix = publish_s3._resolve_bucket_prefix(None, None)
+        if publish_enabled:
             dry_run = os.environ.get("S3_PUBLISH_DRY_RUN", "0").strip() == "1"
-            require_s3 = os.environ.get("S3_PUBLISH_REQUIRE", "0").strip() == "1"
-            resolved_bucket, resolved_prefix = publish_s3._resolve_bucket_prefix(None, None)
             if resolved_bucket:
                 logger.info(
                     "S3 publish enabled: s3://%s/%s (dry_run=%s require=%s)",
@@ -1907,6 +1967,35 @@ def main() -> int:
                 s3_failed = require_s3
         else:
             logger.info("S3 publish disabled (S3_PUBLISH_ENABLED != 1).")
+
+        publish_section = _build_publish_section(
+            s3_meta=s3_meta,
+            enabled=publish_enabled,
+            required=require_s3,
+            bucket=resolved_bucket or None,
+            prefix=resolved_prefix or None,
+        )
+        if _publish_contract_failed(publish_section):
+            s3_failed = True
+            s3_exit_code = s3_exit_code or 2
+            _update_run_metadata_publish(
+                run_metadata_path,
+                publish_section,
+                success_override=False,
+                status_override="failed",
+            )
+        else:
+            _update_run_metadata_publish(run_metadata_path, publish_section)
+        logger.info(
+            "PUBLISH_CONTRACT enabled=%s required=%s bucket=%s prefix=%s pointer_global=%s pointer_profiles=%s error=%s",
+            publish_section.get("enabled"),
+            publish_section.get("required"),
+            publish_section.get("bucket"),
+            publish_section.get("prefix"),
+            (publish_section.get("pointer_write") or {}).get("global"),
+            json.dumps((publish_section.get("pointer_write") or {}).get("provider_profile", {}), sort_keys=True),
+            (publish_section.get("pointer_write") or {}).get("error"),
+        )
 
         if os.environ.get("JOBINTEL_PRUNE") == "1":
             try:

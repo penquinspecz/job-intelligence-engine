@@ -108,6 +108,7 @@ class AshbyProvider(BaseJobProvider):
             )
             results.append(posting)
 
+        results.sort(key=lambda j: (j.apply_url or "", j.title or "", j.location or "", j.team or ""))
         return results
 
     def _parse_next_data(self, soup: BeautifulSoup, now: datetime) -> List[RawJobPosting]:
@@ -157,6 +158,7 @@ class AshbyProvider(BaseJobProvider):
                     job_id=job_id,
                 )
             )
+        results.sort(key=lambda j: (j.apply_url or "", j.title or "", j.location or "", j.team or ""))
         return results
 
     def _parse_app_data(self, html: str, now: datetime) -> List[RawJobPosting]:
@@ -223,6 +225,7 @@ class AshbyProvider(BaseJobProvider):
                     job_id=job_id,
                 )
             )
+        results.sort(key=lambda j: (j.apply_url or "", j.title or "", j.location or "", j.team or ""))
         return results
 
     def _looks_like_job(self, node: dict[str, Any]) -> bool:
