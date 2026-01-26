@@ -361,6 +361,7 @@ def _build_publish_section(
     required: bool,
     bucket: Optional[str],
     prefix: Optional[str],
+    skip_reason: Optional[str] = None,
 ) -> Dict[str, Any]:
     pointer_write = s3_meta.get("pointer_write") if isinstance(s3_meta, dict) else None
     if not pointer_write:
@@ -371,6 +372,7 @@ def _build_publish_section(
         "bucket": bucket,
         "prefix": prefix,
         "pointer_write": pointer_write,
+        "skip_reason": skip_reason,
     }
 
 
@@ -2004,9 +2006,15 @@ def main() -> int:
         publish_enabled, require_s3, skip_reason = _resolve_publish_state(
             publish_requested, resolved_bucket
         )
-        if skip_reason:
+        if status != "success":
+            skip_reason = f"skipped_status_{status}"
+            publish_enabled = False
+            require_s3 = False
+            s3_meta = {"status": "skipped", "reason": skip_reason}
+        elif skip_reason:
             logger.warning("S3 publish requested but bucket is unset; skipping.")
             s3_meta = {"status": skip_reason, "reason": skip_reason}
+
         if publish_enabled:
             dry_run = os.environ.get("PUBLISH_S3_DRY_RUN", "0").strip() == "1"
             logger.info(
@@ -2039,7 +2047,12 @@ def main() -> int:
                 s3_exit_code = 2
                 s3_failed = require_s3
         else:
-            logger.info("S3 publish disabled (S3_PUBLISH_ENABLED != 1).")
+            if publish_requested and skip_reason:
+                logger.info("S3 publish skipped (%s).", skip_reason)
+            elif not publish_requested:
+                logger.info("S3 publish not requested (PUBLISH_S3 != 1).")
+            else:
+                logger.info("S3 publish disabled.")
 
         publish_section = _build_publish_section(
             s3_meta=s3_meta,
@@ -2047,6 +2060,7 @@ def main() -> int:
             required=require_s3,
             bucket=resolved_bucket or None,
             prefix=resolved_prefix or None,
+            skip_reason=skip_reason,
         )
         if _publish_contract_failed(publish_section):
             s3_failed = True

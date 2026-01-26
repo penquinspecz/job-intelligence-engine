@@ -15,6 +15,7 @@ def test_run_daily_metadata_includes_provenance(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("JOBINTEL_STATE_DIR", str(state_dir))
     monkeypatch.setenv("CAREERS_MODE", "SNAPSHOT")
     monkeypatch.setenv("DISCORD_WEBHOOK_URL", "")
+    monkeypatch.setenv("JOBINTEL_ECS_TASK_ARN", "arn:aws:ecs:us-east-1:123456789012:task/cluster/abc123")
     importlib.reload(config)
     run_daily = importlib.reload(run_daily_module)
     run_scrape = importlib.reload(run_scrape_module)
@@ -52,8 +53,10 @@ def test_run_daily_metadata_includes_provenance(tmp_path, monkeypatch) -> None:
     metadata_files = sorted(run_daily.RUN_METADATA_DIR.glob("*.json"))
     assert metadata_files
     data = json.loads(metadata_files[-1].read_text(encoding="utf-8"))
+    build_provenance = data["provenance"]["build"]
     provenance = data["provenance_by_provider"]["openai"]
     assert data["provenance"]["openai"]["provider_id"] == "openai"
+    assert build_provenance["ecs_task_arn"] == "arn:aws:ecs:us-east-1:123456789012:task/cluster/abc123"
     assert provenance["provider"] == "openai"
     assert provenance["scrape_mode"] == "snapshot"
     assert provenance["availability"] == "available"
