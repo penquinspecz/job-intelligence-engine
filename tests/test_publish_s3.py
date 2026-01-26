@@ -114,18 +114,18 @@ def test_publish_s3_disabled_without_bucket(monkeypatch, tmp_path, caplog):
     run_id, _ = _setup_run(tmp_path)
 
     monkeypatch.delenv("JOBINTEL_S3_BUCKET", raising=False)
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "publish_s3.py",
-            "--run_id",
-            run_id,
-        ],
-    )
+    monkeypatch.delenv("BUCKET", raising=False)
 
     with caplog.at_level(logging.INFO):
-        publish_s3.main()
+        meta = publish_s3.publish_run(
+            run_id=run_id,
+            bucket=None,
+            prefix=None,
+            dry_run=False,
+            require_s3=False,
+        )
+    assert meta["status"] == "skipped"
+    assert meta["reason"] == "missing_bucket"
     assert "S3 bucket unset" in caplog.text
 
 
@@ -135,6 +135,7 @@ def test_publish_s3_requires_bucket(monkeypatch, tmp_path):
     run_id, _ = _setup_run(tmp_path)
 
     monkeypatch.delenv("JOBINTEL_S3_BUCKET", raising=False)
+    monkeypatch.delenv("BUCKET", raising=False)
     monkeypatch.setattr(
         sys,
         "argv",
@@ -197,3 +198,22 @@ def test_publish_s3_pointer_write_error(monkeypatch, tmp_path):
     )
     assert meta["status"] == "error"
     assert meta["pointer_write"]["global"] == "error"
+
+
+def test_publish_s3_logs_target_bucket_prefix(monkeypatch, tmp_path, caplog):
+    runs = tmp_path / "state" / "runs"
+    monkeypatch.setattr(publish_s3, "RUN_METADATA_DIR", runs)
+    run_id, _ = _setup_run(tmp_path)
+
+    client = DummyClient()
+    monkeypatch.setattr(boto3, "client", lambda *args, **kwargs: client)
+
+    with caplog.at_level(logging.INFO):
+        publish_s3.publish_run(
+            run_id=run_id,
+            bucket="target-bucket",
+            prefix="jobintel",
+            dry_run=True,
+            require_s3=False,
+        )
+    assert "S3 publish target: s3://target-bucket/jobintel" in caplog.text
