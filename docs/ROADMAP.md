@@ -16,6 +16,10 @@ If a change doesn’t advance a milestone’s Definition of Done (DoD), it’s p
 - **LLMs are allowed only with guardrails:** cache + schema + fail-closed + reproducible settings
 - **AI is last-mile:** deterministic pipeline produces stable artifacts; AI reads them and produces insight outputs.
 - **Multi-candidate is Phase 2+:** design plumbing now (paths/schemas), do not build UI complexity until Phase 1 is boring.
+- **Tests must be deterministic regardless of optional deps:** unit tests cannot change behavior based on whether optional tooling (e.g., Playwright) is installed
+- **Single source of truth for dependencies:** Docker, CI, and local dev install from the same dependency contract (no “works in Docker only” drift)
+- **Docs are a contract:** README status/architecture must match the runnable system; no “early dev” drift when the system is operational
+
 
 ---
 

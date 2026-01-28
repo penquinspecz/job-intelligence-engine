@@ -1,101 +1,55 @@
 # Job Intelligence Engine (JIE)
 
-[![CI](https://github.com/penquinspecz/job-intelligence-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/penquinspecz/job-intelligence-engine/actions/workflows/ci.yml)
-[![Docker Smoke](https://github.com/penquinspecz/job-intelligence-engine/actions/workflows/docker-smoke.yml/badge.svg)](https://github.com/penquinspecz/job-intelligence-engine/actions/workflows/docker-smoke.yml)
-[![Lint](https://github.com/penquinspecz/job-intelligence-engine/actions/workflows/lint.yml/badge.svg)](https://github.com/penquinspecz/job-intelligence-engine/actions/workflows/lint.yml)
-
-An AI-powered job intelligence system that monitors frontier AI company careers pages, classifies roles, matches them to a candidate profile, and generates deterministic artifacts, diffs, and alerts.
-
-This repo is built as a **portfolio-grade, production-minded system**: deterministic by default, debuggable via artifacts, and deployable as a scheduled job (AWS/ECS or Kubernetes CronJob). The “AI” is intentionally **last-mile**: the deterministic pipeline produces stable outputs first; AI (when enabled) reads those artifacts under strict guardrails.
-
----
+An AI-powered job intelligence system that monitors frontier AI company careers pages, classifies roles, matches them to a candidate profile, and generates insights and alerts.
 
 ## Status
 
-Active development with strong determinism guardrails:
-- One canonical pipeline entrypoint: `scripts/run_daily.py`
-- Offline snapshot mode supported (CI + K8s guardrails)
-- Run registry + artifact persistence under `state/runs/<run_id>/`
-- Diff artifacts + optional diff-only Discord notifications
-
-Roadmap lives in `docs/ROADMAP.md`.
-
----
+Working system under active iteration. Snapshot-based scraping, docker smoke + CI gates, artifact exports with run registry, and optional AI insights are in place and evolving.
 
 ## Goals
 
-- Continuously scrape careers pages for frontier AI companies (starting with OpenAI; designed to expand safely).
-- Classify roles by function (Solutions Architecture, AI Deployment, Customer Success, etc.).
-- Compute a fit score and gap analysis against a structured candidate profile.
-- Produce deterministic run artifacts and a “changes since last run” diff report.
-- Generate weekly hiring trend summaries and bounded alerts for high-fit roles.
-- Demonstrate practical, safe use of LLMs/AI in a **guardrailed, reproducible pipeline**.
-- Serve as a long-lived portfolio artifact: deployable, test-backed, and explainable.
-
-_(Added, not replacing prior intent)_:
-- Target roles include technical Customer Success / Solutions Architecture / Technical Success / Deployment-facing roles.
-- Optimize for CNCF-ish operational discipline: container-first, K8s-native patterns, predictable logs/artifacts, and boring repeatability.
-
----
+- Continuously scrape OpenAI careers (later: Anthropic, Google, etc.)
+- Classify roles by function (Solutions Architecture, AI Deployment, CS, etc.)
+- Compute a fit score and gap analysis against a structured candidate profile
+- Generate weekly hiring trend summaries and real-time alerts for high-fit roles
+- Demonstrate practical use of LLMs, embeddings, and workflow automation
 
 ## Architecture
 
 High level:
 
-- Provider layer (snapshot-first; live mode optional and bounded)
-- Deterministic extraction + classification pipeline
-- Matching engine (fit + gaps) producing ranked artifacts per profile
-- Run registry + run report (hashes, inputs, outputs, timings)
-- Diff report (identity-based, stable ordering) + optional Discord alerts
-- Minimal dashboard API (FastAPI) to browse runs and artifacts (API-first; UI can come later)
-- Ops layer (AWS ECS scheduled runs / K8s CronJob & run-once Job) with runbooks and verification steps
-
----
+- Provider-agnostic scraper layer  
+- Embedding + classification pipeline (OpenAI API)  
+- Matching engine (fit + gaps)  
+- Insight generator (weekly / monthly pulse)  
+- Notification & dashboard layer  
 
 ## AI-Assisted Development
 
 This project is intentionally built using AI pair programming:
 
-- GPT-5 is used for design, project management, and daily task guidance.
-- A second model (e.g., Gemini) is used as a cross-model reviewer for critical modules (provider logic, determinism contract, identity/diff logic).
-- Implementation work is executed via an agent workflow (e.g., Codex/Cursor), with emphasis on:
-  - small, test-backed diffs
-  - deterministic outputs
-  - explicit exit code contracts
-  - “truth gates” (Docker build with tests)
+GPT-5 is used for design and project management, as well as daily task guidance.
 
-_(Added, not replacing prior intent)_:
-- Multi-model development is a **safety technique**: independent review reduces blind spots and helps catch subtle contract violations.
-- The goal is not “vibe coding”; it is **repeatable engineering** with verifiable artifacts and minimal churn.
+A second model (e.g. Gemini) is used as a cross-model reviewer for critical modules (scraper, matching engine, etc.).
 
----
+Development is done in Codex IDE using a variety of models depending on the task.
 
-## Install (canonical)
+The goal is to demonstrate practical, safe use of multi-model workflows for software engineering.
+
+## Local setup (editable install)
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
 pip install -e .
-pip install ".[dev]"        # contributors
-pip install ".[dashboard]"  # dashboard runtime
-pip install ".[snapshots]"  # Playwright snapshots
-```
-
-`pyproject.toml` is the canonical source of dependencies. `requirements.txt` is the Docker/CI export.
-
-Example run (no Discord post):
-
-```bash
+# Example run (no Discord post):
 python scripts/run_daily.py --profiles cs --us_only --no_post
 ```
 
+## Local quickstart
 
----
-
-Local quickstart
-
-After creating the venv above, you can run the common stages via make:
+After creating the venv above, you can run the common stages via `make`:
 
 ```bash
 make test
@@ -104,119 +58,366 @@ make score            # default PROFILE=cs
 make all              # test + enrich + score
 ```
 
+## Docker (AWS-ready)
 
----
-
-Canonical entrypoint + run outputs
-
-Entrypoint: `scripts/run_daily.py`
-
-Runs produce artifacts under:
-- `state/runs/<run_id>/...` (run registry + artifacts + reports)
-- `data/...` (inputs/snapshots/outputs; depending on mode)
-
-Exit code contract:
-- `0` success
-- `2` validation / missing inputs / deterministic “not runnable”
-- `>=3` runtime/provider failures
-
----
-
-Docker (AWS-ready)
-
-Build and run locally (expects ./data and ./state mounted):
+Build and run locally (expects ./data mounted to /app/data):
 
 ```bash
 docker build -t jobintel:local .
+docker run --rm -v "$PWD/data:/app/data" --env-file .env jobintel:local \
+  # defaults: --profiles cs --us_only --no_post
+
+# override defaults as needed:
+docker run --rm -v "$PWD/data:/app/data" --env-file .env jobintel:local \
+  --profiles cs,tam,se --us_only --no_post
+
+# run with AI augment stage
+docker run --rm -v "$PWD/data:/app/data" --env-file .env jobintel:local \
+  --profiles cs --us_only --no_post --ai
+```
+
+## Docker quickstart
+
+The image runs tests during `docker build`, and the container `ENTRYPOINT` is `python`, so you can run any script directly.
+
+```bash
+docker build -t jobintel:local .
+
+# AI augment (writes data/openai_enriched_jobs_ai.json into the mounted ./data volume)
+docker run --rm -v "$PWD/data:/app/data" -v "$PWD/state:/app/state" --env-file .env jobintel:local --profiles cs --us_only --no_post --ai
+
+# Scoring (reads AI-enriched input automatically when present; writes ranked outputs under ./data)
+docker run --rm -v "$PWD/data:/app/data" -v "$PWD/state:/app/state" --env-file .env jobintel:local --profile cs --us_only --no_post
+```
+
+Compose convenience (also mounts ./data):
+
+```bash
+docker-compose up --build
+```
+
+## Debugging the container
+
+You can override the default `ENTRYPOINT` to run a quick Python snippet or drop into a shell:
+
+```bash
+docker run --rm -v "$PWD/data:/app/data" --entrypoint python jobintel:local -c "import sys; print(sys.executable)"
+docker run --rm -it -v "$PWD/data:/app/data" --entrypoint sh jobintel:local
+```
+
+Notes:
+- Container is suitable for ECS/Fargate or cron on EC2; mount /app/data as a volume.
+- No secrets are baked into the image; use env vars or task/env files.
+- Snapshots under `data/openai_snapshots/` can be baked into the image; other data is excluded.
+
+## Updating provider snapshots
+
+Use the CLI snapshot refresh to fetch and validate HTML before overwriting snapshots.
+
+```bash
+# Refresh OpenAI snapshot with defaults
+.venv/bin/python -m src.jobintel.cli snapshots refresh --provider openai
+
+# Refresh all known providers (from config/providers.json)
+.venv/bin/python -m src.jobintel.cli snapshots refresh --provider all
+
+# Use Playwright for snapshot fetch
+.venv/bin/python -m src.jobintel.cli snapshots refresh --provider openai --fetch playwright
+
+# Use Playwright via env
+JOBINTEL_SNAPSHOT_FETCH=playwright .venv/bin/python -m src.jobintel.cli snapshots refresh --provider openai
+
+# Refresh snapshots, then run offline
+.venv/bin/python -m src.jobintel.cli snapshots refresh --provider openai
+.venv/bin/python -m src.jobintel.cli run --offline --role cs --providers openai --no_post --no_enrich
+```
+
+## Snapshot validation
+
+Validate committed snapshots before running offline/CI:
+
+```bash
+.venv/bin/python -m src.jobintel.cli snapshots validate --all
+.venv/bin/python -m src.jobintel.cli snapshots validate --provider openai --data-dir ci_data
+```
+
+Legacy option (stdlib `urllib`):
+
+```bash
+.venv/bin/python scripts/update_snapshots.py --provider openai
+```
+
+Canonical entrypoint:
+- Use `scripts/run_daily.py` for the pipeline. Legacy runners (`run_full_pipeline.py`, `run_openai_pipeline.py`) are deprecated and exit non-zero with a message.
+
+Verification snippet (stderr/stdout captured in logs; exit code propagated):
+```bash
+docker run --rm -v "$PWD/data:/app/data" jobintel:local --profiles cs --us_only --no_post ; echo exit=$?
+```
+
+## Runtime contract
+- Runs as non-root user `app` by default; artifacts on mounted volumes remain host-writable (no sudo/chmod needed after runs).
+- Volumes:
+  - `./data` → `/app/data` (snapshots, cache, outputs)
+  - `./state` → `/app/state` (history, metadata, user_state)
+- Run report schema version is recorded in run metadata as `run_report_schema_version`.
+- Env vars:
+  - `DISCORD_WEBHOOK_URL` (optional; if unset, alerts are skipped). Set to enable run summaries and alerts.
+  - `CAREERS_MODE` (optional; defaults to AUTO)
+  - `JOBINTEL_S3_BUCKET` (optional) + `JOBINTEL_S3_PREFIX` (optional): when set, AI cache and embedding cache use S3; defaults remain filesystem.
+  - Any profile/flag overrides via CLI args to `scripts/run_daily.py`.
+- Example ECS/Fargate usage (high-level):
+  - Build/push image.
+  - Task definition: command `python scripts/run_daily.py --profiles cs,tam,se --us_only --no_post`; mount EFS/S3-backed volume to `/app/data`; supply env (e.g., webhook) via task env/Secrets Manager.
+  - Schedule via EventBridge to trigger the task on your cadence.
+Docker run cheatsheet:
+```bash
+# build the image
+docker build -t jobintel:local .
+
+# default run (no AI augment, no Discord)
 docker run --rm \
   -v "$PWD/data:/app/data" \
   -v "$PWD/state:/app/state" \
-  --env-file .env \
-  jobintel:local --profiles cs --us_only --no_post
-```
+  --env-file .env jobintel:local --profiles cs --us_only --no_post
 
-Run with AI augmentation (guardrailed; opt-in):
-
-```bash
+# run with AI augment (ensures AI outputs are generated and scoring consumes them)
 docker run --rm \
   -v "$PWD/data:/app/data" \
   -v "$PWD/state:/app/state" \
+  --env-file .env jobintel:local --profiles cs --us_only --no_post --ai
+
+# verify AI-enriched artifact is present before scoring
+ls data/openai_enriched_jobs_ai.json
+```
+Run the last `ls` after the `--ai` invocation above to confirm `openai_enriched_jobs_ai.json` exists; the scoring step now picks it automatically when present.
+
+Mounting `/app/state` alongside `/app/data` keeps `state/history` persisted between runs; otherwise history disappears when the container exits.
+
+```bash
+# after a run
+# (e.g., state/history/2026-01-01/20260101T000000Z/cs/run_summary.txt)
+find state -maxdepth 10 -type f
+```
+
+## Local Docker smoke
+
+Run the same containerized smoke flow as CI (offline, baked snapshots/state):
+
+```bash
+make image
+make smoke
+./scripts/smoke_docker.sh
+```
+
+Do not reuse the `jobintel:local` tag for unrelated builds. Use a different tag
+(for example `sanity-build`) to avoid overwriting the smoke image.
+Override the image tag when needed:
+`make image JOBINTEL_IMAGE_TAG=jobintel:dev`
+`make smoke-fast JOBINTEL_IMAGE_TAG=jobintel:dev`
+
+BuildKit is required (the Dockerfile uses `RUN --mount=type=cache`), so
+`DOCKER_BUILDKIT=0` is unsupported. Docker Desktop on macOS uses BuildKit by
+default.
+
+The smoke preflight checks absolute python paths first
+(`/usr/local/bin/python`, `/usr/bin/python3`) before falling back to `python3`
+and `python` on PATH, using `--entrypoint` to bypass the image ENTRYPOINT.
+
+Skip the image build (reuse existing `jobintel:local`):
+
+```bash
+make smoke-fast
+./scripts/smoke_docker.sh --skip-build
+```
+
+Run the CI-equivalent invocation:
+
+```bash
+make smoke-ci
+```
+
+Multi-provider smoke (bounded profiles):
+
+```bash
+./scripts/smoke_docker.sh --providers openai,anthropic --profiles cs
+```
+
+Override defaults with env vars:
+
+```bash
+CONTAINER_NAME=jobintel_smoke_alt ./scripts/smoke_docker.sh
+ARTIFACT_DIR=smoke_out ./scripts/smoke_docker.sh
+SMOKE_SKIP_BUILD=1 ./scripts/smoke_docker.sh
+```
+
+CI runs the same script and uploads `smoke_artifacts/` even on failure. Check
+`smoke_artifacts/container.log` and `smoke_artifacts/run_report.json` when debugging.
+
+`make image` builds without tests (fast). Use `make image-ci` or
+`docker build -t jobintel:local --build-arg RUN_TESTS=1 .` to force tests.
+
+### Debugging snapshots in the container
+
+Use the helper target to inspect baked-in snapshot fixtures inside the image:
+
+```bash
+make debug-snapshots
+```
+
+Manual equivalent:
+
+```bash
+docker run --rm --entrypoint sh jobintel:local -lc 'ls -la /app/data/openai_snapshots | head; ls -la /app/data/openai_snapshots/jobs | head; ls -la /app/data/openai_snapshots/jobs | wc -l'
+```
+
+If you want explainability, run smoke then:
+
+```bash
+make explain-smoke
+```
+
+## Smoke contract
+
+The smoke contract check validates deterministic properties of smoke artifacts so CI stays stable:
+- `openai_labeled_jobs.json` exists and is non-empty
+- `openai_ranked_jobs.cs.json` has at least N items (default 5)
+- `openai_ranked_jobs.cs.csv` row count matches ranked JSON
+- `run_report.json` includes provider=openai, scrape_mode=SNAPSHOT, and classified_job_count matches labeled length
+
+`run_report.json` includes `run_report_schema_version` (int). The smoke contract
+enforces exact schema version `1` by default; override with
+`--min-schema-version` or `--require-schema-version` (or env
+`SMOKE_MIN_SCHEMA_VERSION` / `SMOKE_REQUIRE_SCHEMA_VERSION`) during migrations.
+
+Versioned JSON schemas live under `schemas/` (for example,
+`schemas/run_report.schema.v1.json`). The smoke contract validates run reports
+against the matching schema file before applying deeper invariants.
+
+To adjust thresholds intentionally, pass a new minimum:
+
+```bash
+python3 scripts/smoke_contract_check.py smoke_artifacts --min-ranked 10
+```
+
+## Local CI
+
+`make ci` is strict and matches GitHub Actions (includes Docker smoke).
+`make ci-local` skips Docker smoke when Docker is unavailable.
+
+## CI commands
+
+```bash
+make ci
+make ci-local
+JOBINTEL_IMAGE_TAG=jobintel:dev make ci
+JOBINTEL_IMAGE_TAG=jobintel:dev make smoke-fast
+```
+
+Smoke preflight uses `--entrypoint` so the image ENTRYPOINT does not hijack
+`python -V`.
+
+## Daily use
+
+```bash
+make daily
+JOBINTEL_MODE=LIVE make daily
+JOBINTEL_IMAGE_TAG=jobintel:dev make daily
+```
+
+Alerts are written to `data/<provider>_alerts.<profile>.md`.
+Last-seen state is stored under `state/runs/last_seen/`; delete that directory to reset alert baselines.
+
+## Delta summary
+
+Each run report includes a `delta_summary` section with per-provider/profile deltas between the current run and the latest available baseline. When no baseline is available, `baseline_run_id` and `baseline_run_path` are null and all delta counts are zero (unchanged is zero).
+
+## Dev commands
+
+```bash
+.venv/bin/pip install -e .
+.venv/bin/python -m pytest -q
+.venv/bin/ruff check .
+```
+
+## Quick commands
+
+```bash
+make test
+make lint
+make docker-build
+make docker-run-local
+make report
+```
+
+`make report` runs `scripts.report_changes` inside the Docker image (mounting `state/`, overriding entrypoint) to compare the latest CS run; override `PROFILE`/`LIMIT` as needed.
+
+## Uploading run history to S3
+
+```
+docker run --rm \
+  -v "$PWD/data:/app/data" \
   --env-file .env \
-  jobintel:local --profiles cs --us_only --no_post --ai
+  jobintel:local \
+  python scripts/publish_s3.py \
+  --bucket my-bucket \
+  --profile cs \
+  --latest \
+  --dry_run
 ```
 
+Set `--run_id` instead of `--latest` to upload a specific run, and omit `--dry_run` to perform the actual upload.
 
----
+Note: `publish_s3.py` only uploads artifacts under `state/history/**`; other state files (embed cache, etc.) are ignored.
 
-Determinism & goldens
-- Snapshots under `data/*_snapshots/` are pinned fixtures; do not mutate them during tests.
-- Golden tests assert deterministic transforms over pinned snapshots, not upstream job volatility.
-- Snapshot bytes are guarded by `tests/fixtures/golden/snapshot_bytes.manifest.json`.
-- Verify locally: `python scripts/verify_snapshots_immutable.py`
-- Docker (no-cache) is the source of truth for CI parity:
+## AWS deployment templates
 
-```bash
-DOCKER_BUILDKIT=1 docker build --no-cache --build-arg RUN_TESTS=1 -t jobintel:tests .
-```
+- Use `ops/aws/ecs-taskdef.json` as the basis for a Fargate task that mounts `/app/data` & `/app/state`, sets the JOBINTEL_ vars, and runs `python scripts/run_daily.py --profiles cs --us_only --no_enrich`.
+- Trigger it with `ops/aws/eventbridge-rule.json` on a cron schedule.
+- After each run, schedule a second job (or step) that runs `python scripts/publish_s3.py --profile cs --latest --bucket ...` to upload the persisted history to S3.
 
-Determinism contract: `docs/DETERMINISM_CONTRACT.md`
+## Ops runbook
 
----
-
-CI / local truth gates
-
-Fast local gate (matches PR expectations without requiring AWS secrets):
-
-```bash
-make gate-fast
-```
-
-CI-equivalent Docker truth gate:
-
-```bash
-DOCKER_BUILDKIT=1 docker build --no-cache --build-arg RUN_TESTS=1 -t jobintel:tests .
-```
+See `docs/OPS_RUNBOOK.md` for one-off run debugging (ECS + S3 + Logs).
 
 
----
+## Roadmap
 
-Kubernetes ops (CronJob + run-once)
+### Phase 0 — Local & CI reliability
+- [x] Deterministic ranking tie-breakers
+- [x] CI-safe `--no_enrich` + changelog diff output
+- [x] Structured logging + failure alerts (stderr/stdout tails)
+- [x] Absolute paths, `ensure_dirs()`, and atomic writes (data/state/snapshot/cache)
+- [x] GraphQL null jobPosting guard + golden master scoring test
+- [x] BeautifulSoup HTML-to-text for deterministic enrichment
+- [ ] Broader failure surfacing (Ashby retries / explicit unavailable on 4xx/5xx)
+- [ ] Log rotation / destination strategy (launchd/stdout)
 
-K8s manifests + runbooks live under `ops/k8s/`.
-- CronJob is intended for scheduled, deterministic runs (offline-safe where required by contract).
-- A run-once Job exists for ad-hoc parity runs and debugging.
+### Phase 1 — Packaging & deployment
+- [x] Docker image that runs `pytest` during build and respects `/app/data`
+- [x] Single canonical entrypoint (`scripts/run_daily.py`) with deterministic scripts
+- [x] Debugging container docs + quickstart guidance
+- [ ] Full pipeline golden master (snapshot HTML → ranked outputs)
+- [ ] Cleanup legacy scripts (`run_full_pipeline`, `run_openai_pipeline`) and move integrations fully under `src/ji_engine`
+- [ ] Logging destination/rotation (launchd docs, log sink)
 
-See: `ops/k8s/README.md`
+### Phase 2 — State, history & intelligence
+- [x] Persist ranked artifacts, shortlist, and fingerprints per profile
+- [x] “Changes since last run” shortlist section + changelog logs
+- [x] Alert gating (skip Discord when diffs are empty)
+- [ ] Job fingerprinting per `job_identity()` (title/location, URLs, description hash)
+- [ ] Additional providers (Anthropic, other APIs) with snapshot/live toggles
+- [ ] Smarter scoring blends / AI-assisted insights
+- [ ] Dashboard/alerts enhancements (structured payloads, filters)
 
----
+### Phase 3 — Packaging, ops & monitoring
+- [ ] Config validation + clear exit codes
+- [ ] Structured logs + run metadata (timings, counts, hashes)
+- [ ] S3-backed caches for AI output/embeddings (optional backend) + OBS telemetry
+- [ ] Observability/alerting (CloudWatch, alarms, runbooks)
 
-AWS ops (ECS scheduled run + S3 publish)
-
-AWS runbooks and templates live under `ops/aws/` and associated docs.
-
-Milestone proof-run artifacts and verification checklist are documented (when enabled in your branch):
-- CloudWatch log line showing run_id
-- S3 objects under `runs/<run_id>/...` and `latest/...`
-- Offline verification via publish plan + verifier script
-
-See roadmap + runbooks under `docs/`.
-
----
-
-Troubleshooting
-
-Common issues:
-- CI “ji_engine not found”: ensure CI installs the package (`pip install -e .`) before running scripts.
-- Ruff format/lint failures: run `python -m ruff check --fix .` and `python -m ruff format .`
-- Docker “no space left on device”: prune Docker build cache:
-
-```bash
-docker builder prune -af
-docker system prune -af --volumes (more aggressive)
-```
-
----
-
-License
-
-TBD.
+### Phase 4 — Hardening & scaling
+- [ ] Rate limiting / backoff for providers
+- [ ] Provider abstraction for multiple job boards
+- [ ] Cost controls (limits, caching, sampling)
+- [ ] Optional DynamoDB or similar index for job state/history
