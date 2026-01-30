@@ -1,3 +1,6 @@
+# Dev tools export (generated). Keep in sync with pyproject.toml.
+pip-tools
 ruff
 pytest
 moto[s3]>=5.1.0
+tomli; python_version < "3.11"

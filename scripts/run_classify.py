@@ -37,6 +37,11 @@ from ji_engine.profile_loader import load_candidate_profile
 from ji_engine.utils.compat import zip_pairs
 
 logger = logging.getLogger(__name__)
+_CANONICAL_JSON_KWARGS = {"ensure_ascii": False, "sort_keys": True, "separators": (",", ":")}
+
+
+def _canonical_json(obj: Any) -> str:
+    return json.dumps(obj, **_CANONICAL_JSON_KWARGS) + "\n"
 
 
 def _load_raw_jobs(path: Path) -> List[RawJobPosting]:
@@ -174,7 +179,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     out_path = Path(args.out_path) if args.out_path else LABELED_JOBS_JSON
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(
-        json.dumps(output_data, indent=2, ensure_ascii=False),
+        _canonical_json(output_data),
         encoding="utf-8",
     )
 

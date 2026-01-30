@@ -16,6 +16,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 from ji_engine.config import ENRICHED_JOBS_JSON, LABELED_JOBS_JSON
 from jobintel.enrichment import enrich_jobs
@@ -24,6 +25,10 @@ try:
     from schema_validate import resolve_named_schema_path, validate_payload
 except ImportError:  # pragma: no cover - script execution fallback
     from scripts.schema_validate import resolve_named_schema_path, validate_payload
+
+
+def _canonical_json(obj: Any) -> str:
+    return json.dumps(obj, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
 
 
 def main() -> None:
@@ -50,10 +55,7 @@ def main() -> None:
 
     enriched_jobs = enrich_jobs(labeled_jobs, cache_dir)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(
-        json.dumps(enriched_jobs, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    output_path.write_text(_canonical_json(enriched_jobs), encoding="utf-8")
 
     schema_path = resolve_named_schema_path("enriched_jobs", 1)
     schema = json.loads(schema_path.read_text(encoding="utf-8"))

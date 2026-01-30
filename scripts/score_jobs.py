@@ -60,7 +60,7 @@ from ji_engine.utils.location_normalize import normalize_location_guess
 from ji_engine.utils.user_state import load_user_state
 
 logger = logging.getLogger(__name__)
-JSON_DUMP_SETTINGS = {"ensure_ascii": False, "indent": 2, "separators": (", ", ": "), "sort_keys": True}
+JSON_DUMP_SETTINGS = {"ensure_ascii": False, "separators": (",", ":"), "sort_keys": True}
 CSV_FIELDNAMES = [
     "job_id",
     "score",
@@ -93,11 +93,16 @@ def _score_meta_path(out_json: Path) -> Path:
 
 
 EPHEMERAL_FIELDS = {
+    "scraped_at",
     "fetched_at",
     "enriched_at",
     "scored_at",
+    "generated_at",
     "run_started_at",
     "run_id",
+    "timestamp",
+    "created_at",
+    "updated_at",
     "location_norm",
     "is_us_or_remote_us_guess",
     "us_guess_reason",
@@ -122,6 +127,29 @@ def _format_us_only_reason_summary(jobs: List[Dict[str, Any]]) -> str:
         return "(no reason fields present)"
     parts = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
     return ", ".join(f"{reason}={count}" for reason, count in parts)
+
+
+def _stable_job_id(job: Dict[str, Any]) -> str:
+    job_id = _norm(job.get("job_id") or job.get("id"))
+    if job_id:
+        return job_id.lower()
+    url = _norm(job.get("apply_url") or job.get("detail_url") or job.get("url"))
+    if url:
+        return url.lower()
+    title = _norm(job.get("title"))
+    return title.lower()
+
+
+def _stable_job_sort_key(job: Dict[str, Any]) -> Tuple[str, str, str]:
+    provider = _norm(job.get("provider") or job.get("source"))
+    profile = _norm(job.get("profile") or job.get("scoring_profile"))
+    return (provider.lower(), profile.lower(), _stable_job_id(job))
+
+
+def _ranked_sort_key(job: Dict[str, Any]) -> Tuple[int, str, str, str]:
+    score = int(job.get("score", 0) or 0)
+    provider, profile, stable_id = _stable_job_sort_key(job)
+    return (-score, provider, profile, stable_id)
 
 
 CSV_FIELDNAMES = [
@@ -832,7 +860,7 @@ def build_families(scored: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         return []
 
     families: Dict[str, Dict[str, Any]] = {}
-    variants: Dict[str, List[Dict[str, Any]]] = {}
+    variants: Dict[str, List[Tuple[Tuple[str, str, str], Dict[str, Any]]]] = {}
 
     for j in scored:
         fam = _norm(j.get("title_family"))
@@ -841,16 +869,15 @@ def build_families(scored: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if not fam:
             fam = _norm(j.get("title")).lower()
 
-        variants.setdefault(fam, []).append(
-            {
-                "job_id": _norm(j.get("job_id")),
-                "title": _norm(j.get("title")),
-                "location": _norm(j.get("location") or j.get("locationName")),
-                "apply_url": _norm(j.get("apply_url")),
-                "score": j.get("score", 0),
-                "role_band": _norm(j.get("role_band")),
-            }
-        )
+        variant = {
+            "job_id": _norm(j.get("job_id")),
+            "title": _norm(j.get("title")),
+            "location": _norm(j.get("location") or j.get("locationName")),
+            "apply_url": _norm(j.get("apply_url")),
+            "score": j.get("score", 0),
+            "role_band": _norm(j.get("role_band")),
+        }
+        variants.setdefault(fam, []).append((_stable_job_sort_key(j), variant))
 
         current_best = families.get(fam)
         if current_best is None or j.get("score", 0) > current_best.get("score", 0):
@@ -860,14 +887,11 @@ def build_families(scored: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     for fam, best in families.items():
         entries.append((fam or "", best, variants.get(fam, [])))
 
-    def _variant_sort_key(candidate: Dict[str, Any]) -> Tuple[int, str]:
-        return (-int(candidate.get("score", 0) or 0), job_identity(candidate))
-
-    entries.sort(key=lambda item: (item[0], job_identity(item[1])))
+    entries.sort(key=lambda item: (item[0], _stable_job_sort_key(item[1])))
 
     out: List[Dict[str, Any]] = []
     for fam, best, fam_variants in entries:
-        sorted_variants = sorted(fam_variants, key=_variant_sort_key)
+        sorted_variants = [v for _, v in sorted(fam_variants, key=lambda item: item[0])]
         entry = dict(best)
         entry["title_family"] = fam
         entry["family_variants"] = sorted_variants
@@ -1609,13 +1633,14 @@ def main() -> int:
         logger.info(" - %s | %s | %s", score, title, apply_url or "no_url")
 
     sanitized_scored = [_strip_ephemeral_fields(j) for j in scored]
+    ranked_scored = sorted(sanitized_scored, key=_ranked_sort_key)
 
-    atomic_write_text(out_json, _serialize_json(sanitized_scored))
+    atomic_write_text(out_json, _serialize_json(ranked_scored))
     if us_only_fallback:
         meta_payload = {"us_only_fallback": us_only_fallback}
         atomic_write_text(_score_meta_path(out_json), _serialize_json(meta_payload))
 
-    rows = to_csv_rows(sanitized_scored)
+    rows = to_csv_rows(ranked_scored)
 
     def _write_csv(tmp_path: Path) -> None:
         with tmp_path.open("w", encoding="utf-8", newline="") as f:
@@ -1631,7 +1656,7 @@ def main() -> int:
 
     atomic_write_with(out_csv, _write_csv)
 
-    families = build_families(sanitized_scored)
+    families = build_families(ranked_scored)
     atomic_write_text(out_families, _serialize_json(families))
 
     shortlist_content: str

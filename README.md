@@ -36,14 +36,23 @@ Development is done in Codex IDE using a variety of models depending on the task
 
 The goal is to demonstrate practical, safe use of multi-model workflows for software engineering.
 
-## Local setup (editable install)
+## Install (canonical)
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
 pip install -e .
-# Example run (no Discord post):
+pip install ".[dev]"        # contributors
+pip install ".[dashboard]"  # dashboard runtime
+pip install ".[snapshots]"  # Playwright snapshots
+```
+
+`pyproject.toml` is the canonical source of dependencies. `requirements.txt` is the Docker/CI export.
+
+Example run (no Discord post):
+
+```bash
 python scripts/run_daily.py --profiles cs --us_only --no_post
 ```
 
@@ -335,7 +344,6 @@ Each run report includes a `delta_summary` section with per-provider/profile del
 ## Dev commands
 
 ```bash
-.venv/bin/pip install -e .
 .venv/bin/python -m pytest -q
 .venv/bin/ruff check .
 ```

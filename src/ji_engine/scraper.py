@@ -8,6 +8,8 @@ from ji_engine.config import RAW_JOBS_JSON
 from ji_engine.models import RawJobPosting
 from ji_engine.providers.openai_provider import OpenAICareersProvider
 
+_CANONICAL_JSON_KWARGS = {"ensure_ascii": False, "sort_keys": True, "separators": (",", ":")}
+
 
 class ScraperManager:
     """
@@ -37,7 +39,7 @@ class ScraperManager:
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
         with out_path.open("w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2, ensure_ascii=False)
+            f.write(json.dumps(payload, **_CANONICAL_JSON_KWARGS) + "\n")
 
         print(f"Scraped {len(all_jobs)} jobs.")
         print(f"Wrote JSON to {out_path.resolve()}")

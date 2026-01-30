@@ -38,6 +38,11 @@ from ji_engine.utils.atomic_write import atomic_write_text
 from ji_engine.utils.job_id import extract_job_id_from_url
 
 logger = logging.getLogger(__name__)
+_CANONICAL_JSON_KWARGS = {"ensure_ascii": False, "sort_keys": True, "separators": (",", ":")}
+
+
+def _canonical_json(obj: Any) -> str:
+    return json.dumps(obj, **_CANONICAL_JSON_KWARGS) + "\n"
 
 DEBUG = os.getenv("JI_DEBUG") == "1"
 
@@ -377,7 +382,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
         out_path = Path(args.out_path) if args.out_path else ENRICHED_JOBS_JSON
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_text(out_path, json.dumps(enriched, ensure_ascii=False, indent=2))
+        atomic_write_text(out_path, _canonical_json(enriched))
 
         logger.info("\n" + "=" * 60)
         logger.info("Enrichment Summary:")
@@ -417,7 +422,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     out_path = Path(args.out_path) if args.out_path else ENRICHED_JOBS_JSON
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_text(out_path, json.dumps(enriched, ensure_ascii=False, indent=2))
+    atomic_write_text(out_path, _canonical_json(enriched))
 
     logger.info("\n" + "=" * 60)
     logger.info("Enrichment Summary:")

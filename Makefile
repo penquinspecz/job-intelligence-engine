@@ -1,4 +1,4 @@
-.PHONY: test lint format-check gates gate docker-build docker-run-local report snapshot snapshot-openai smoke image smoke-fast smoke-ci image-ci ci ci-local docker-ok daily debug-snapshots explain-smoke dashboard weekly publish-last aws-env-check aws-deploy aws-smoke aws-first-run aws-schedule-status aws-oneoff-run aws-bootstrap aws-bootstrap-help
+.PHONY: test lint format-check gates gate docker-build docker-run-local report snapshot snapshot-openai smoke image smoke-fast smoke-ci image-ci ci ci-local docker-ok daily debug-snapshots explain-smoke dashboard weekly publish-last aws-env-check aws-deploy aws-smoke aws-first-run aws-schedule-status aws-oneoff-run aws-bootstrap aws-bootstrap-help deps deps-sync deps-check snapshot-guard
 
 # Prefer repo venv if present; fall back to system python3.
 PY ?= .venv/bin/python
@@ -44,7 +44,17 @@ lint:
 format-check:
 	$(PY) -m ruff format --check src
 
-gates: format-check lint test
+deps:
+	$(PY) -m pip install -r requirements.txt
+
+deps-sync:
+	$(PY) scripts/export_requirements.py
+	$(PY) -m pip install -r requirements.txt
+
+deps-check:
+	$(PY) scripts/export_requirements.py --check
+
+gates: format-check lint deps-check test snapshot-guard
 
 gate: gates
 
@@ -159,6 +169,11 @@ explain-smoke:
 		--out_md_top_n /tmp/openai_top.cs.md
 
 dashboard:
+	@$(PY) - <<'PY' || true
+import importlib.util
+if importlib.util.find_spec("uvicorn") is None:
+    print('Warning: dashboard deps missing. Run: pip install ".[dashboard]"')
+PY
 	$(PY) -m uvicorn jobintel.dashboard.app:app --reload --port 8000
 
 weekly:

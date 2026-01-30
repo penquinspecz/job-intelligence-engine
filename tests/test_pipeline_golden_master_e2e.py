@@ -159,6 +159,7 @@ def test_pipeline_golden_master_e2e(tmp_path, monkeypatch, request):
         assert file_path.exists(), f"Missing required pipeline output {filename}"
         manifest["files"][filename] = {"sha256": _sha256(file_path), "bytes": file_path.stat().st_size}
 
+    # Golden fixtures depend on the pinned dependency set; update when deps change.
     fixture_path = repo_root / "tests" / "fixtures" / "golden" / "openai_snapshot_cs.manifest.json"
     update_golden = bool(request.config.getoption("--update-golden"))
 

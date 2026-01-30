@@ -31,7 +31,15 @@ finish() {
 
 command -v aws >/dev/null 2>&1 || fail "aws CLI is required."
 command -v jq >/dev/null 2>&1 || fail "jq is required for JSON parsing. Install via: brew install jq"
-command -v shasum >/dev/null 2>&1 || fail "shasum is required for sha256 hashing."
+if command -v shasum >/dev/null 2>&1; then
+  SHA256_TOOL="shasum"
+elif command -v sha256sum >/dev/null 2>&1; then
+  SHA256_TOOL="sha256sum"
+elif command -v python3 >/dev/null 2>&1; then
+  SHA256_TOOL="python3"
+else
+  fail "sha256 hashing requires shasum, sha256sum, or python3."
+fi
 
 if [[ -z "${BUCKET}" || -z "${PREFIX}" ]]; then
   fail "BUCKET and PREFIX are required."
@@ -126,7 +134,17 @@ download_and_print() {
   local ctype
   ctype=$(head_object "${key}" || echo "unknown")
   local sha
-  sha=$(shasum -a 256 "${out_path}" | awk '{print $1}')
+  case "${SHA256_TOOL}" in
+    shasum)
+      sha=$(shasum -a 256 "${out_path}" | awk '{print $1}')
+      ;;
+    sha256sum)
+      sha=$(sha256sum "${out_path}" | awk '{print $1}')
+      ;;
+    python3)
+      sha=$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "${out_path}")
+      ;;
+  esac
   echo "${label}: key=${key} content_type=${ctype} sha256=${sha}"
 }
 

@@ -24,6 +24,11 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
+_CANONICAL_JSON_KWARGS = {"ensure_ascii": False, "sort_keys": True, "separators": (",", ":")}
+
+
+def _canonical_json(obj: Any) -> str:
+    return json.dumps(obj, **_CANONICAL_JSON_KWARGS) + "\n"
 
 OUTPUT_PATH = Path("data/openai_enriched_jobs_ai.json")
 PROFILE_PATH = Path("data/candidate_profile.json")
@@ -183,7 +188,7 @@ def main(argv: Optional[List[str]] = None, provider: Optional[AIProvider] = None
         job_out["ai_content_hash"] = chash
         augmented.append(job_out)
 
-    atomic_write_text(out_path, json.dumps(augmented, ensure_ascii=False, indent=2))
+    atomic_write_text(out_path, _canonical_json(augmented))
     logger.info(f"AI augment complete. cache_hits={cache_hits}, total={len(jobs)}")
     logger.info(f"Output: {out_path}")
     return 0

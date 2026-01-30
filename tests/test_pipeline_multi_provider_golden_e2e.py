@@ -116,6 +116,7 @@ def test_pipeline_multi_provider_golden_e2e(tmp_path: Path, monkeypatch, request
 
     assert job_ids["openai"].isdisjoint(job_ids["anthropic"])
 
+    # Golden fixtures depend on the pinned dependency set; update when deps change.
     fixture_path = repo_root / "tests" / "fixtures" / "golden" / "multi_provider_hashes.json"
     update_golden = bool(request.config.getoption("--update-golden"))
     if update_golden:

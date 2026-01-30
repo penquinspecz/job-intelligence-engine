@@ -28,6 +28,11 @@ from jobintel.snapshots.validate import validate_snapshot_file
 _STATUS_CODE_RE = re.compile(r"status (\d+)")
 
 logger = logging.getLogger(__name__)
+_CANONICAL_JSON_KWARGS = {"ensure_ascii": False, "sort_keys": True, "separators": (",", ":")}
+
+
+def _canonical_json(obj: Any) -> str:
+    return json.dumps(obj, **_CANONICAL_JSON_KWARGS) + "\n"
 
 
 def _sort_key(job: Dict[str, Any]) -> tuple[str, str]:
@@ -50,8 +55,7 @@ def _write_raw_jobs(provider_id: str, jobs: List[Dict[str, Any]], output_dir: Pa
     filename = f"{provider_id}_raw_jobs.json"
     out_path = output_dir / filename
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    with out_path.open("w", encoding="utf-8") as f:
-        json.dump(jobs, f, indent=2, ensure_ascii=False)
+    out_path.write_text(_canonical_json(jobs), encoding="utf-8")
     print(f"Scraped {len(jobs)} jobs.")
     print(f"Wrote JSON to {out_path.resolve()}")
     return out_path
@@ -249,7 +253,7 @@ def main(argv: List[str] | None = None) -> int:
             _log_provenance(provider_id, provenance)
             # For backward compatibility, also write to canonical RAW_JOBS_JSON.
             if provider_id == "openai":
-                RAW_JOBS_JSON.write_text(json.dumps(jobs, indent=2, ensure_ascii=False), encoding="utf-8")
+                RAW_JOBS_JSON.write_text(_canonical_json(jobs), encoding="utf-8")
         else:
             if provider_type == "ashby":
                 if mode == "AUTO":
@@ -351,7 +355,7 @@ def main(argv: List[str] | None = None) -> int:
                 _write_scrape_meta(provider_id, output_dir, provenance)
                 _log_provenance(provider_id, provenance)
                 if provider_id == "openai":
-                    RAW_JOBS_JSON.write_text(json.dumps(jobs, indent=2, ensure_ascii=False), encoding="utf-8")
+                    RAW_JOBS_JSON.write_text(_canonical_json(jobs), encoding="utf-8")
             else:
                 if mode == "AUTO":
                     mode = "SNAPSHOT"
