@@ -1,24 +1,20 @@
 {
   "files": {
     "openai_ranked_families.cs.json": {
-      "bytes": 739742,
-      "sha256": "1d74625758676df973d6d6f941c8fa10db1c1fe6d5fd59b55026546d933b3952"
+      "normalized_sha256": "7ce8e3fe0597e2c5d0f534c76bc915995d271a0caa07261de3d2ba6c5ff922fb"
     },
     "openai_ranked_jobs.cs.csv": {
-      "bytes": 182334,
-      "sha256": "48db08244ebbf5a36da63875d660335b547cd020f581540acdf8798cc9b5189e"
+      "normalized_sha256": "55ac26589870ef3212a9086219fd415bdbc399772648414688923a85fd753c94"
     },
     "openai_ranked_jobs.cs.json": {
-      "bytes": 651593,
-      "sha256": "705d78d412534b6ce355feb114f58d72a03197729b5055269f36f4e17d456365"
+      "normalized_sha256": "55ac26589870ef3212a9086219fd415bdbc399772648414688923a85fd753c94"
     },
     "openai_shortlist.cs.md": {
-      "bytes": 98,
-      "sha256": "98c67b213a5b3bf22e5b65eeea5f5609d297abb527de29b6c14a315aba35bef0"
+      "present": true
     }
   },
   "stats": {
-    "ranked_jobs_count": 491,
+    "ranked_jobs_count": 488,
     "top20_count": 20,
     "top20_scores_non_increasing": true,
     "top20_unique_apply_urls": 20

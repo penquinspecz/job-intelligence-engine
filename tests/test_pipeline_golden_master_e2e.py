@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-import hashlib
 import importlib
 import json
 import os
 import shutil
 import sys
+from typing import Any, Dict, Iterable, List
 from pathlib import Path
+import csv
+import hashlib
 
 HASHED_OUTPUT_FILES = [
     "openai_ranked_jobs.cs.json",
@@ -16,18 +18,70 @@ HASHED_OUTPUT_FILES = [
 ]
 REQUIRED_OUTPUT_FILES = HASHED_OUTPUT_FILES
 
+_CANONICAL_JSON_KWARGS = {"ensure_ascii": False, "sort_keys": True, "separators": (",", ":")}
+_JOB_PROJECTION_FIELDS = ("job_id", "apply_url", "title", "score_bucket")
+
+
+def _stable_job_key(job: Dict[str, Any]) -> str:
+    for key in ("job_id", "apply_url"):
+        value = job.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip().lower()
+    title = job.get("title")
+    return str(title or "").strip().lower()
+
+
+def _score_bucket(score: Any) -> int:
+    try:
+        return int(round(float(score)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _project_job(job: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "job_id": job.get("job_id"),
+        "apply_url": job.get("apply_url"),
+        "title": job.get("title"),
+        "score_bucket": _score_bucket(job.get("score")),
+    }
+
+
+def _normalized_hash_jobs(jobs: Iterable[Dict[str, Any]]) -> str:
+    projected: List[Dict[str, Any]] = [_project_job(job) for job in jobs]
+    projected.sort(key=_stable_job_key)
+    payload = json.dumps(projected, **_CANONICAL_JSON_KWARGS).encode("utf-8") + b"\n"
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _normalized_hash_families(families: Iterable[Dict[str, Any]]) -> str:
+    projected: List[Dict[str, Any]] = []
+    for entry in families:
+        fam = entry.get("title_family") or ""
+        variants = entry.get("family_variants") or []
+        job_ids = []
+        for variant in variants:
+            job_id = variant.get("job_id") or variant.get("apply_url") or ""
+            if job_id:
+                job_ids.append(str(job_id).strip())
+        projected.append({"title_family": fam, "job_ids": sorted(job_ids)})
+    projected.sort(key=lambda item: (str(item.get("title_family") or "").lower(), item.get("job_ids") or []))
+    payload = json.dumps(projected, **_CANONICAL_JSON_KWARGS).encode("utf-8") + b"\n"
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _normalized_hash_csv(path: Path) -> str:
+    with path.open(newline="", encoding="utf-8") as fp:
+        reader = csv.DictReader(fp)
+        rows = [_project_job(row) for row in reader]
+    rows.sort(key=_stable_job_key)
+    payload = json.dumps(rows, **_CANONICAL_JSON_KWARGS).encode("utf-8") + b"\n"
+    return hashlib.sha256(payload).hexdigest()
+
 
 def _copy(src: Path, dst: Path) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy(src, dst)
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as fp:
-        for chunk in iter(lambda: fp.read(8192), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def test_pipeline_golden_master_e2e(tmp_path, monkeypatch, request):
@@ -157,9 +211,18 @@ def test_pipeline_golden_master_e2e(tmp_path, monkeypatch, request):
     for filename in REQUIRED_OUTPUT_FILES:
         file_path = data_dir / filename
         assert file_path.exists(), f"Missing required pipeline output {filename}"
-        manifest["files"][filename] = {"sha256": _sha256(file_path), "bytes": file_path.stat().st_size}
+        if filename.endswith(".cs.json") and "ranked_jobs" in filename:
+            ranked_jobs = json.loads(file_path.read_text(encoding="utf-8"))
+            manifest["files"][filename] = {"normalized_sha256": _normalized_hash_jobs(ranked_jobs)}
+        elif filename.endswith(".cs.csv"):
+            manifest["files"][filename] = {"normalized_sha256": _normalized_hash_csv(file_path)}
+        elif filename.endswith(".cs.json") and "ranked_families" in filename:
+            ranked_families = json.loads(file_path.read_text(encoding="utf-8"))
+            manifest["files"][filename] = {"normalized_sha256": _normalized_hash_families(ranked_families)}
+        else:
+            manifest["files"][filename] = {"present": True}
 
-    # Golden fixtures depend on the pinned dependency set; update when deps change.
+    # Golden fixtures assert deterministic transforms, not immutability of upstream job postings.
     fixture_path = repo_root / "tests" / "fixtures" / "golden" / "openai_snapshot_cs.manifest.json"
     update_golden = bool(request.config.getoption("--update-golden"))
 

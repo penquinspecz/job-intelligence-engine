@@ -2,20 +2,214 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
-from bs4 import BeautifulSoup
-from bs4.element import Tag
+try:
+    from bs4 import BeautifulSoup
+    from bs4.element import Tag
+except Exception:  # pragma: no cover - only used if BeautifulSoup is missing
+    BeautifulSoup = None
+    Tag = object
 
 from ji_engine.models import JobSource, RawJobPosting
 from ji_engine.providers.base import BaseJobProvider
-from ji_engine.providers.retry import fetch_urlopen_with_retry
 from jobintel.snapshots.validate import validate_snapshot_file
 
 _ASHBY_JOB_ID_RE = re.compile(r"/([0-9a-f-]{36})/application", re.IGNORECASE)
+_NEXT_DATA_RE = re.compile(
+    r'<script[^>]*id="__NEXT_DATA__"[^>]*>(?P<data>.*?)</script>',
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def _infer_board_url(html: str) -> Optional[str]:
+    match = re.search(r"https?://jobs\.ashbyhq\.com/([a-zA-Z0-9_-]+)", html)
+    if not match:
+        return None
+    return f"https://jobs.ashbyhq.com/{match.group(1)}"
+
+
+def _extract_json_after_marker(html: str, marker: str) -> Optional[str]:
+    idx = html.find(marker)
+    if idx == -1:
+        return None
+    start = html.find("{", idx)
+    if start == -1:
+        return None
+    depth = 0
+    for i in range(start, len(html)):
+        ch = html[i]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return html[start : i + 1]
+    return None
+
+
+def _extract_next_data_payload(html: str) -> Optional[Any]:
+    match = _NEXT_DATA_RE.search(html)
+    if not match:
+        return None
+    data = match.group("data").strip()
+    if not data:
+        return None
+    try:
+        return json.loads(data)
+    except Exception:
+        return None
+
+
+def _extract_app_data_payload(html: str) -> Optional[Any]:
+    raw = _extract_json_after_marker(html, "window.__appData")
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except Exception:
+        return None
+
+
+def _walk_payload(node: Any, matches: List[dict], predicate) -> None:
+    if isinstance(node, dict):
+        if predicate(node):
+            matches.append(node)
+        for key in sorted(node.keys()):
+            _walk_payload(node[key], matches, predicate)
+    elif isinstance(node, list):
+        for item in node:
+            _walk_payload(item, matches, predicate)
+
+
+def _extract_apply_url_from_payload(node: dict, board_url: Optional[str]) -> Optional[str]:
+    for key in ("applyUrl", "apply_url", "applyURL", "applicationUrl", "applicationURL", "url", "postingUrl"):
+        value = node.get(key)
+        if isinstance(value, str) and "ashbyhq.com" in value and "/application" in value:
+            return value
+    for key in ("jobId", "job_id", "id"):
+        value = node.get(key)
+        if isinstance(value, str) and _ASHBY_JOB_ID_RE.search(f"/{value}/application"):
+            if board_url:
+                base = board_url.rstrip("/")
+                return f"{base}/{value}/application"
+    return None
+
+
+def _extract_title_from_payload(node: dict) -> Optional[str]:
+    for key in ("title", "jobTitle", "roleName", "name"):
+        value = node.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _extract_location_from_payload(node: dict) -> Optional[str]:
+    for key in ("location", "locationName", "jobLocation", "locationString"):
+        value = node.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _extract_team_from_payload(node: dict) -> Optional[str]:
+    for key in ("team", "department", "dept", "group"):
+        value = node.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _derive_job_id(apply_url: str, title: str, location: Optional[str], team: Optional[str]) -> str:
+    match = _ASHBY_JOB_ID_RE.search(apply_url or "")
+    if match:
+        return match.group(1)
+    payload = "|".join([apply_url or "", title or "", location or "", team or ""]).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _stable_posting_key(job: RawJobPosting) -> tuple[str, str, str, str]:
+    return (job.apply_url or "", job.title or "", job.location or "", job.team or "")
+
+
+def _build_postings_from_payload(
+    payload: Any,
+    now: datetime,
+    board_url: Optional[str],
+) -> List[RawJobPosting]:
+    matches: List[dict] = []
+
+    def predicate(node: dict) -> bool:
+        apply_url = _extract_apply_url_from_payload(node, board_url)
+        title = _extract_title_from_payload(node)
+        return bool(apply_url and title)
+
+    _walk_payload(payload, matches, predicate)
+    results: List[RawJobPosting] = []
+    seen_apply_urls: set[str] = set()
+    for job in matches:
+        apply_url = _extract_apply_url_from_payload(job, board_url)
+        title = _extract_title_from_payload(job)
+        if not apply_url or not title:
+            continue
+        if apply_url in seen_apply_urls:
+            continue
+        seen_apply_urls.add(apply_url)
+        location = _extract_location_from_payload(job)
+        team = _extract_team_from_payload(job)
+        job_id = _derive_job_id(apply_url, title, location, team)
+        results.append(
+            RawJobPosting(
+                source=JobSource.ASHBY,
+                title=title,
+                location=location,
+                team=team,
+                apply_url=apply_url,
+                detail_url=None,
+                raw_text="",
+                scraped_at=now,
+                job_id=job_id,
+            )
+        )
+    results.sort(key=_stable_posting_key)
+    return results
+
+
+def _parse_snapshot_jobs(html: str, now: datetime, board_url: Optional[str]) -> List[RawJobPosting]:
+    payload = _extract_next_data_payload(html)
+    if payload is not None:
+        parsed = _build_postings_from_payload(payload, now, board_url)
+        if parsed:
+            return parsed
+
+    payload = _extract_app_data_payload(html)
+    if payload is not None:
+        parsed = _build_postings_from_payload(payload, now, board_url)
+        if parsed:
+            return parsed
+
+    return []
+
+
+def parse_ashby_snapshot_html(
+    html: str,
+    now: Optional[datetime] = None,
+    *,
+    strict: bool = False,
+) -> List[Dict[str, Any]]:
+    """
+    Deterministically parse Ashby snapshot HTML without DOM parsing.
+    """
+    timestamp = now or datetime.utcnow()
+    board_url = _infer_board_url(html)
+    jobs = _parse_snapshot_jobs(html, timestamp, board_url)
+    if strict and not jobs:
+        raise RuntimeError("Deterministic Ashby snapshot parse failed (no JSON payload found).")
+    return [job.to_dict() for job in jobs]
 
 
 class AshbyProvider(BaseJobProvider):
@@ -54,6 +248,8 @@ class AshbyProvider(BaseJobProvider):
         return self._parse_html(html)
 
     def _fetch_live_html(self) -> str:
+        from ji_engine.providers.retry import fetch_urlopen_with_retry
+
         headers = {
             "User-Agent": (
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -68,17 +264,26 @@ class AshbyProvider(BaseJobProvider):
         return fetch_urlopen_with_retry(self.board_url, headers=headers, timeout_s=20)
 
     def _parse_html(self, html: str) -> List[RawJobPosting]:
+        now = datetime.utcnow()
+        parsed = _parse_snapshot_jobs(html, now, self.board_url)
+        if parsed:
+            return parsed
+
+        if os.environ.get("JOBINTEL_ALLOW_HTML_FALLBACK", "1") == "1":
+            print("[AshbyProvider] WARNING: Falling back to HTML parsing; JSON payload not found.")
+            return self._parse_html_fallback(html, now)
+
+        raise RuntimeError("Deterministic Ashby snapshot parse failed (no JSON payload found).")
+
+    def _parse_html_fallback(self, html: str, now: datetime) -> List[RawJobPosting]:
+        if BeautifulSoup is None:
+            raise RuntimeError(
+                "BeautifulSoup is required for HTML fallback parsing. "
+                "Install beautifulsoup4 or enable deterministic JSON extraction."
+            )
         soup = BeautifulSoup(html, "html.parser")
         results: List[RawJobPosting] = []
         seen_apply_urls: set[str] = set()
-        now = datetime.utcnow()
-
-        parsed = self._parse_next_data(soup, now)
-        if parsed:
-            return parsed
-        parsed = self._parse_app_data(html, now)
-        if parsed:
-            return parsed
 
         anchors = soup.find_all("a", href=lambda h: h and "ashbyhq.com" in h and "/application" in h)
         for anchor in anchors:
@@ -108,163 +313,37 @@ class AshbyProvider(BaseJobProvider):
             )
             results.append(posting)
 
-        results.sort(key=lambda j: (j.apply_url or "", j.title or "", j.location or "", j.team or ""))
+        results.sort(key=_stable_posting_key)
         return results
 
-    def _parse_next_data(self, soup: BeautifulSoup, now: datetime) -> List[RawJobPosting]:
-        script = soup.find("script", id="__NEXT_DATA__", type="application/json")
-        if not script or not script.string:
+    def _parse_next_data(self, html: str, now: datetime) -> List[RawJobPosting]:
+        payload = _extract_next_data_payload(html)
+        if payload is None:
             return []
-        try:
-            payload = json.loads(script.string)
-        except Exception:
-            return []
-        matches: List[dict[str, Any]] = []
-
-        def walk(node: Any) -> None:
-            if isinstance(node, dict):
-                if self._looks_like_job(node):
-                    matches.append(node)
-                for value in node.values():
-                    walk(value)
-            elif isinstance(node, list):
-                for item in node:
-                    walk(item)
-
-        walk(payload)
-        results: List[RawJobPosting] = []
-        seen_apply_urls: set[str] = set()
-        for job in matches:
-            apply_url = self._extract_apply_url(job)
-            title = self._extract_title_from_payload(job)
-            if not apply_url or not title:
-                continue
-            if apply_url in seen_apply_urls:
-                continue
-            seen_apply_urls.add(apply_url)
-            location = self._extract_location_from_payload(job)
-            team = self._extract_team_from_payload(job)
-            job_id = self._extract_job_id(apply_url, title, location, team)
-            results.append(
-                RawJobPosting(
-                    source=JobSource.ASHBY,
-                    title=title,
-                    location=location,
-                    team=team,
-                    apply_url=apply_url,
-                    detail_url=None,
-                    raw_text="",
-                    scraped_at=now,
-                    job_id=job_id,
-                )
-            )
-        results.sort(key=lambda j: (j.apply_url or "", j.title or "", j.location or "", j.team or ""))
-        return results
+        return _build_postings_from_payload(payload, now, self.board_url)
 
     def _parse_app_data(self, html: str, now: datetime) -> List[RawJobPosting]:
-        marker = "window.__appData"
-        idx = html.find(marker)
-        if idx == -1:
+        payload = _extract_app_data_payload(html)
+        if payload is None:
             return []
-        start = html.find("{", idx)
-        if start == -1:
-            return []
-        depth = 0
-        end = None
-        for i in range(start, len(html)):
-            ch = html[i]
-            if ch == "{":
-                depth += 1
-            elif ch == "}":
-                depth -= 1
-                if depth == 0:
-                    end = i + 1
-                    break
-        if end is None:
-            return []
-        try:
-            payload = json.loads(html[start:end])
-        except Exception:
-            return []
-        matches: List[dict[str, Any]] = []
-
-        def walk(node: Any) -> None:
-            if isinstance(node, dict):
-                if self._looks_like_job(node):
-                    matches.append(node)
-                for value in node.values():
-                    walk(value)
-            elif isinstance(node, list):
-                for item in node:
-                    walk(item)
-
-        walk(payload)
-        results: List[RawJobPosting] = []
-        seen_apply_urls: set[str] = set()
-        for job in matches:
-            apply_url = self._extract_apply_url(job)
-            title = self._extract_title_from_payload(job)
-            if not apply_url or not title:
-                continue
-            if apply_url in seen_apply_urls:
-                continue
-            seen_apply_urls.add(apply_url)
-            location = self._extract_location_from_payload(job)
-            team = self._extract_team_from_payload(job)
-            job_id = self._extract_job_id(apply_url, title, location, team)
-            results.append(
-                RawJobPosting(
-                    source=JobSource.ASHBY,
-                    title=title,
-                    location=location,
-                    team=team,
-                    apply_url=apply_url,
-                    detail_url=None,
-                    raw_text="",
-                    scraped_at=now,
-                    job_id=job_id,
-                )
-            )
-        results.sort(key=lambda j: (j.apply_url or "", j.title or "", j.location or "", j.team or ""))
-        return results
+        return _build_postings_from_payload(payload, now, self.board_url)
 
     def _looks_like_job(self, node: dict[str, Any]) -> bool:
-        apply_url = self._extract_apply_url(node)
-        title = self._extract_title_from_payload(node)
+        apply_url = _extract_apply_url_from_payload(node, self.board_url)
+        title = _extract_title_from_payload(node)
         return bool(apply_url and title)
 
     def _extract_apply_url(self, node: dict[str, Any]) -> Optional[str]:
-        for key in ("applyUrl", "apply_url", "applyURL", "applicationUrl", "applicationURL", "url", "postingUrl"):
-            value = node.get(key)
-            if isinstance(value, str) and "ashbyhq.com" in value and "/application" in value:
-                return value
-        for key in ("jobId", "job_id", "id"):
-            value = node.get(key)
-            if isinstance(value, str) and _ASHBY_JOB_ID_RE.search(f"/{value}/application"):
-                base = self.board_url.rstrip("/")
-                return f"{base}/{value}/application"
-        return None
+        return _extract_apply_url_from_payload(node, self.board_url)
 
     def _extract_title_from_payload(self, node: dict[str, Any]) -> Optional[str]:
-        for key in ("title", "jobTitle", "roleName", "name"):
-            value = node.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-        return None
+        return _extract_title_from_payload(node)
 
     def _extract_location_from_payload(self, node: dict[str, Any]) -> Optional[str]:
-        for key in ("location", "locationName", "jobLocation", "locationString"):
-            value = node.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-        return None
+        return _extract_location_from_payload(node)
 
     def _extract_team_from_payload(self, node: dict[str, Any]) -> Optional[str]:
-        for key in ("team", "department", "dept", "group"):
-            value = node.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-        return None
+        return _extract_team_from_payload(node)
 
     def _extract_title(self, card: Tag, anchor: Tag) -> str:
         if isinstance(card, Tag):
@@ -302,8 +381,4 @@ class AshbyProvider(BaseJobProvider):
         return None
 
     def _extract_job_id(self, apply_url: str, title: str, location: Optional[str], team: Optional[str]) -> str:
-        match = _ASHBY_JOB_ID_RE.search(apply_url or "")
-        if match:
-            return match.group(1)
-        payload = "|".join([apply_url or "", title or "", location or "", team or ""]).encode("utf-8")
-        return hashlib.sha256(payload).hexdigest()
+        return _derive_job_id(apply_url, title, location, team)
