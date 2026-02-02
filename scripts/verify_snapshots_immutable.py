@@ -44,7 +44,7 @@ def main() -> int:
         print("\nPinned snapshot bytes changed.")
         print("Restore snapshots to HEAD or re-run the snapshot refresh workflow intentionally.")
         print("\n" + "\n\n".join(mismatches))
-        return 1
+        return 2
 
     return 0
 
