@@ -78,6 +78,7 @@ def test_pipeline_multi_provider_golden_e2e(tmp_path: Path, monkeypatch, request
     monkeypatch.setenv("JOBINTEL_DATA_DIR", str(data_dir))
     monkeypatch.setenv("JOBINTEL_STATE_DIR", str(state_dir))
     monkeypatch.setenv("DISCORD_WEBHOOK_URL", "")
+    monkeypatch.setenv("CAREERS_MODE", "SNAPSHOT")
 
     openai_snapshot_src = repo_root / "data" / "openai_snapshots" / "index.html"
     anthropic_snapshot_src = repo_root / "data" / "anthropic_snapshots" / "index.html"
@@ -113,6 +114,7 @@ def test_pipeline_multi_provider_golden_e2e(tmp_path: Path, monkeypatch, request
             "--no_subprocess",
             "--no_post",
             "--no_enrich",
+            "--offline",
             "--profiles",
             "cs",
             "--min_score",
@@ -131,7 +133,7 @@ def test_pipeline_multi_provider_golden_e2e(tmp_path: Path, monkeypatch, request
     assert metadata_files
     metadata = json.loads(metadata_files[-1].read_text(encoding="utf-8"))
     scrape_prov = metadata["selection"]["scrape_provenance"]
-    assert scrape_prov["openai"]["scrape_mode"] in {"snapshot", "live"}
+    assert scrape_prov["openai"]["scrape_mode"] == "snapshot"
     assert scrape_prov["openai"]["snapshot_sha256"]
     assert scrape_prov["openai"]["parsed_job_count"] > 0
     assert scrape_prov["anthropic"]["scrape_mode"] == "snapshot"
