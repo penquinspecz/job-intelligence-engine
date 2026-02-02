@@ -65,7 +65,43 @@ Docker truth gate:
 docker build --no-cache --build-arg RUN_TESTS=1 -t jobintel:tests .
 ```
 
-## 6) Common failure modes + fixes (top 5)
+## 6) CI Contract Checks
+The CI gate runs deterministic, offline-safe contract checks in addition to tests:
+```bash
+export JOBINTEL_DATA_DIR=/tmp/jobintel_ci_data
+export JOBINTEL_STATE_DIR=/tmp/jobintel_ci_state
+python - <<'PY'
+from pathlib import Path
+import json
+from ji_engine.utils.verification import compute_sha256_file
+data_dir = Path("/tmp/jobintel_ci_data")
+state_dir = Path("/tmp/jobintel_ci_state")
+data_dir.mkdir(parents=True, exist_ok=True)
+run_dir = state_dir / "runs" / "ci-run"
+run_dir.mkdir(parents=True, exist_ok=True)
+ranked = data_dir / "openai_ranked_jobs.cs.json"
+ranked.write_text("[]", encoding="utf-8")
+report = {
+    "run_id": "ci-run",
+    "run_report_schema_version": 1,
+    "verifiable_artifacts": {
+        "openai:cs:ranked_json": {
+            "path": ranked.name,
+            "sha256": compute_sha256_file(ranked),
+            "bytes": ranked.stat().st_size,
+            "hash_algo": "sha256",
+        }
+    },
+}
+(run_dir / "run_report.json").write_text(json.dumps(report), encoding="utf-8")
+PY
+python scripts/publish_s3.py --run-dir /tmp/jobintel_ci_state/runs/ci-run --plan --json
+python scripts/replay_run.py --run-dir /tmp/jobintel_ci_state/runs/ci-run --profile cs --strict --json
+```
+- `publish_s3 --plan --json` must emit a deterministic plan based only on `verifiable_artifacts`.
+- `replay_run --strict --json` must verify hashes against the run report without regeneration.
+
+## 7) Common failure modes + fixes (top 5)
 
 1) **Snapshot bytes drift**
    - Symptom: immutability check fails or Docker/local mismatch.
@@ -87,7 +123,7 @@ docker build --no-cache --build-arg RUN_TESTS=1 -t jobintel:tests .
    - Symptom: golden hash mismatch after deterministic change.
    - Fix: update golden fixtures only after confirming snapshot-only mode.
 
-## 7) CI vs local parity notes
+## 8) CI vs local parity notes
 
 - Docker no-cache build is the source of truth.
 - Local fast gate is for quick feedback; it must match Docker behavior.
