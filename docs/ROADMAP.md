@@ -253,8 +253,13 @@ If a change doesn’t advance a milestone’s Definition of Done (DoD), it’s p
 - [ ] UI authentication and authorization (basic, practical)
 - [ ] AI insights become profile-aware (coach-like, but grounded in artifacts)
 - [ ] Security Review (Multi-Model)
-- [ ] Move into Rancher/NV?
+- [ ] Move into Rancher/NV? Rancher desktop?
 - [ ] Actual GUI?
+- [ ] Linkedin page instead of resume for ingestion?
+- [ ] interact with data on web (tables etc)
+- [ ] Alternatives to discord? (email etc)
+- [ ] expanded job category tuning and selectability
+
 
 ### Work Items
 - [ ] Candidate profile schema versioning + validation
