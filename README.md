@@ -156,6 +156,30 @@ Legacy option (stdlib `urllib`):
 .venv/bin/python scripts/update_snapshots.py --provider openai
 ```
 
+## Determinism & goldens
+
+- Snapshots under `data/*_snapshots/` are pinned fixtures; do not mutate them during tests.
+- Golden tests assert deterministic transforms over pinned snapshots, not upstream job volatility.
+- Pinned snapshot bytes are guarded by `tests/fixtures/golden/snapshot_bytes.manifest.json`.
+  - Verify locally: `python scripts/verify_snapshots_immutable.py`
+  - Intentional refresh: run the snapshot refresh workflow, then update the manifest to the new bytes.
+- Optional pre-commit guard: `scripts/hooks/pre-commit-snapshot-guard.sh` (blocks commits touching `data/*_snapshots/` unless `ALLOW_SNAPSHOT_CHANGES=1`).
+- Docker (no-cache) is the source of truth for CI parity:
+
+```bash
+docker build --no-cache --build-arg RUN_TESTS=1 -t jobintel:tests .
+```
+
+## How to diagnose snapshot drift
+
+Use the reproducible harness to confirm host, bind-mount, and docker build all see identical snapshot bytes:
+
+```bash
+./scripts/repro_docker_snapshot_check.sh
+```
+
+The script prints sha256/bytes for each environment and fails if any differ.
+
 Canonical entrypoint:
 - Use `scripts/run_daily.py` for the pipeline. Legacy runners (`run_full_pipeline.py`, `run_openai_pipeline.py`) are deprecated and exit non-zero with a message.
 
