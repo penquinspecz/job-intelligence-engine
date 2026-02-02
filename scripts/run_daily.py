@@ -25,6 +25,7 @@ import importlib
 import json
 import logging
 import os
+import platform
 import runpy
 import shutil
 import subprocess
@@ -53,6 +54,7 @@ from ji_engine.config import (
     ranked_jobs_json,
     state_last_ranked,
 )
+from ji_engine.utils.verification import build_verifiable_artifacts, compute_sha256_file
 from ji_engine.config import (
     shortlist_md as shortlist_md_path,
 )
@@ -711,6 +713,8 @@ def _persist_run_metadata(
     scoring_input_selection_by_provider: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None,
     outputs_by_provider: Optional[Dict[str, Dict[str, Dict[str, Dict[str, Optional[str]]]]]] = None,
     delta_summary: Optional[Dict[str, Any]] = None,
+    config_fingerprint: Optional[str] = None,
+    environment_fingerprint: Optional[Dict[str, Optional[str]]] = None,
 ) -> Path:
     run_report_schema_version = RUN_REPORT_SCHEMA_VERSION
     inputs: Dict[str, Dict[str, Optional[str]]] = {
@@ -737,6 +741,10 @@ def _persist_run_metadata(
     provider_scoring_inputs = scoring_inputs_by_provider or {"openai": scoring_inputs_by_profile}
     provider_scoring_selection = scoring_input_selection_by_provider or {"openai": scoring_input_selection_by_profile}
     provider_outputs = outputs_by_provider or {"openai": outputs_by_profile}
+    run_dir = RUN_METADATA_DIR / _sanitize_run_id(run_id)
+    verifiable_artifacts = _verifiable_artifacts(run_dir, provider_outputs)
+    config_fingerprint_value = config_fingerprint or _config_fingerprint(flags, None)
+    environment_fingerprint_value = environment_fingerprint or _environment_fingerprint()
 
     selection = {"scrape_provenance": provenance_by_provider or {}}
     if provenance_by_provider:
@@ -789,6 +797,9 @@ def _persist_run_metadata(
         "scoring_inputs_by_provider": provider_scoring_inputs,
         "scoring_input_selection_by_provider": provider_scoring_selection,
         "outputs_by_provider": provider_outputs,
+        "verifiable_artifacts": verifiable_artifacts,
+        "config_fingerprint": config_fingerprint_value,
+        "environment_fingerprint": environment_fingerprint_value,
         "git_sha": _best_effort_git_sha(),
         "image_tag": os.environ.get("IMAGE_TAG"),
     }
@@ -810,7 +821,7 @@ def _hash_file(path: Path) -> Optional[str]:
     if not path.exists():
         return None
     try:
-        return hashlib.sha256(path.read_bytes()).hexdigest()
+        return compute_sha256_file(path)
     except Exception:
         return None
 
@@ -1068,6 +1079,59 @@ def _output_metadata(path: Path) -> Dict[str, Optional[str]]:
     }
 
 
+def _config_fingerprint(flags: Dict[str, Any], providers_config: Optional[str]) -> str:
+    allowed_keys = {
+        "profile",
+        "profiles",
+        "providers",
+        "us_only",
+        "no_enrich",
+        "ai",
+        "ai_only",
+        "min_score",
+        "min_alert_score",
+        "offline",
+        "scrape_only",
+        "no_subprocess",
+        "snapshot_only",
+    }
+    filtered_flags = {key: flags.get(key) for key in sorted(allowed_keys)}
+    providers_config_path = Path(providers_config) if providers_config else None
+    config_payload = {
+        "flags": filtered_flags,
+        "providers_config_path": str(providers_config_path) if providers_config_path else None,
+        "providers_config_sha256": _hash_file(providers_config_path) if providers_config_path else None,
+    }
+    payload = json.dumps(config_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _environment_fingerprint() -> Dict[str, Optional[str]]:
+    return {
+        "python_version": sys.version.split()[0],
+        "platform": platform.platform(),
+        "image_tag": os.environ.get("IMAGE_TAG"),
+        "git_sha": _best_effort_git_sha(),
+    }
+
+
+def _verifiable_artifacts(
+    run_dir: Path, provider_outputs: Dict[str, Dict[str, Dict[str, Dict[str, Optional[str]]]]]
+) -> Dict[str, Dict[str, str]]:
+    artifacts: Dict[str, Path] = {}
+    for provider, profiles_payload in provider_outputs.items():
+        for profile, outputs in profiles_payload.items():
+            for output_key, meta in outputs.items():
+                if not isinstance(meta, dict):
+                    continue
+                path_str = meta.get("path")
+                if not path_str:
+                    continue
+                logical_key = f"{provider}:{profile}:{output_key}"
+                artifacts[logical_key] = Path(path_str)
+    return build_verifiable_artifacts(run_dir, artifacts)
+
+
 def _best_effort_git_sha() -> Optional[str]:
     env_sha = os.environ.get("GIT_SHA")
     if env_sha:
@@ -1167,6 +1231,29 @@ def _score_input_selection_detail_for(args: argparse.Namespace, provider: str) -
     comparison_details: Dict[str, Any] = {}
     selection_reason_labeled_vs_enriched = "not_applicable"
     selection_reason_enriched_vs_ai = "not_applicable"
+    decision_timestamp = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+
+    def _selection_reason_detail(
+        rule_id: str,
+        chosen_path: Optional[Path],
+        candidate_paths: List[Path],
+        compared_fields: Dict[str, Any],
+        decision: str,
+    ) -> Dict[str, Any]:
+        return {
+            "rule_id": rule_id,
+            "chosen_path": str(chosen_path) if chosen_path else None,
+            "candidate_paths": [str(path) for path in candidate_paths],
+            "compared_fields": compared_fields,
+            "decision": decision,
+            "decision_timestamp": decision_timestamp,
+        }
+
+    def _candidate_field_map(paths: List[Path]) -> Dict[str, Any]:
+        result: Dict[str, Any] = {}
+        for path in paths:
+            result[str(path)] = _file_metadata(path) if path.exists() else None
+        return result
 
     def _ai_note() -> str:
         if args.ai and not args.ai_only:
@@ -1180,6 +1267,20 @@ def _score_input_selection_detail_for(args: argparse.Namespace, provider: str) -
         selection_reason = "ai_only"
         selection_reason_enriched_vs_ai = "ai_only_required"
         decision["reason"] = reason
+        labeled_vs_enriched_detail = _selection_reason_detail(
+            f"labeled_vs_enriched.{selection_reason_labeled_vs_enriched}",
+            None,
+            [enriched_path, labeled_path],
+            {"candidates": _candidate_field_map([enriched_path, labeled_path])},
+            selection_reason_labeled_vs_enriched,
+        )
+        enriched_vs_ai_detail = _selection_reason_detail(
+            f"enriched_vs_ai.{selection_reason_enriched_vs_ai}",
+            selected_path,
+            [enriched_path, ai_path],
+            {"candidates": _candidate_field_map([enriched_path, ai_path])},
+            selection_reason_enriched_vs_ai,
+        )
         return {
             "selected": _file_metadata(selected_path) if selected_path else None,
             "selected_path": str(selected_path) if selected_path else None,
@@ -1187,6 +1288,10 @@ def _score_input_selection_detail_for(args: argparse.Namespace, provider: str) -
             "selection_reason": selection_reason,
             "selection_reason_labeled_vs_enriched": selection_reason_labeled_vs_enriched,
             "selection_reason_enriched_vs_ai": selection_reason_enriched_vs_ai,
+            "selection_reason_details": {
+                "labeled_vs_enriched": labeled_vs_enriched_detail,
+                "enriched_vs_ai": enriched_vs_ai_detail,
+            },
             "comparison_details": comparison_details,
             "candidates": candidates,
             "decision": decision,
@@ -1231,6 +1336,7 @@ def _score_input_selection_detail_for(args: argparse.Namespace, provider: str) -
             selection_reason_labeled_vs_enriched = "missing"
         decision["comparisons"] = comparisons
         decision["reason"] = reason + _ai_note()
+        base_selected_path = selected_path
         if selected_path == enriched_path and args.ai and ai_path.exists():
             selection_reason = "prefer_ai_enriched"
             selected_path = ai_path
@@ -1238,6 +1344,23 @@ def _score_input_selection_detail_for(args: argparse.Namespace, provider: str) -
             selection_reason_enriched_vs_ai = "ai_enriched_preferred"
         elif selected_path == enriched_path and args.ai:
             selection_reason_enriched_vs_ai = "ai_enriched_missing"
+        labeled_vs_enriched_detail = _selection_reason_detail(
+            f"labeled_vs_enriched.{selection_reason_labeled_vs_enriched}",
+            base_selected_path,
+            [enriched_path, labeled_path],
+            {
+                "candidates": _candidate_field_map([enriched_path, labeled_path]),
+                "comparisons": comparisons,
+            },
+            selection_reason_labeled_vs_enriched,
+        )
+        enriched_vs_ai_detail = _selection_reason_detail(
+            f"enriched_vs_ai.{selection_reason_enriched_vs_ai}",
+            selected_path,
+            [enriched_path, ai_path],
+            {"candidates": _candidate_field_map([enriched_path, ai_path])},
+            selection_reason_enriched_vs_ai,
+        )
         return {
             "selected": _file_metadata(selected_path) if selected_path else None,
             "selected_path": str(selected_path) if selected_path else None,
@@ -1245,6 +1368,10 @@ def _score_input_selection_detail_for(args: argparse.Namespace, provider: str) -
             "selection_reason": selection_reason,
             "selection_reason_labeled_vs_enriched": selection_reason_labeled_vs_enriched,
             "selection_reason_enriched_vs_ai": selection_reason_enriched_vs_ai,
+            "selection_reason_details": {
+                "labeled_vs_enriched": labeled_vs_enriched_detail,
+                "enriched_vs_ai": enriched_vs_ai_detail,
+            },
             "comparison_details": comparison_details,
             "candidates": candidates,
             "decision": decision,
@@ -1261,6 +1388,7 @@ def _score_input_selection_detail_for(args: argparse.Namespace, provider: str) -
         selection_reason = "default_enriched_missing"
         selection_reason_labeled_vs_enriched = "missing"
     decision["reason"] = reason + _ai_note()
+    base_selected_path = selected_path
     if selected_path == enriched_path and args.ai and ai_path.exists():
         selection_reason = "prefer_ai_enriched"
         selected_path = ai_path
@@ -1268,6 +1396,20 @@ def _score_input_selection_detail_for(args: argparse.Namespace, provider: str) -
         selection_reason_enriched_vs_ai = "ai_enriched_preferred"
     elif selected_path == enriched_path and args.ai:
         selection_reason_enriched_vs_ai = "ai_enriched_missing"
+    labeled_vs_enriched_detail = _selection_reason_detail(
+        f"labeled_vs_enriched.{selection_reason_labeled_vs_enriched}",
+        base_selected_path,
+        [enriched_path, labeled_path],
+        {"candidates": _candidate_field_map([enriched_path, labeled_path])},
+        selection_reason_labeled_vs_enriched,
+    )
+    enriched_vs_ai_detail = _selection_reason_detail(
+        f"enriched_vs_ai.{selection_reason_enriched_vs_ai}",
+        selected_path,
+        [enriched_path, ai_path],
+        {"candidates": _candidate_field_map([enriched_path, ai_path])},
+        selection_reason_enriched_vs_ai,
+    )
     return {
         "selected": _file_metadata(selected_path) if selected_path else None,
         "selected_path": str(selected_path) if selected_path else None,
@@ -1275,6 +1417,10 @@ def _score_input_selection_detail_for(args: argparse.Namespace, provider: str) -
         "selection_reason": selection_reason,
         "selection_reason_labeled_vs_enriched": selection_reason_labeled_vs_enriched,
         "selection_reason_enriched_vs_ai": selection_reason_enriched_vs_ai,
+        "selection_reason_details": {
+            "labeled_vs_enriched": labeled_vs_enriched_detail,
+            "enriched_vs_ai": enriched_vs_ai_detail,
+        },
         "comparison_details": comparison_details,
         "candidates": candidates,
         "decision": decision,
@@ -1797,6 +1943,11 @@ def main() -> int:
     ap.add_argument("--min_alert_score", type=int, default=85)
     ap.add_argument("--min_score", type=int, default=40, help="Shortlist minimum score threshold.")
     ap.add_argument("--offline", action="store_true", help="Force snapshot mode (no live scraping).")
+    ap.add_argument(
+        "--snapshot-only",
+        action="store_true",
+        help="Fail if any provider would use live scraping; enforce snapshot-only determinism.",
+    )
     ap.add_argument("--no_post", action="store_true", help="Run pipeline but do not send Discord webhook")
     ap.add_argument("--test_post", action="store_true", help="Send a test message to Discord and exit")
     ap.add_argument("--no_enrich", action="store_true", help="Skip enrichment step (CI / offline safe)")
@@ -1810,8 +1961,16 @@ def main() -> int:
     )
     ap.add_argument("--log_json", action="store_true", help="Emit JSON logs for aggregation systems")
     ap.add_argument("--print_paths", action="store_true", help="Print resolved data/state/history paths")
+    ap.add_argument("--publish-s3", action="store_true", help="Publish run artifacts to S3 after completion.")
+    ap.add_argument(
+        "--publish-dry-run",
+        action="store_true",
+        help="Plan S3 publish without uploading (requires --publish-s3 or implies it).",
+    )
 
     args = ap.parse_args()
+    if args.snapshot_only and not args.offline:
+        args.offline = True
     providers = _resolve_providers(args)
     openai_only = providers == ["openai"]
     run_id = _utcnow_iso()
@@ -1878,6 +2037,9 @@ def main() -> int:
         "ai_only": args.ai_only,
         "min_score": args.min_score,
         "min_alert_score": args.min_alert_score,
+        "snapshot_only": args.snapshot_only,
+        "publish_s3": args.publish_s3,
+        "publish_dry_run": args.publish_dry_run,
     }
 
     def _finalize(status: str, extra: Optional[Dict[str, Any]] = None) -> None:
@@ -1932,6 +2094,8 @@ def main() -> int:
                 }
             provider_outputs[provider] = outputs_for_provider
 
+        config_fingerprint = _config_fingerprint(flag_payload, args.providers_config)
+        environment_fingerprint = _environment_fingerprint()
         delta_summary = _build_delta_summary(run_id, providers, profiles_list)
         run_metadata_path = _persist_run_metadata(
             run_id,
@@ -1948,6 +2112,8 @@ def main() -> int:
             scoring_input_selection_by_provider=scoring_input_selection_by_provider,
             outputs_by_provider=provider_outputs,
             delta_summary=delta_summary,
+            config_fingerprint=config_fingerprint,
+            environment_fingerprint=environment_fingerprint,
         )
         if openai_only:
             for profile in profiles_list:
@@ -2001,11 +2167,17 @@ def main() -> int:
         s3_meta: Dict[str, Any] = {"status": "disabled"}
         s3_failed = False
         s3_exit_code: Optional[int] = None
-        publish_requested = os.environ.get("PUBLISH_S3", "0").strip() == "1"
+        dry_run = False
+        publish_requested_env = os.environ.get("PUBLISH_S3", "0").strip() == "1"
+        publish_requested_cli = bool(args.publish_s3 or args.publish_dry_run)
+        publish_requested = publish_requested_env or publish_requested_cli
         resolved_bucket, resolved_prefix = publish_s3._resolve_bucket_prefix(None, None)
-        publish_enabled, require_s3, skip_reason = _resolve_publish_state(
-            publish_requested, resolved_bucket
-        )
+        if publish_requested_cli:
+            publish_enabled, require_s3, skip_reason = True, True, None
+        else:
+            publish_enabled, require_s3, skip_reason = _resolve_publish_state(
+                publish_requested, resolved_bucket
+            )
         if status != "success":
             skip_reason = f"skipped_status_{status}"
             publish_enabled = False
@@ -2016,7 +2188,7 @@ def main() -> int:
             s3_meta = {"status": skip_reason, "reason": skip_reason}
 
         if publish_enabled:
-            dry_run = os.environ.get("PUBLISH_S3_DRY_RUN", "0").strip() == "1"
+            dry_run = bool(args.publish_dry_run) or os.environ.get("PUBLISH_S3_DRY_RUN", "0").strip() == "1"
             logger.info(
                 "S3 publish enabled: s3://%s/%s (dry_run=%s require=%s)",
                 resolved_bucket,
@@ -2025,19 +2197,31 @@ def main() -> int:
                 require_s3,
             )
             try:
-                s3_meta = publish_s3.publish_run(
-                    run_id=run_id,
+                preflight = publish_s3._run_preflight(
                     bucket=None,
+                    region=None,
                     prefix=None,
-                    run_dir=RUN_METADATA_DIR / publish_s3._sanitize_run_id(run_id),
                     dry_run=dry_run,
-                    require_s3=require_s3,
-                    providers=providers,
-                    profiles=profiles_list,
-                    write_last_success=bool(telemetry.get("success", False)),
                 )
-                if isinstance(s3_meta, dict) and s3_meta.get("status") == "ok":
-                    _update_run_metadata_s3(run_metadata_path, s3_meta)
+                if not preflight.get("ok"):
+                    logger.error("AWS preflight failed: %s", ", ".join(preflight.get("errors", [])))
+                    s3_meta = {"status": "error", "reason": "preflight_failed", "preflight": preflight}
+                    s3_exit_code = 2
+                    s3_failed = require_s3
+                else:
+                    s3_meta = publish_s3.publish_run(
+                        run_id=run_id,
+                        bucket=None,
+                        prefix=None,
+                        run_dir=RUN_METADATA_DIR / publish_s3._sanitize_run_id(run_id),
+                        dry_run=dry_run,
+                        require_s3=require_s3,
+                        providers=providers,
+                        profiles=profiles_list,
+                        write_last_success=bool(telemetry.get("success", False)),
+                    )
+                    if isinstance(s3_meta, dict) and s3_meta.get("status") == "ok":
+                        _update_run_metadata_s3(run_metadata_path, s3_meta)
             except SystemExit as exc:
                 s3_meta = {"status": "error", "reason": "publish_failed"}
                 s3_exit_code = _normalize_exit_code(exc.code)
@@ -2054,10 +2238,11 @@ def main() -> int:
             else:
                 logger.info("S3 publish disabled.")
 
+        required_contract = require_s3 and not dry_run
         publish_section = _build_publish_section(
             s3_meta=s3_meta,
             enabled=publish_enabled,
-            required=require_s3,
+            required=required_contract,
             bucket=resolved_bucket or None,
             prefix=resolved_prefix or None,
             skip_reason=skip_reason,
@@ -2374,6 +2559,8 @@ def main() -> int:
             "--providers-config",
             args.providers_config,
         ]
+        if args.snapshot_only:
+            scrape_cmd.append("--snapshot-only")
         record_stage(current_stage, lambda cmd=scrape_cmd: _run(cmd, stage=current_stage))
         provenance_by_provider = _load_scrape_provenance(providers)
         all_unavailable = _all_providers_unavailable(provenance_by_provider, providers)
