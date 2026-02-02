@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from ji_engine.utils.verification import compute_sha256_bytes
 VOLATILE_FIELDS = {
     "fetched_at",
     "scraped_at",
@@ -20,10 +20,6 @@ VOLATILE_FIELDS = {
 }
 
 CANONICAL_JSON_KWARGS = {"ensure_ascii": False, "sort_keys": True, "separators": (",", ":")}
-
-
-def _sha256_bytes(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
 
 
 def _load_json(path: Path) -> Any:
@@ -71,7 +67,7 @@ def _canonical_hash(payload: Any) -> Optional[str]:
         return None
     ordered = sorted(jobs, key=_job_key)
     data = json.dumps(ordered, **CANONICAL_JSON_KWARGS).encode("utf-8") + b"\n"
-    return _sha256_bytes(data)
+    return compute_sha256_bytes(data)
 
 
 def _describe(path: Path) -> Dict[str, Any]:
@@ -81,7 +77,7 @@ def _describe(path: Path) -> Dict[str, Any]:
 
     out: Dict[str, Any] = {
         "path": str(path),
-        "raw_sha256": _sha256_bytes(raw),
+        "raw_sha256": compute_sha256_bytes(raw),
         "jobs_count": len(jobs) if jobs is not None else None,
         "first_ids": None,
         "last_ids": None,
