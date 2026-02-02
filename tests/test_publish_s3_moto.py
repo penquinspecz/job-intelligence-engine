@@ -13,6 +13,8 @@ except Exception:  # pragma: no cover
     mock_s3 = None
 
 import scripts.publish_s3 as publish_s3
+from scripts import verify_published_s3
+from ji_engine.utils.verification import compute_sha256_file
 
 pytestmark = pytest.mark.skipif(boto3 is None or mock_s3 is None, reason="boto3/moto not installed")
 
@@ -26,23 +28,31 @@ def _setup_run_dir(tmp_path: Path, run_id: str) -> Path:
     run_dir = tmp_path / "state" / "runs" / publish_s3._sanitize_run_id(run_id)
     provider_dir = run_dir / "openai" / "cs"
     provider_dir.mkdir(parents=True, exist_ok=True)
-    (provider_dir / "openai_ranked_jobs.cs.json").write_text("[]", encoding="utf-8")
-    (provider_dir / "openai_ranked_jobs.cs.csv").write_text("a,b\n", encoding="utf-8")
-    (provider_dir / "openai_ranked_families.cs.json").write_text("[]", encoding="utf-8")
-    (provider_dir / "openai_shortlist.cs.md").write_text("# shortlist\n", encoding="utf-8")
-    _write_json(
-        run_dir / "index.json",
-        {
-            "run_id": run_id,
-            "timestamp": run_id,
-            "providers": {"openai": {"profiles": {"cs": {"diff_counts": {"new": 0}}}}},
+    ranked_json = provider_dir / "openai_ranked_jobs.cs.json"
+    ranked_json.write_text("[]", encoding="utf-8")
+    ranked_families = provider_dir / "openai_ranked_families.cs.json"
+    ranked_families.write_text("[]", encoding="utf-8")
+    verifiable = {
+        "openai:cs:ranked_json": {
+            "path": "openai/cs/openai_ranked_jobs.cs.json",
+            "sha256": compute_sha256_file(ranked_json),
+            "hash_algo": "sha256",
         },
-    )
+        "openai:cs:ranked_families_json": {
+            "path": "openai/cs/openai_ranked_families.cs.json",
+            "sha256": compute_sha256_file(ranked_families),
+            "hash_algo": "sha256",
+        },
+    }
     _write_json(
         run_dir / "run_report.json",
         {
             "run_id": run_id,
             "run_report_schema_version": 1,
+            "providers": ["openai"],
+            "profiles": ["cs"],
+            "timestamps": {"ended_at": run_id},
+            "verifiable_artifacts": verifiable,
             "selection": {"scrape_provenance": {"openai": {"scrape_mode": "snapshot"}}},
             "provenance": {"openai": {"scrape_mode": "snapshot"}},
             "provenance_by_provider": {"openai": {"scrape_mode": "snapshot"}},
@@ -100,6 +110,7 @@ def test_publish_s3_uploads_expected_keys_and_content_types(tmp_path: Path, monk
         run_id = "2026-01-01T00:00:00Z"
         run_dir = _setup_run_dir(tmp_path, run_id)
         monkeypatch.setattr(publish_s3, "RUN_METADATA_DIR", tmp_path / "state" / "runs")
+        verify_published_s3.RUN_METADATA_DIR = tmp_path / "state" / "runs"
 
         publish_s3.publish_run(
             run_id=run_id,
@@ -113,6 +124,19 @@ def test_publish_s3_uploads_expected_keys_and_content_types(tmp_path: Path, monk
             write_last_success=True,
         )
 
+        verify_rc = verify_published_s3.main(
+            [
+                "--bucket",
+                bucket,
+                "--run-id",
+                run_id,
+                "--prefix",
+                prefix,
+                "--verify-latest",
+            ]
+        )
+        assert verify_rc == 0
+
         keys = []
         paginator = client.get_paginator("list_objects_v2")
         for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
@@ -120,18 +144,12 @@ def test_publish_s3_uploads_expected_keys_and_content_types(tmp_path: Path, monk
                 keys.append(item["Key"])
 
         run_keys = [
-            f"{prefix}/runs/{run_id}/index.json",
-            f"{prefix}/runs/{run_id}/run_report.json",
             f"{prefix}/runs/{run_id}/openai/cs/openai_ranked_jobs.cs.json",
-            f"{prefix}/runs/{run_id}/openai/cs/openai_ranked_jobs.cs.csv",
             f"{prefix}/runs/{run_id}/openai/cs/openai_ranked_families.cs.json",
-            f"{prefix}/runs/{run_id}/openai/cs/openai_shortlist.cs.md",
         ]
         latest_keys = [
             f"{prefix}/latest/openai/cs/openai_ranked_jobs.cs.json",
-            f"{prefix}/latest/openai/cs/openai_ranked_jobs.cs.csv",
             f"{prefix}/latest/openai/cs/openai_ranked_families.cs.json",
-            f"{prefix}/latest/openai/cs/openai_shortlist.cs.md",
         ]
         pointer_keys = [
             f"{prefix}/state/last_success.json",
@@ -141,18 +159,10 @@ def test_publish_s3_uploads_expected_keys_and_content_types(tmp_path: Path, monk
         assert sorted(keys) == expected
 
         body = client.get_object(Bucket=bucket, Key=run_keys[0])["Body"].read()
-        assert body == (run_dir / "index.json").read_bytes()
+        assert body == (run_dir / "openai" / "cs" / "openai_ranked_jobs.cs.json").read_bytes()
 
         json_ct = client.get_object(Bucket=bucket, Key=run_keys[0])["ContentType"]
-        report_ct = client.get_object(Bucket=bucket, Key=run_keys[1])["ContentType"]
-        csv_ct = client.get_object(Bucket=bucket, Key=run_keys[3])["ContentType"]
-        md_ct = client.get_object(Bucket=bucket, Key=run_keys[5])["ContentType"]
         assert json_ct == "application/json"
-        assert report_ct == "application/json"
-        assert csv_ct == "text/csv; charset=utf-8"
-        assert md_ct == "text/markdown; charset=utf-8"
 
         latest_json_ct = client.get_object(Bucket=bucket, Key=latest_keys[0])["ContentType"]
-        latest_md_ct = client.get_object(Bucket=bucket, Key=latest_keys[3])["ContentType"]
         assert latest_json_ct == "application/json"
-        assert latest_md_ct == "text/markdown; charset=utf-8"
