@@ -1,4 +1,4 @@
-.PHONY: test lint format-check gates gate docker-build docker-run-local report snapshot snapshot-openai smoke image smoke-fast smoke-ci image-ci ci ci-local docker-ok daily debug-snapshots explain-smoke dashboard weekly publish-last aws-env-check aws-deploy aws-smoke aws-first-run aws-schedule-status aws-oneoff-run aws-bootstrap aws-bootstrap-help deps deps-sync deps-check snapshot-guard
+.PHONY: test lint format-check gates gate gate-fast gate-truth gate-ci docker-build docker-run-local report snapshot snapshot-openai smoke image smoke-fast smoke-ci image-ci ci ci-local docker-ok daily debug-snapshots explain-smoke dashboard weekly publish-last aws-env-check aws-deploy aws-smoke aws-first-run aws-schedule-status aws-oneoff-run aws-bootstrap aws-bootstrap-help deps deps-sync deps-check snapshot-guard verify-snapshots replay gate-replay
 
 # Prefer repo venv if present; fall back to system python3.
 PY ?= .venv/bin/python
@@ -56,7 +56,39 @@ deps-check:
 
 gates: format-check lint deps-check test snapshot-guard
 
-gate: gates
+gate-fast:
+	@echo "==> pytest"
+	$(PY) -m pytest -q
+	@echo "==> snapshot immutability"
+	$(PY) scripts/verify_snapshots_immutable.py
+	@echo "==> replay smoke"
+	$(PY) scripts/replay_smoke_fixture.py
+
+gate-truth: gate-fast
+	@echo "==> docker build (no-cache, RUN_TESTS=1)"
+	@if [ "$${DOCKER_BUILDKIT:-1}" = "0" ]; then \
+		echo "BuildKit is required (Dockerfile uses RUN --mount=type=cache). Set DOCKER_BUILDKIT=1."; \
+		exit 1; \
+	fi
+	@DOCKER_BUILDKIT=1 docker build --no-cache --build-arg RUN_TESTS=1 -t jobintel:tests .
+
+gate: gate-fast
+
+gate-ci: gate-truth
+
+verify-snapshots:
+	$(PY) scripts/verify_snapshots_immutable.py
+
+snapshot-guard: verify-snapshots
+
+replay:
+	@if [ -z "$(RUN_ID)" ]; then echo "Usage: make replay RUN_ID=<id>"; exit 2; fi
+	$(PY) scripts/replay_run.py --run-id $(RUN_ID) --strict
+
+gate-replay:
+	$(PY) -m pytest -q
+	$(MAKE) verify-snapshots
+	$(PY) scripts/replay_smoke_fixture.py
 
 docker-build:
 	$(call check_buildkit)
@@ -170,10 +202,10 @@ explain-smoke:
 
 dashboard:
 	@$(PY) - <<'PY' || true
-import importlib.util
-if importlib.util.find_spec("uvicorn") is None:
-    print('Warning: dashboard deps missing. Run: pip install ".[dashboard]"')
-PY
+	import importlib.util
+	if importlib.util.find_spec("uvicorn") is None:
+	    print('Warning: dashboard deps missing. Run: pip install ".[dashboard]"')
+	PY
 	$(PY) -m uvicorn jobintel.dashboard.app:app --reload --port 8000
 
 weekly:

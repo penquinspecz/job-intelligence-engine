@@ -22,13 +22,19 @@ docker run --rm \
 CI:
 
 ```bash
-pytest -q
+make gate-ci
 ```
 
 Deterministic gate (recommended):
 
 ```bash
-docker build --no-cache --build-arg RUN_TESTS=1 -t jobintel:tests .
+make gate-truth
+```
+
+Fast local/PR gate (no Docker):
+
+```bash
+make gate-fast
 ```
 
 Snapshot-only violations fail fast with exit code 2 and a message naming the provider.
@@ -142,11 +148,13 @@ python scripts/set_job_status.py --profile cs --url https://example.com/jobs/123
 
 A “Quality Gates” section:
 
-make gates is the canonical local + CI validation path
+Developer default: `make gate` (alias for `gate-fast`).
 
-Order matters: format-check → lint → test
+Source-of-truth gate: `make gate-truth` (includes Docker no-cache).
 
-CI mirrors local gates exactly (by design)
+CI uses `make gate-ci` (alias for `gate-truth`).
+
+Order matters: pytest → snapshot immutability → replay smoke → Docker (truth gate only).
 
 Snapshot behavior:
 
