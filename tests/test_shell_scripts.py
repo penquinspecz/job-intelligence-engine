@@ -7,6 +7,7 @@ from textwrap import dedent
 
 import pytest
 
+from ji_engine.utils.verification import compute_sha256_file
 
 def _write_executable(path: Path, content: str) -> None:
     path.write_text(dedent(content).lstrip(), encoding="utf-8")
@@ -294,6 +295,10 @@ def test_verify_published_s3_offline_plan(tmp_path: Path, monkeypatch) -> None:
 
     run_id = "run-123"
     verify_published_s3.RUN_METADATA_DIR = tmp_path / "state" / "runs"
+    verify_published_s3.DATA_DIR = tmp_path / "data"
+    verify_published_s3.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    local_path = verify_published_s3.DATA_DIR / "openai_ranked_families.cs.json"
+    local_path.write_text("[]", encoding="utf-8")
     sanitized = verify_published_s3.publish_s3._sanitize_run_id(run_id)
     run_dir = verify_published_s3.RUN_METADATA_DIR / sanitized
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -302,8 +307,8 @@ def test_verify_published_s3_offline_plan(tmp_path: Path, monkeypatch) -> None:
         "verifiable_artifacts": {
             "openai:cs:ranked_families_json": {
                 "path": "openai_ranked_families.cs.json",
-                "sha256": "deadbeef",
-                "bytes": 1,
+                "sha256": compute_sha256_file(local_path),
+                "bytes": local_path.stat().st_size,
                 "hash_algo": "sha256",
             }
         },
