@@ -6,16 +6,57 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import boto3
 from botocore.exceptions import ClientError
 
 from ji_engine.config import RUN_METADATA_DIR
 from jobintel.aws_runs import build_state_payload, write_last_success_state, write_provider_last_success_state
+try:
+    from scripts import aws_env_check  # type: ignore
+except ModuleNotFoundError:
+    import importlib.util
+
+    _spec = importlib.util.spec_from_file_location(
+        "aws_env_check", Path(__file__).with_name("aws_env_check.py")
+    )
+    if not _spec or not _spec.loader:
+        raise
+    aws_env_check = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(aws_env_check)
 
 logger = logging.getLogger(__name__)
 DEFAULT_PREFIX = "jobintel"
+LATEST_OUTPUT_ALLOWLIST = {
+    "ranked_json",
+    "ranked_csv",
+    "ranked_families_json",
+    "shortlist_md",
+    "top_md",
+}
+
+
+class UploadItem:
+    def __init__(
+        self,
+        *,
+        source: Path,
+        key: str,
+        content_type: Optional[str],
+        logical_key: str,
+        scope: str,
+    ) -> None:
+        self.source = source
+        self.key = key
+        self.content_type = content_type
+        self.logical_key = logical_key
+        self.scope = scope
+
+
+def _fail_validation(message: str) -> None:
+    logger.error(message)
+    raise SystemExit(2)
 
 
 def _sanitize_run_id(run_id: str) -> str:
@@ -50,13 +91,6 @@ def _select_run_id(run_id: Optional[str], latest: bool) -> str:
     raise SystemExit("no runs recorded yet")
 
 
-def _collect_artifacts(base_dir: Path) -> List[Path]:
-    if not base_dir.exists():
-        return []
-    files = sorted(p for p in base_dir.rglob("*") if p.is_file())
-    return files
-
-
 def _content_type_for(path: Path) -> Optional[str]:
     suffix = path.suffix.lower()
     if suffix == ".json":
@@ -72,50 +106,134 @@ def _content_type_for(path: Path) -> Optional[str]:
     return "application/octet-stream"
 
 
-def _upload_files(
-    client,
-    bucket: str,
-    prefix: str,
-    base_dir: Path,
-    files: List[Path],
-    dry_run: bool,
-) -> int:
-    prefix = prefix.strip("/")
-    uploaded = 0
-    for path in files:
-        if not path.exists():
-            logger.warning("missing artifact, skipping: %s", path)
+def _load_run_report(run_dir: Path) -> Dict[str, Any]:
+    report_path = run_dir / "run_report.json"
+    if not report_path.exists():
+        _fail_validation(f"run_report.json not found: {report_path}")
+    data = json.loads(report_path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        _fail_validation("run_report.json has invalid shape")
+    return data
+
+
+def _parse_logical_key(logical_key: str) -> Optional[Tuple[str, str, str]]:
+    parts = logical_key.split(":")
+    if len(parts) < 3:
+        return None
+    provider, profile = parts[0], parts[1]
+    output_key = ":".join(parts[2:])
+    return provider, profile, output_key
+
+
+def _collect_verifiable(report: Dict[str, Any]) -> Dict[str, Dict[str, str]]:
+    verifiable = report.get("verifiable_artifacts")
+    if not isinstance(verifiable, dict) or not verifiable:
+        _fail_validation("run_report.json missing verifiable_artifacts; refusing to publish")
+    return verifiable
+
+
+def _providers_profiles_from_report(
+    report: Dict[str, Any],
+    verifiable: Dict[str, Dict[str, str]],
+) -> Tuple[List[str], List[str]]:
+    providers = report.get("providers")
+    profiles = report.get("profiles")
+    if isinstance(providers, list) and isinstance(profiles, list):
+        return providers, profiles
+    provider_set = set()
+    profile_set = set()
+    for logical_key in verifiable.keys():
+        parsed = _parse_logical_key(logical_key)
+        if not parsed:
             continue
-        rel = path.relative_to(base_dir)
-        key = f"{prefix}/{rel.as_posix()}" if prefix else rel.as_posix()
+        provider, profile, _ = parsed
+        provider_set.add(provider)
+        profile_set.add(profile)
+    return sorted(provider_set), sorted(profile_set)
+
+
+def _build_upload_plan(
+    *,
+    run_id: str,
+    run_dir: Path,
+    prefix: str,
+    verifiable: Dict[str, Dict[str, str]],
+    providers: Iterable[str],
+    profiles: Iterable[str],
+) -> Tuple[List[UploadItem], Dict[str, Dict[str, str]]]:
+    uploads: List[UploadItem] = []
+    latest_prefixes: Dict[str, Dict[str, str]] = {}
+    provider_filter = {p.strip() for p in providers if p.strip()}
+    profile_filter = {p.strip() for p in profiles if p.strip()}
+
+    for logical_key, meta in verifiable.items():
+        if not isinstance(meta, dict):
+            _fail_validation(f"invalid verifiable_artifacts entry for {logical_key}")
+        path_str = meta.get("path")
+        if not path_str:
+            _fail_validation(f"missing path for verifiable artifact {logical_key}")
+        path = Path(path_str)
+        if not path.is_absolute():
+            path = run_dir / path
+        if not path.exists():
+            _fail_validation(f"verifiable artifact missing on disk: {path}")
+        rel_path = Path(path_str).as_posix()
+        key = f"{prefix}/runs/{run_id}/{rel_path}".strip("/")
+        uploads.append(
+            UploadItem(
+                source=path,
+                key=key,
+                content_type=_content_type_for(path),
+                logical_key=logical_key,
+                scope="runs",
+            )
+        )
+        parsed = _parse_logical_key(logical_key)
+        if not parsed:
+            continue
+        provider, profile, output_key = parsed
+        if provider_filter and provider not in provider_filter:
+            continue
+        if profile_filter and profile not in profile_filter:
+            continue
+        if output_key not in LATEST_OUTPUT_ALLOWLIST:
+            continue
+        latest_key = f"{prefix}/latest/{provider}/{profile}/{path.name}".strip("/")
+        uploads.append(
+            UploadItem(
+                source=path,
+                key=latest_key,
+                content_type=_content_type_for(path),
+                logical_key=logical_key,
+                scope="latest",
+            )
+        )
+        latest_prefixes.setdefault(provider, {})[profile] = f"{prefix}/latest/{provider}/{profile}".strip("/")
+
+    uploads.sort(key=lambda item: item.key)
+    return uploads, latest_prefixes
+
+
+def _upload_plan(client, bucket: str, plan: List[UploadItem], dry_run: bool) -> int:
+    uploaded = 0
+    for item in plan:
         if dry_run:
-            logger.info("dry-run: %s -> s3://%s/%s", path, bucket, key)
+            logger.info("dry-run: %s -> s3://%s/%s", item.source, bucket, item.key)
             continue
         try:
             extra_args: Dict[str, str] = {}
-            content_type = _content_type_for(path)
-            if content_type:
-                extra_args["ContentType"] = content_type
+            if item.content_type:
+                extra_args["ContentType"] = item.content_type
             if extra_args:
-                client.upload_file(str(path), bucket, key, ExtraArgs=extra_args)
+                client.upload_file(str(item.source), bucket, item.key, ExtraArgs=extra_args)
             else:
-                client.upload_file(str(path), bucket, key)
-            logger.info("uploaded %s -> s3://%s/%s", path, bucket, key)
+                client.upload_file(str(item.source), bucket, item.key)
+            logger.info("uploaded %s -> s3://%s/%s", item.source, bucket, item.key)
             uploaded += 1
         except ClientError as exc:
             logger.error("upload failed: %s", exc)
             raise
     return uploaded
-
-
-def _load_index(run_id: str) -> Dict[str, Any]:
-    index_path = _run_dir(run_id) / "index.json"
-    if not index_path.exists():
-        raise SystemExit(f"run index not found: {index_path}")
-    data = json.loads(index_path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict):
-        raise SystemExit("run index has invalid shape")
-    return data
 
 
 def _resolve_bucket_prefix(bucket: Optional[str], prefix: Optional[str]) -> Tuple[str, str]:
@@ -127,6 +245,30 @@ def _resolve_bucket_prefix(bucket: Optional[str], prefix: Optional[str]) -> Tupl
     env_prefix_alias = os.getenv("PREFIX", "").strip()
     resolved_prefix = (prefix or env_prefix or env_prefix_alias or DEFAULT_PREFIX).strip("/")
     return resolved_bucket, resolved_prefix
+
+
+def _run_preflight(
+    *,
+    bucket: Optional[str],
+    region: Optional[str],
+    prefix: Optional[str],
+    dry_run: bool,
+) -> Dict[str, Any]:
+    resolved_bucket = aws_env_check._resolve_bucket(bucket)
+    resolved_region = aws_env_check._resolve_region(region)
+    resolved_prefix, prefix_warnings = aws_env_check._resolve_prefix(prefix)
+    report = aws_env_check._build_report(resolved_bucket, resolved_region, resolved_prefix)
+    report["warnings"].extend(prefix_warnings)
+    if dry_run and report.get("errors"):
+        errors = []
+        for err in report["errors"]:
+            if err.startswith("credentials not detected"):
+                report["warnings"].append(err)
+            else:
+                errors.append(err)
+        report["errors"] = errors
+        report["ok"] = len(errors) == 0
+    return report
 
 
 def publish_run(
@@ -143,10 +285,10 @@ def publish_run(
 ) -> Dict[str, Any]:
     resolved_bucket, resolved_prefix = _resolve_bucket_prefix(bucket, prefix)
     pointer_write: Dict[str, Any] = {"global": "skipped", "provider_profile": {}, "error": None}
-    if not resolved_bucket:
+    if not resolved_bucket and not dry_run:
         logger.info("S3 bucket unset; skipping publish.")
         if require_s3:
-            raise SystemExit("PUBLISH_S3=1 requires JOBINTEL_S3_BUCKET.")
+            _fail_validation("PUBLISH_S3=1 requires JOBINTEL_S3_BUCKET.")
         return {
             "status": "skipped",
             "reason": "missing_bucket",
@@ -155,58 +297,59 @@ def publish_run(
         }
 
     run_dir = run_dir or _run_dir(run_id)
-    index = _load_index(run_id)
-    client = boto3.client("s3")
-    logger.info("S3 publish target: s3://%s/%s", resolved_bucket, resolved_prefix)
-
-    files = _collect_artifacts(run_dir)
-    if not files:
-        logger.error("no artifacts found for run %s", run_id)
-        if require_s3:
+    report = _load_run_report(run_dir)
+    report_run_id = report.get("run_id")
+    if report_run_id and report_run_id != run_id:
+        _fail_validation(f"run_report.json run_id mismatch: report={report_run_id} arg={run_id}")
+    verifiable = _collect_verifiable(report)
+    logger.info("S3 publish target: s3://%s/%s", resolved_bucket or "dry-run", resolved_prefix)
+    plan, latest_prefixes = _build_upload_plan(
+        run_id=run_id,
+        run_dir=run_dir,
+        prefix=resolved_prefix,
+        verifiable=verifiable,
+        providers=providers or [],
+        profiles=profiles or [],
+    )
+    if not plan:
+        logger.error("no verifiable artifacts found for run %s", run_id)
+        if require_s3 and not dry_run:
             raise SystemExit(2)
         return {"status": "error", "uploaded_files_count": 0}
-
-    runs_prefix = f"{resolved_prefix}/runs/{run_id}".strip("/")
-    uploaded = _upload_files(client, resolved_bucket, runs_prefix, run_dir, files, dry_run)
-    if uploaded == 0:
+    if dry_run:
+        uploaded = _upload_plan(None, resolved_bucket or "dry-run", plan, dry_run=True)
+    else:
+        client = boto3.client("s3")
+        uploaded = _upload_plan(client, resolved_bucket, plan, dry_run=False)
+    if uploaded == 0 and not dry_run:
         logger.error("no artifacts uploaded for run %s", run_id)
         if require_s3:
             raise SystemExit(2)
         return {"status": "error", "uploaded_files_count": 0}
 
-    latest_prefixes: Dict[str, Dict[str, str]] = {}
-    providers_index = index.get("providers") if isinstance(index.get("providers"), dict) else {}
-    provider_filter = {p.strip() for p in (providers or []) if p.strip()}
-    profile_filter = {p.strip() for p in (profiles or []) if p.strip()}
     provider_profiles: Dict[str, str] = {}
-    for provider, provider_payload in providers_index.items():
-        if provider_filter and provider not in provider_filter:
-            continue
-        profiles_payload = provider_payload.get("profiles") if isinstance(provider_payload, dict) else {}
-        for profile in profiles_payload:
-            if profile_filter and profile not in profile_filter:
-                continue
-            profile_dir = run_dir / provider / profile
-            profile_files = _collect_artifacts(profile_dir)
-            if not profile_files:
-                logger.warning("no artifacts for %s/%s (skipping latest)", provider, profile)
-                continue
-            latest_prefix = f"{resolved_prefix}/latest/{provider}/{profile}".strip("/")
-            _upload_files(client, resolved_bucket, latest_prefix, profile_dir, profile_files, dry_run)
-            latest_prefixes.setdefault(provider, {})[profile] = latest_prefix
+    for provider, profiles_payload in latest_prefixes.items():
+        for profile in profiles_payload.keys():
             provider_profiles[f"{provider}:{profile}"] = run_id
 
     dashboard_url = os.environ.get("JOBINTEL_DASHBOARD_URL", "").strip().rstrip("/")
     if dashboard_url:
         dashboard_url = f"{dashboard_url}/runs/{run_id}"
 
+    providers_list, profiles_list = _providers_profiles_from_report(report, verifiable)
+    ended_at = None
+    timestamps = report.get("timestamps") if isinstance(report.get("timestamps"), dict) else {}
+    if isinstance(timestamps, dict):
+        ended_at = timestamps.get("ended_at")
+    if not ended_at:
+        ended_at = report.get("ended_at") or report.get("finished_at")
     run_path = f"{resolved_prefix.strip('/')}/runs/{run_id}".strip("/")
     state_payload = build_state_payload(
         run_id,
         run_path,
-        index.get("timestamp"),
-        list(providers_index.keys()),
-        list({p for profiles in providers_index.values() for p in (profiles.get("profiles") or {}).keys()}),
+        ended_at,
+        providers_list,
+        profiles_list,
         schema_version=1,
     )
     state_payload["provider_profiles"] = provider_profiles
@@ -298,11 +441,13 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--bucket")
     ap.add_argument("--prefix")
-    ap.add_argument("--run_id")
-    ap.add_argument("--run_dir")
+    ap.add_argument("--region")
+    ap.add_argument("--run-id", "--run_id", dest="run_id")
+    ap.add_argument("--run-dir", "--run_dir", dest="run_dir")
     ap.add_argument("--latest", action="store_true")
-    ap.add_argument("--dry_run", action="store_true")
-    ap.add_argument("--require_s3", action="store_true")
+    ap.add_argument("--dry-run", "--dry_run", dest="dry_run", action="store_true")
+    ap.add_argument("--require-s3", "--require_s3", dest="require_s3", action="store_true")
+    ap.add_argument("--json", action="store_true", help="Emit machine-readable JSON output.")
     ap.add_argument(
         "--providers",
         default="",
@@ -315,11 +460,35 @@ def main() -> int:
     )
     args = ap.parse_args()
 
-    run_id = _select_run_id(args.run_id, args.latest)
+    preflight = _run_preflight(
+        bucket=args.bucket,
+        region=args.region,
+        prefix=args.prefix,
+        dry_run=args.dry_run,
+    )
+    if not preflight.get("ok"):
+        if args.json:
+            print(json.dumps({"ok": False, "preflight": preflight}, sort_keys=True))
+        _fail_validation(f"AWS preflight failed: {', '.join(preflight.get('errors', []))}")
+
+    if args.latest and args.run_dir:
+        raise SystemExit("cannot specify --latest and --run-dir together")
+    if args.latest:
+        run_id = _select_run_id(None, True)
+    elif args.run_id:
+        run_id = args.run_id
+    elif args.run_dir:
+        report = _load_run_report(Path(args.run_dir))
+        report_run_id = report.get("run_id")
+        if not report_run_id:
+            _fail_validation("run_report.json missing run_id; provide --run-id")
+        run_id = report_run_id
+    else:
+        _fail_validation("must provide --run-id or --run-dir (or --latest)")
     providers = [p.strip() for p in args.providers.split(",") if p.strip()]
     profiles = [p.strip() for p in args.profiles.split(",") if p.strip()]
     run_dir = Path(args.run_dir) if args.run_dir else None
-    publish_run(
+    result = publish_run(
         run_id=run_id,
         bucket=args.bucket,
         prefix=args.prefix,
@@ -329,6 +498,8 @@ def main() -> int:
         providers=providers,
         profiles=profiles,
     )
+    if args.json:
+        print(json.dumps({"ok": True, "preflight": preflight, "result": result}, sort_keys=True))
     return 0
 
 
