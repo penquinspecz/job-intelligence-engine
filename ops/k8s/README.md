@@ -71,6 +71,13 @@ Run replay smoke locally against a run report:
 python scripts/replay_run.py --run-id <run_id> --strict
 ```
 
+## Local smoke
+
+Simulate the CronJob shape locally (offline, deterministic):
+```bash
+make cronjob-smoke
+```
+
 ## Expected outputs
 
 - Run report: `state/runs/<run_id>.json`

@@ -1,4 +1,4 @@
-.PHONY: test lint format-check gates gate gate-fast gate-truth gate-ci docker-build docker-run-local report snapshot snapshot-openai smoke image smoke-fast smoke-ci image-ci ci ci-local docker-ok daily debug-snapshots explain-smoke dashboard weekly publish-last aws-env-check aws-deploy aws-smoke aws-first-run aws-schedule-status aws-oneoff-run aws-bootstrap aws-bootstrap-help deps deps-sync deps-check snapshot-guard verify-snapshots install-hooks replay gate-replay verify-publish verify-publish-live
+.PHONY: test lint format-check gates gate gate-fast gate-truth gate-ci docker-build docker-run-local report snapshot snapshot-openai smoke image smoke-fast smoke-ci image-ci ci ci-local docker-ok daily debug-snapshots explain-smoke dashboard weekly publish-last aws-env-check aws-deploy aws-smoke aws-first-run aws-schedule-status aws-oneoff-run aws-bootstrap aws-bootstrap-help deps deps-sync deps-check snapshot-guard verify-snapshots install-hooks replay gate-replay verify-publish verify-publish-live cronjob-smoke
 
 # Prefer repo venv if present; fall back to system python3.
 PY ?= .venv/bin/python
@@ -95,6 +95,15 @@ gate-replay:
 	$(PY) -m pytest -q
 	$(MAKE) verify-snapshots
 	$(PY) scripts/replay_smoke_fixture.py
+
+cronjob-smoke:
+	@tmp_data=$$(mktemp -d); tmp_state=$$(mktemp -d); \
+		JOBINTEL_DATA_DIR=$$tmp_data JOBINTEL_STATE_DIR=$$tmp_state \
+		JOBINTEL_CRONJOB_RUN_ID=2026-01-01T00:00:00Z \
+		CAREERS_MODE=SNAPSHOT EMBED_PROVIDER=stub ENRICH_MAX_WORKERS=1 DISCORD_WEBHOOK_URL= \
+		$(PY) scripts/cronjob_simulate.py; \
+		$(PY) scripts/replay_run.py --run-dir $$tmp_state/runs/20260101T000000Z --profile cs --strict --json >/dev/null; \
+		rm -rf $$tmp_data $$tmp_state
 
 docker-build:
 	$(call check_buildkit)

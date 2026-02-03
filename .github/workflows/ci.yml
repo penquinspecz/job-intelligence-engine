@@ -56,3 +56,5 @@ jobs:
           PY
           python scripts/publish_s3.py --run-dir /tmp/jobintel_ci_state/runs/ci-run --plan --json
           python scripts/replay_run.py --run-dir /tmp/jobintel_ci_state/runs/ci-run --profile cs --strict --json
+      - name: CronJob smoke (offline)
+        run: make cronjob-smoke
