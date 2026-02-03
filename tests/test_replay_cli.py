@@ -65,3 +65,14 @@ def test_replay_cli_json_mismatch(tmp_path: Path, capsys) -> None:
     assert artifact["expected"]
     assert artifact["actual"]
     assert artifact["path"].endswith("openai_ranked_jobs.cs.json")
+
+
+def test_replay_cli_json_mismatch_non_strict(tmp_path: Path, capsys) -> None:
+    run_dir = _build_run_dir(tmp_path)
+    corrupt = replay_run.DATA_DIR / "openai_ranked_jobs.cs.json"
+    corrupt.write_bytes(b"[2]")
+    exit_code = replay_run.main(["--run-dir", str(run_dir), "--json"])
+    out = capsys.readouterr().out
+    payload = json.loads(out)
+    assert exit_code == 0
+    assert payload["mismatched"] == 1

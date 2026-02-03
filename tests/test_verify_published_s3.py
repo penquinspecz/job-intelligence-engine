@@ -112,6 +112,33 @@ def test_verify_published_s3_missing_verifiable_artifacts(tmp_path: Path, capsys
     assert payload["ok"] is False
 
 
+def test_verify_published_s3_runtime_exception_returns_3(tmp_path: Path, monkeypatch, capsys) -> None:
+    run_id = "2026-01-02T00:00:00Z"
+    run_dir = _setup_run_dir(tmp_path, run_id)
+    verify_published_s3.RUN_METADATA_DIR = tmp_path / "state" / "runs"
+    verify_published_s3.DATA_DIR = tmp_path / "data"
+
+    def boom(**_kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(verify_published_s3, "_load_plan_entries", boom)
+    code = verify_published_s3.main(
+        [
+            "--bucket",
+            "bucket",
+            "--run-id",
+            run_id,
+            "--prefix",
+            "jobintel",
+            "--offline",
+            "--json",
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert code == 3
+    assert payload["ok"] is False
+
+
 def test_verify_published_s3_missing_objects(tmp_path: Path, capsys) -> None:
     if boto3 is None or mock_s3 is None:  # pragma: no cover
         pytest.skip("boto3/moto not installed")

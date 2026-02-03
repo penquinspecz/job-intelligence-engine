@@ -205,7 +205,7 @@ def _replay_report(
     lines.append(f"SUMMARY: checked={checked} matched={matched} mismatched={mismatched} missing={missing}")
     if missing > 0:
         lines.insert(0, "FAIL: missing artifacts")
-        return 2, lines, artifacts, {
+        return (2 if strict else 0), lines, artifacts, {
             "checked": checked,
             "matched": matched,
             "mismatched": mismatched,
@@ -213,7 +213,7 @@ def _replay_report(
         }
     if mismatched > 0:
         lines.insert(0, "FAIL: mismatched artifacts")
-        return 2 if strict else 2, lines, artifacts, {
+        return (2 if strict else 0), lines, artifacts, {
             "checked": checked,
             "matched": matched,
             "mismatched": mismatched,

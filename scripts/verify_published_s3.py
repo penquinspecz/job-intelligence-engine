@@ -245,7 +245,7 @@ def main(argv: List[str] | None = None) -> int:
                 "elapsed_ms": int((time.time() - start) * 1000),
             }
             print(json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False))
-        return 1
+        return 3
 
 
 if __name__ == "__main__":
