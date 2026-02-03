@@ -73,6 +73,15 @@ def _select_pip_tools_cache_dir(repo_root: Path) -> Path:
     raise SystemExit("No writable pip-tools cache dir found.")
 
 
+def _pip_args_for_ci() -> list[str]:
+    if os.environ.get("JIE_DEPS_TARGET") == "ci" or os.environ.get("GITHUB_ACTIONS") == "true":
+        return [
+            "--pip-args=--platform manylinux_2_17_x86_64 --implementation cp "
+            "--python-version 3.12 --abi cp312 --only-binary=:all:",
+        ]
+    return []
+
+
 def _run_pip_compile(requirements_in: Path, output_path: Path, cache_dir: Path) -> None:
     cmd = [
         sys.executable,
@@ -85,6 +94,7 @@ def _run_pip_compile(requirements_in: Path, output_path: Path, cache_dir: Path) 
         "--resolver=backtracking",
         "--cache-dir",
         str(cache_dir),
+        *_pip_args_for_ci(),
         "--output-file",
         str(output_path),
         str(requirements_in),
