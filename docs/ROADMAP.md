@@ -84,6 +84,7 @@ If a change doesn’t advance a milestone’s Definition of Done (DoD), it’s p
 - [ ] “Replay a run” workflow from run report (determinism contract)
 - [ ] Dashboard dependency management (FastAPI/uvicorn must be installable in offline/CI contexts or tests should run in CI image)
 - [ ] AI insights scope: currently weekly “pulse”; Phase 2 adds per-job recommendations and profile-aware coaching.
+- [ ] Document CI smoke gate design and failure modes (why it fails, what to inspect)
 
 ---
 
@@ -99,6 +100,8 @@ If a change doesn’t advance a milestone’s Definition of Done (DoD), it’s p
 - [x] Docs: “How to run / How to debug / What files to inspect”
 - [x] Snapshot debugging helpers exist (`make debug-snapshots`)
 - [x] Scoring diagnostics present in logs
+- [x] CI smoke test is deterministic and artifact-validated (no heredoc or shell fragility)
+- [x] CI, Docker, and local execution verified against identical dependency contracts
 
 ### Work Items
 - [x] `docs/OPERATIONS.md` describing input selection rules + flags + failure modes + artifact locations
