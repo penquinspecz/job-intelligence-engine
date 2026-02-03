@@ -19,16 +19,21 @@ kubectl apply -f ops/k8s/job.once.yaml  # optional: one-off Job template
 
 ## Run a one-off Job
 
-Use the CronJob template to run a single execution:
-```bash
-kubectl create job -n jobintel --from=cronjob/jobintel-daily jobintel-run-once
-kubectl logs -n jobintel job/jobintel-run-once
-```
-
-Or apply the standalone Job manifest:
+Canonical one-off execution (offline-safe, deterministic):
 ```bash
 kubectl apply -f ops/k8s/job.once.yaml
 kubectl logs -n jobintel job/jobintel-once
+```
+
+You can print the full run-once command sequence locally:
+```bash
+make k8s-run-once
+```
+
+Alternative: use the CronJob template to run a single execution:
+```bash
+kubectl create job -n jobintel --from=cronjob/jobintel-daily jobintel-run-once
+kubectl logs -n jobintel job/jobintel-run-once
 ```
 
 ## Required secrets
@@ -54,6 +59,17 @@ Notes:
 - Secrets-based auth is the primary example.
 - IRSA / workload identity is supported by Kubernetes, but not assumed here.
 - `role.yaml` is intentionally empty; remove Role/RoleBinding if you don’t need in-cluster RBAC.
+
+## ConfigMap + Secret expectations
+
+ConfigMap defaults (ops/k8s/configmap.yaml):
+- Required for publish: `JOBINTEL_S3_PREFIX` (optional; defaults to `jobintel`), `JOBINTEL_AWS_REGION` (or set `AWS_REGION`).
+- Deterministic defaults baked in: `CAREERS_MODE=SNAPSHOT`, `EMBED_PROVIDER=stub`, `ENRICH_MAX_WORKERS=1`.
+- Publish toggles: `PUBLISH_S3` and `PUBLISH_S3_DRY_RUN` (set `PUBLISH_S3_DRY_RUN=1` for offline plan-only runs).
+
+Secret expectations (ops/k8s/secret.example.yaml):
+- Required to actually publish: `JOBINTEL_S3_BUCKET` + AWS credentials (or IRSA/workload identity instead).
+- Optional: `DISCORD_WEBHOOK_URL`, `OPENAI_API_KEY`.
 
 ## Dry-run / deterministic mode
 

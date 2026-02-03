@@ -42,6 +42,7 @@ spec:
                 - --us_only
                 - --no_post
                 - --snapshot-only
+                - --offline
               env:
                 - name: CAREERS_MODE
                   value: "SNAPSHOT"
