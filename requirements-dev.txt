@@ -1,5 +1,5 @@
 # Dev tools export (generated). Keep in sync with pyproject.toml.
-pip-tools
+pip-tools>=7.4.1
 ruff
 pytest
 moto[s3]>=5.1.0
