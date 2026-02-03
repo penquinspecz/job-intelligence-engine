@@ -20,7 +20,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pip-tools", "pytest", "ruff", "moto[s3]>=5.1.0", "tomli; python_version < '3.11'"]
+dev = ["pip-tools>=7.4.1", "pytest", "ruff", "moto[s3]>=5.1.0", "tomli; python_version < '3.11'"]
 aws = ["boto3>=1.34,<2"]
 dashboard = ["fastapi", "uvicorn", "streamlit"]
 snapshots = ["playwright"]
