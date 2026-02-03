@@ -140,8 +140,9 @@ class OpenAICareersProvider(BaseJobProvider):
 
         job_cards = soup.find_all(
             ["li", "div", "article", "section"],
-            class_=lambda c: c
-            and any(keyword in c.lower() for keyword in ["job", "card", "posting", "position", "role", "listing"]),
+            class_=lambda c: (
+                c and any(keyword in c.lower() for keyword in ["job", "card", "posting", "position", "role", "listing"])
+            ),
         )
 
         if not job_cards:
