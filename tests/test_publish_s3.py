@@ -466,3 +466,73 @@ def test_publish_s3_plan_does_not_call_boto3(tmp_path: Path, monkeypatch, capsys
     publish_s3.main()
     payload = json.loads(capsys.readouterr().out)
     assert payload["ok"] is True
+
+
+def test_publish_s3_plan_allows_missing_creds(tmp_path: Path, monkeypatch, capsys) -> None:
+    runs = tmp_path / "state" / "runs"
+    monkeypatch.setattr(publish_s3, "RUN_METADATA_DIR", runs)
+    run_id, _ = _setup_run(tmp_path)
+
+    for var in (
+        "JOBINTEL_S3_BUCKET",
+        "AWS_REGION",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+        "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+        "AWS_PROFILE",
+        "AWS_SHARED_CREDENTIALS_FILE",
+    ):
+        monkeypatch.delenv(var, raising=False)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "publish_s3.py",
+            "--run_id",
+            run_id,
+            "--plan",
+            "--json",
+        ],
+    )
+
+    publish_s3.main()
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is True
+    assert payload["preflight"]["ok"] is False
+
+
+def test_publish_s3_dry_run_allows_missing_creds(tmp_path: Path, monkeypatch, capsys) -> None:
+    runs = tmp_path / "state" / "runs"
+    monkeypatch.setattr(publish_s3, "RUN_METADATA_DIR", runs)
+    run_id, _ = _setup_run(tmp_path)
+
+    for var in (
+        "JOBINTEL_S3_BUCKET",
+        "AWS_REGION",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+        "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+        "AWS_PROFILE",
+        "AWS_SHARED_CREDENTIALS_FILE",
+    ):
+        monkeypatch.delenv(var, raising=False)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "publish_s3.py",
+            "--run_id",
+            run_id,
+            "--dry-run",
+            "--json",
+        ],
+    )
+
+    publish_s3.main()
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is True
+    assert payload["preflight"]["ok"] is False

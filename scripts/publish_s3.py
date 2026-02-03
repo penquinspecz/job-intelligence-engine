@@ -507,21 +507,25 @@ def main() -> int:
         prefix=args.prefix,
         dry_run=args.dry_run,
     )
+    allow_preflight_fail = args.plan or args.dry_run
     if not preflight.get("ok"):
-        if args.json:
-            print(
-                json.dumps(
-                    {
-                        "ok": False,
-                        "preflight": preflight,
-                        "plan": [],
-                        "warnings": preflight.get("warnings", []),
-                        "errors": preflight.get("errors", []),
-                    },
-                    sort_keys=True,
+        if allow_preflight_fail:
+            logger.warning("AWS preflight failed (plan/dry-run): %s", ", ".join(preflight.get("errors", [])))
+        else:
+            if args.json:
+                print(
+                    json.dumps(
+                        {
+                            "ok": False,
+                            "preflight": preflight,
+                            "plan": [],
+                            "warnings": preflight.get("warnings", []),
+                            "errors": preflight.get("errors", []),
+                        },
+                        sort_keys=True,
+                    )
                 )
-            )
-        _fail_validation(f"AWS preflight failed: {', '.join(preflight.get('errors', []))}")
+            _fail_validation(f"AWS preflight failed: {', '.join(preflight.get('errors', []))}")
 
     if args.latest and args.run_dir:
         raise SystemExit("cannot specify --latest and --run-dir together")
