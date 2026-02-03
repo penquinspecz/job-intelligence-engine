@@ -7,6 +7,7 @@ except ModuleNotFoundError:
     from scripts import _bootstrap  # noqa: F401
 
 import argparse
+import hashlib
 import html as html_lib
 import json
 import os
@@ -23,11 +24,23 @@ from urllib.request import Request, urlopen
 from ji_engine.providers.openai_provider import CAREERS_SEARCH_URL
 from ji_engine.providers.registry import load_providers_config
 from ji_engine.utils.job_id import extract_job_id_from_url
-from ji_engine.utils.verification import compute_sha256_bytes, compute_sha256_file
 
 
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _sha256_file(path: Path) -> Optional[str]:
+    if not path.exists():
+        return None
+    try:
+        return _sha256_bytes(path.read_bytes())
+    except Exception:
+        return None
 
 
 def _atomic_write(path: Path, data: bytes) -> None:
@@ -47,6 +60,25 @@ def _atomic_write(path: Path, data: bytes) -> None:
 
 def _meta_path(out_dir: Path) -> Path:
     return out_dir / "index.meta.json"
+
+
+def _manifest_key(out_dir: Path) -> str:
+    parts = out_dir.parts
+    if "data" in parts:
+        idx = parts.index("data")
+        return str(Path(*parts[idx:]) / "index.html")
+    return str(out_dir / "index.html")
+
+
+def _update_manifest(manifest_path: Path, key: str, sha256: Optional[str], bytes_count: int) -> None:
+    if manifest_path.exists():
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            payload = {}
+    else:
+        payload = {}
+    payload[key] = {"sha256": sha256, "bytes": bytes_count}
+    _atomic_write(manifest_path, json.dumps(payload, indent=2, sort_keys=True).encode("utf-8"))
 
 
 def _build_meta(
@@ -71,27 +103,6 @@ def _build_meta(
 
 def _write_meta(out_dir: Path, payload: dict) -> None:
     _atomic_write(_meta_path(out_dir), json.dumps(payload, indent=2, sort_keys=True).encode("utf-8"))
-
-
-def _load_manifest(path: Path) -> dict:
-    if not path.exists():
-        return {}
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {}
-    return payload if isinstance(payload, dict) else {}
-
-
-def _snapshot_bytes(path: Path) -> Tuple[Optional[str], Optional[int]]:
-    if not path.exists():
-        return None, None
-    data = path.read_bytes()
-    return compute_sha256_bytes(data), len(data)
-
-
-def _write_manifest(path: Path, payload: dict) -> None:
-    _atomic_write(path, json.dumps(payload, indent=2, sort_keys=True).encode("utf-8"))
 
 
 def _fetch_html(url: str, timeout: float, user_agent: str) -> Tuple[Optional[bytes], Optional[int], Optional[str]]:
@@ -233,43 +244,27 @@ def main(argv: Optional[list[str]] = None) -> int:
         help="Comma-separated provider ids (repeatable). Overrides --provider when set.",
     )
     ap.add_argument("--url")
-    ap.add_argument("--out_dir")
+    ap.add_argument(
+        "--out_dir",
+        required=True,
+        help="Output directory for snapshot writes (required).",
+    )
     ap.add_argument("--timeout", type=float, default=20.0)
     ap.add_argument("--user_agent", default="job-intelligence-engine/0.1")
     ap.add_argument("--jobs_json", help="OpenAI jobs JSON to source apply_url values from.")
     ap.add_argument("--max_jobs", type=int, default=None, help="Limit job detail snapshots.")
-    ap.add_argument("--apply", action="store_true", help="Apply refreshed snapshots to pinned fixtures.")
-    ap.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Write refreshed snapshots to a temp dir and compare to manifest (default).",
-    )
-    ap.add_argument("--dry_run", action="store_true", help=argparse.SUPPRESS)
+    ap.add_argument("--dry_run", dest="dry_run", action="store_true")
+    ap.add_argument("--dry-run", dest="dry_run", action="store_true")
+    ap.add_argument("--apply", action="store_true", help="Apply snapshot updates to the output dir.")
+    ap.add_argument("--manifest-path", dest="manifest_path")
+    ap.add_argument("--temp-dir", dest="temp_dir")
     ap.add_argument("--force", action="store_true")
     ap.add_argument(
         "--providers_config",
         default=str(Path("config") / "providers.json"),
         help="Path to providers config JSON.",
     )
-    ap.add_argument(
-        "--manifest-path",
-        default=str(Path("tests") / "fixtures" / "golden" / "snapshot_bytes.manifest.json"),
-        help="Snapshot bytes manifest path.",
-    )
-    ap.add_argument(
-        "--temp-dir",
-        help="Optional temp dir for --dry-run snapshots (defaults to a new temp dir).",
-    )
     args = ap.parse_args(argv)
-
-    if args.apply and args.dry_run:
-        raise SystemExit("ERROR: choose either --apply or --dry-run, not both.")
-
-    dry_run = True
-    if args.apply:
-        dry_run = False
-    if args.dry_run:
-        dry_run = True
 
     providers_arg = args.providers
     if providers_arg:
@@ -284,16 +279,11 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     providers_cfg = load_providers_config(Path(args.providers_config))
     provider_map = {p["provider_id"]: p for p in providers_cfg}
-
-    manifest_path = Path(args.manifest_path)
-    manifest_payload = _load_manifest(manifest_path)
-    updated_manifest: dict[str, dict[str, int | str]] = {}
-
-    temp_root: Optional[Path] = None
-    if dry_run:
-        temp_root = Path(args.temp_dir) if args.temp_dir else Path(tempfile.mkdtemp(prefix="jobintel-snapshots-"))
-        temp_root.mkdir(parents=True, exist_ok=True)
-        print(f"DRY-RUN: writing refreshed snapshots under {temp_root}")
+    dry_run = bool(args.dry_run)
+    apply = bool(args.apply) or not dry_run
+    if args.apply:
+        dry_run = False
+    manifest_path = Path(args.manifest_path) if args.manifest_path else None
 
     exit_code = 0
     for provider in providers_list:
@@ -303,15 +293,12 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         provider_cfg = provider_map.get(provider)
         url = args.url or (provider_cfg.get("board_url") if provider_cfg else None) or CAREERS_SEARCH_URL
-        pinned_dir = Path(
-            args.out_dir
-            or (provider_cfg.get("snapshot_dir") if provider_cfg else None)
-            or str(Path("data") / f"{provider}_snapshots")
-        )
-        out_dir = pinned_dir
+        out_dir = Path(args.out_dir)
+        write_dir = out_dir
         if dry_run:
-            out_dir = temp_root / pinned_dir.name  # type: ignore[operator]
-        html_path = out_dir / "index.html"
+            temp_root = Path(args.temp_dir) if args.temp_dir else Path(tempfile.mkdtemp(prefix="snapshot_refresh_"))
+            write_dir = temp_root / out_dir.name
+        html_path = write_dir / "index.html"
 
         data, status, error = _fetch_html(url, args.timeout, args.user_agent)
         ok = status == 200 and data is not None
@@ -319,55 +306,24 @@ def main(argv: Optional[list[str]] = None) -> int:
         if not ok:
             note = error or f"HTTP status {status}"
         if not ok and not args.force:
-            if not dry_run:
-                existing_sha256: Optional[str] = None
-                pinned_html = pinned_dir / "index.html"
-                if pinned_html.exists():
-                    try:
-                        existing_sha256 = compute_sha256_file(pinned_html)
-                    except Exception:
-                        existing_sha256 = None
+            if apply:
                 payload = _build_meta(
                     provider=provider,
                     url=url,
                     http_status=status,
                     bytes_count=len(data or b""),
-                    sha256=existing_sha256,
+                    sha256=_sha256_file(html_path),
                     note=note,
                 )
-                _write_meta(pinned_dir, payload)
+                _write_meta(write_dir, payload)
             exit_code = max(exit_code, 1)
-            continue
-
-        if dry_run:
-            exit_code = max(exit_code, 0 if ok else 1)
-            if data is not None:
-                _atomic_write(html_path, data)
-            actual_sha, actual_bytes = _snapshot_bytes(html_path)
-            pinned_html = pinned_dir / "index.html"
-            try:
-                rel_key = pinned_html.relative_to(Path.cwd()).as_posix()
-            except ValueError:
-                rel_key = pinned_html.as_posix()
-            expected = manifest_payload.get(rel_key)
-            print(f"DRY-RUN: {provider} -> {html_path}")
-            print(f"  refreshed sha256={actual_sha} bytes={actual_bytes}")
-            if expected:
-                print(f"  manifest sha256={expected.get('sha256')} bytes={expected.get('bytes')}")
-            else:
-                print("  manifest entry missing")
             continue
 
         if data is not None:
             _atomic_write(html_path, data)
         else:
             print("Warning: no HTML content fetched; leaving existing index.html untouched.")
-        sha256: Optional[str] = None
-        if html_path.exists():
-            try:
-                sha256 = compute_sha256_file(html_path)
-            except Exception:
-                sha256 = None
+        sha256 = _sha256_file(html_path)
         payload = _build_meta(
             provider=provider,
             url=url,
@@ -376,16 +332,11 @@ def main(argv: Optional[list[str]] = None) -> int:
             sha256=sha256,
             note=note,
         )
-        _write_meta(out_dir, payload)
-        pinned_html = pinned_dir / "index.html"
-        sha, bytes_count = _snapshot_bytes(pinned_html)
-        if sha is not None and bytes_count is not None:
-            try:
-                rel_key = pinned_html.relative_to(Path.cwd()).as_posix()
-            except ValueError:
-                rel_key = pinned_html.as_posix()
-            updated_manifest[rel_key] = {"sha256": sha, "bytes": bytes_count}
-        if provider == "openai":
+        _write_meta(write_dir, payload)
+        if manifest_path is not None and apply:
+            key = _manifest_key(out_dir)
+            _update_manifest(manifest_path, key, sha256, len(data or b""))
+        if provider == "openai" and apply:
             html_text = html_path.read_text(encoding="utf-8", errors="ignore")
             jobs_json_path: Optional[Path] = Path(args.jobs_json) if args.jobs_json else None
             if jobs_json_path is None:
@@ -409,11 +360,6 @@ def main(argv: Optional[list[str]] = None) -> int:
                     apply_urls=apply_urls,
                     max_jobs=args.max_jobs,
                 )
-
-    if updated_manifest:
-        payload = dict(manifest_payload)
-        payload.update(updated_manifest)
-        _write_manifest(manifest_path, payload)
 
     return exit_code
 

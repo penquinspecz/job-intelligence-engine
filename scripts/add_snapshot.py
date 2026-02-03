@@ -13,8 +13,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from ji_engine.config import DATA_DIR
-
 
 def _snapshot_dir(provider_id: str, data_dir: Path) -> Path:
     return data_dir / f"{provider_id}_snapshots"
@@ -28,6 +26,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="Add a provider HTML snapshot from a local file.")
     ap.add_argument("--provider", required=True, help="Provider id (e.g., openai).")
     ap.add_argument("--from-file", required=True, help="Path to local HTML file.")
+    ap.add_argument(
+        "--out-dir",
+        required=True,
+        help="Output directory for snapshot writes (required).",
+    )
     ap.add_argument("--write-metadata", action="store_true", help="Write metadata.json alongside snapshot.")
     args = ap.parse_args(argv)
 
@@ -36,8 +39,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     if not src.exists():
         raise SystemExit(f"Input file not found: {src}")
 
-    data_dir = Path(DATA_DIR)
-    snapshot_dir = _snapshot_dir(provider_id, data_dir)
+    out_dir = Path(args.out_dir).expanduser()
+    snapshot_dir = _snapshot_dir(provider_id, out_dir)
     snapshot_dir.mkdir(parents=True, exist_ok=True)
     dest = snapshot_dir / "index.html"
     shutil.copyfile(src, dest)

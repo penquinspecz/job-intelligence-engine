@@ -7,6 +7,7 @@ except ModuleNotFoundError:
     from scripts import _bootstrap  # noqa: F401
 
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -22,17 +23,11 @@ from ji_engine.providers.openai_provider import OpenAICareersProvider
 from ji_engine.providers.registry import load_providers_config
 from ji_engine.providers.retry import ProviderFetchError
 from ji_engine.providers.snapshot_json_provider import SnapshotJsonProvider
-from ji_engine.utils.verification import compute_sha256_file
 from jobintel.snapshots.validate import validate_snapshot_file
 
 _STATUS_CODE_RE = re.compile(r"status (\d+)")
 
 logger = logging.getLogger(__name__)
-_CANONICAL_JSON_KWARGS = {"ensure_ascii": False, "sort_keys": True, "separators": (",", ":")}
-
-
-def _canonical_json(obj: Any) -> str:
-    return json.dumps(obj, **_CANONICAL_JSON_KWARGS) + "\n"
 
 
 def _sort_key(job: Dict[str, Any]) -> tuple[str, str]:
@@ -55,10 +50,20 @@ def _write_raw_jobs(provider_id: str, jobs: List[Dict[str, Any]], output_dir: Pa
     filename = f"{provider_id}_raw_jobs.json"
     out_path = output_dir / filename
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(_canonical_json(jobs), encoding="utf-8")
+    with out_path.open("w", encoding="utf-8") as f:
+        json.dump(jobs, f, indent=2, ensure_ascii=False)
     print(f"Scraped {len(jobs)} jobs.")
     print(f"Wrote JSON to {out_path.resolve()}")
     return out_path
+
+
+def _sha256(path: Path) -> Optional[str]:
+    if not path.exists():
+        return None
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except Exception:
+        return None
 
 
 def _scrape_meta_path(provider_id: str, output_dir: Path) -> Path:
@@ -132,6 +137,10 @@ def main(argv: List[str] | None = None) -> int:
         help="Path to providers config JSON.",
     )
     ap.add_argument(
+        "--snapshot-write-dir",
+        help="Explicit directory for live snapshot writes (required to persist HTML).",
+    )
+    ap.add_argument(
         "--snapshot-only",
         action="store_true",
         help="Fail if any provider would use live scraping; enforce snapshot-only determinism.",
@@ -146,14 +155,18 @@ def main(argv: List[str] | None = None) -> int:
             raise SystemExit(f"Unknown provider_id '{provider_id}' in --providers")
 
     output_dir = Path(DATA_DIR)
+    snapshot_write_dir = Path(args.snapshot_write_dir).expanduser() if args.snapshot_write_dir else None
     for provider_id in requested:
         os.environ["JOBINTEL_PROVENANCE_LOG"] = "1"
         provider_cfg = provider_map[provider_id]
         provider_type = provider_cfg.get("type", "snapshot")
         mode = (args.mode or provider_cfg.get("mode") or "snapshot").upper()
         if args.snapshot_only and mode != "SNAPSHOT":
-            msg = f"snapshot-only mode forbids live scraping for provider {provider_id}"
-            logger.error(msg)
+            logger.error(
+                "[run_scrape] snapshot-only enforced; provider %s requested %s",
+                provider_id,
+                mode,
+            )
             raise SystemExit(2)
         provenance: Dict[str, Any] = {
             "provider_id": provider_id,
@@ -179,11 +192,11 @@ def main(argv: List[str] | None = None) -> int:
         if provider_type == "openai":
             if mode == "AUTO":
                 mode = "LIVE"
-            if args.snapshot_only and mode != "SNAPSHOT":
-                msg = f"snapshot-only mode forbids live scraping for provider {provider_id}"
-                logger.error(msg)
-                raise SystemExit(2)
-            provider = OpenAICareersProvider(mode=mode, data_dir=str(output_dir))
+            provider = OpenAICareersProvider(
+                mode=mode,
+                data_dir=str(output_dir),
+                snapshot_write_dir=snapshot_write_dir,
+            )
             snapshot_path = provider._snapshot_file()
             snapshot_meta = _load_snapshot_meta(snapshot_path)
             if mode == "LIVE":
@@ -234,13 +247,7 @@ def main(argv: List[str] | None = None) -> int:
                 provenance["live_result"] = "skipped"
             provenance["snapshot_path"] = str(snapshot_path)
             provenance["snapshot_mtime_iso"] = _mtime_iso(snapshot_path)
-            snapshot_sha256 = snapshot_meta.get("sha256")
-            if snapshot_sha256 is None and snapshot_path.exists():
-                try:
-                    snapshot_sha256 = compute_sha256_file(snapshot_path)
-                except Exception:
-                    snapshot_sha256 = None
-            provenance["snapshot_sha256"] = snapshot_sha256
+            provenance["snapshot_sha256"] = snapshot_meta.get("sha256") or _sha256(snapshot_path)
             if snapshot_path.exists():
                 ok, reason = validate_snapshot_file(provider_id, snapshot_path)
                 provenance["snapshot_validated"] = ok
@@ -263,15 +270,11 @@ def main(argv: List[str] | None = None) -> int:
             _log_provenance(provider_id, provenance)
             # For backward compatibility, also write to canonical RAW_JOBS_JSON.
             if provider_id == "openai":
-                RAW_JOBS_JSON.write_text(_canonical_json(jobs), encoding="utf-8")
+                RAW_JOBS_JSON.write_text(json.dumps(jobs, indent=2, ensure_ascii=False), encoding="utf-8")
         else:
             if provider_type == "ashby":
                 if mode == "AUTO":
                     mode = "LIVE" if provider_cfg.get("live_enabled", True) else "SNAPSHOT"
-                if args.snapshot_only and mode != "SNAPSHOT":
-                    msg = f"snapshot-only mode forbids live scraping for provider {provider_id}"
-                    logger.error(msg)
-                    raise SystemExit(2)
                 snapshot_dir = Path(provider_cfg["snapshot_dir"])
                 snapshot_path = Path(provider_cfg["snapshot_path"])
                 if mode == "SNAPSHOT" and not snapshot_path.exists():
@@ -286,6 +289,7 @@ def main(argv: List[str] | None = None) -> int:
                     board_url=provider_cfg["board_url"],
                     snapshot_dir=snapshot_dir,
                     mode=mode,
+                    snapshot_write_dir=snapshot_write_dir,
                 )
                 if mode == "LIVE":
                     try:
@@ -348,17 +352,11 @@ def main(argv: List[str] | None = None) -> int:
                 jobs = _normalize_jobs(raw_jobs)
                 _write_raw_jobs(provider_id, jobs, output_dir)
                 snapshot_meta = _load_snapshot_meta(snapshot_path)
-                snapshot_sha256 = snapshot_meta.get("sha256")
-                if snapshot_sha256 is None and snapshot_path.exists():
-                    try:
-                        snapshot_sha256 = compute_sha256_file(snapshot_path)
-                    except Exception:
-                        snapshot_sha256 = None
                 provenance.update(
                     {
                         "snapshot_path": str(snapshot_path),
                         "snapshot_mtime_iso": _mtime_iso(snapshot_path),
-                        "snapshot_sha256": snapshot_sha256,
+                        "snapshot_sha256": snapshot_meta.get("sha256") or _sha256(snapshot_path),
                         "parsed_job_count": len(jobs),
                     }
                 )
@@ -375,14 +373,10 @@ def main(argv: List[str] | None = None) -> int:
                 _write_scrape_meta(provider_id, output_dir, provenance)
                 _log_provenance(provider_id, provenance)
                 if provider_id == "openai":
-                    RAW_JOBS_JSON.write_text(_canonical_json(jobs), encoding="utf-8")
+                    RAW_JOBS_JSON.write_text(json.dumps(jobs, indent=2, ensure_ascii=False), encoding="utf-8")
             else:
                 if mode == "AUTO":
                     mode = "SNAPSHOT"
-                if args.snapshot_only and mode != "SNAPSHOT":
-                    msg = f"snapshot-only mode forbids live scraping for provider {provider_id}"
-                    logger.error(msg)
-                    raise SystemExit(2)
                 if mode != "SNAPSHOT":
                     raise SystemExit(f"Provider {provider_id} supports SNAPSHOT mode only")
                 snapshot_path = Path(provider_cfg["snapshot_path"])
@@ -397,18 +391,12 @@ def main(argv: List[str] | None = None) -> int:
                 jobs = _normalize_jobs(provider.fetch_jobs())
                 _write_raw_jobs(provider_id, jobs, output_dir)
                 snapshot_meta = _load_snapshot_meta(snapshot_path)
-                snapshot_sha256 = snapshot_meta.get("sha256")
-                if snapshot_sha256 is None and snapshot_path.exists():
-                    try:
-                        snapshot_sha256 = compute_sha256_file(snapshot_path)
-                    except Exception:
-                        snapshot_sha256 = None
                 provenance.update(
                     {
                         "scrape_mode": "snapshot",
                         "snapshot_path": str(snapshot_path),
                         "snapshot_mtime_iso": _mtime_iso(snapshot_path),
-                        "snapshot_sha256": snapshot_sha256,
+                        "snapshot_sha256": snapshot_meta.get("sha256") or _sha256(snapshot_path),
                         "parsed_job_count": len(jobs),
                     }
                 )

@@ -5,12 +5,13 @@ import scripts.add_snapshot as add_snapshot
 
 def test_add_snapshot_copies_html(tmp_path: Path, monkeypatch) -> None:
     data_dir = tmp_path / "data"
-    monkeypatch.setattr(add_snapshot, "DATA_DIR", data_dir)
 
     src = tmp_path / "source.html"
     src.write_text("<html>ok</html>", encoding="utf-8")
 
-    rc = add_snapshot.main(["--provider", "openai", "--from-file", str(src)])
+    rc = add_snapshot.main(
+        ["--provider", "openai", "--from-file", str(src), "--out-dir", str(data_dir)]
+    )
     assert rc == 0
 
     dest = data_dir / "openai_snapshots" / "index.html"
@@ -21,12 +22,13 @@ def test_add_snapshot_copies_html(tmp_path: Path, monkeypatch) -> None:
 
 def test_add_snapshot_writes_metadata(tmp_path: Path, monkeypatch) -> None:
     data_dir = tmp_path / "data"
-    monkeypatch.setattr(add_snapshot, "DATA_DIR", data_dir)
 
     src = tmp_path / "source.html"
     src.write_text("<html>meta</html>", encoding="utf-8")
 
-    rc = add_snapshot.main(["--provider", "openai", "--from-file", str(src), "--write-metadata"])
+    rc = add_snapshot.main(
+        ["--provider", "openai", "--from-file", str(src), "--write-metadata", "--out-dir", str(data_dir)]
+    )
     assert rc == 0
     meta = data_dir / "openai_snapshots" / "metadata.json"
     assert meta.exists()

@@ -66,16 +66,15 @@ def _refresh_snapshots(args: argparse.Namespace) -> int:
     providers_config = Path(args.providers_config)
     if args.provider == "all" and args.out:
         raise SystemExit("--out cannot be used with --provider all")
+    if not args.out:
+        raise SystemExit("--out is required for snapshot writes; use an explicit output path.")
 
     targets = _resolve_providers(args.provider, providers_config)
     status = 0
     for provider in targets:
         provider_id = provider["provider_id"]
         url = provider.get("careers_url") or provider.get("board_url") or CAREERS_SEARCH_URL
-        out_value = args.out or provider.get("snapshot_path")
-        if not out_value:
-            raise SystemExit(f"Missing snapshot path for provider '{provider_id}'.")
-        out_path = Path(out_value)
+        out_path = Path(args.out)
         fetch_method = (args.fetch or os.environ.get("JOBINTEL_SNAPSHOT_FETCH") or "requests").lower()
 
         try:
@@ -187,7 +186,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     refresh = snapshots_sub.add_parser("refresh", help="Refresh provider snapshots")
     refresh.add_argument("--provider", required=True, help="Provider id or 'all'.")
-    refresh.add_argument("--out", help="Override snapshot path (file).")
+    refresh.add_argument("--out", help="Output snapshot path (required).")
     refresh.add_argument("--force", action="store_true", help="Write snapshot even if validation fails.")
     refresh.add_argument("--fetch", choices=["requests", "playwright"], default="requests")
     refresh.add_argument("--timeout", type=float, default=20.0)

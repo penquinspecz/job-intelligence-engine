@@ -153,11 +153,14 @@ report:
 		-m scripts.report_changes --profile $(PROFILE) --limit $(LIMIT)
 
 snapshot-openai:
-	$(PY) scripts/update_snapshots.py --provider openai
+	$(PY) scripts/update_snapshots.py --provider openai --out_dir data/openai_snapshots
 
 snapshot:
 	@if [ -z "$(provider)" ]; then echo "Usage: make snapshot provider=<name>"; exit 2; fi
-	$(PY) scripts/update_snapshots.py --provider $(provider)
+	$(PY) scripts/update_snapshots.py --provider $(provider) --out_dir data/$(provider)_snapshots
+
+snapshot-guard:
+	bash scripts/assert_snapshots_clean.sh
 
 smoke:
 	$(call check_buildkit)

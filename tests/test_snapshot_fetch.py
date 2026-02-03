@@ -24,9 +24,14 @@ def test_fetch_html_requests(monkeypatch):
 
 
 def test_fetch_html_playwright_missing(monkeypatch):
-    import sys
+    # Deleting sys.modules is not deterministic; site-packages can still be re-imported.
+    real_import = __import__
 
-    monkeypatch.delitem(sys.modules, "playwright", raising=False)
-    monkeypatch.delitem(sys.modules, "playwright.sync_api", raising=False)
+    def blocked_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "playwright" or name.startswith("playwright."):
+            raise ModuleNotFoundError("No module named 'playwright'")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr("builtins.__import__", blocked_import)
     with pytest.raises(RuntimeError, match="Playwright is not installed"):
         fetch_html("https://example.com", method="playwright")

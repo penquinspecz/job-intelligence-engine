@@ -17,26 +17,6 @@ from jobintel.snapshots.validate import validate_snapshot_file
 CAREERS_SEARCH_URL = "https://openai.com/careers/search/"
 
 
-def _is_pinned_snapshot(snapshot_file: Path) -> bool:
-    repo_data_dir = Path(__file__).resolve().parents[2] / "data"
-    try:
-        in_repo_data = snapshot_file.resolve().is_relative_to(repo_data_dir.resolve())
-    except AttributeError:
-        in_repo_data = str(snapshot_file.resolve()).startswith(str(repo_data_dir.resolve()))
-    if not in_repo_data:
-        return False
-    return snapshot_file.parent.name.endswith("_snapshots")
-
-
-def _assert_pinned_snapshot_write_allowed(snapshot_file: Path) -> None:
-    if os.environ.get("PYTEST_CURRENT_TEST") and _is_pinned_snapshot(snapshot_file):
-        if os.environ.get("ALLOW_SNAPSHOT_CHANGES", "0") != "1":
-            raise RuntimeError(
-                "Refusing to overwrite pinned snapshot fixture. "
-                "Set ALLOW_SNAPSHOT_CHANGES=1 to allow intentional refresh."
-            )
-
-
 class OpenAICareersProvider(BaseJobProvider):
     """
     Provider for OpenAI careers (deprecated; prefer Ashby board scraping).
@@ -48,9 +28,26 @@ class OpenAICareersProvider(BaseJobProvider):
       data/openai_snapshots/index.html
     """
 
+    def __init__(
+        self,
+        *,
+        mode: str = "SNAPSHOT",
+        data_dir: str = "data",
+        snapshot_write_dir: Path | None = None,
+    ) -> None:
+        super().__init__(mode=mode, data_dir=data_dir)
+        self.snapshot_write_dir = snapshot_write_dir
+
     def _snapshot_file(self) -> Path:
         # Use centralized config path
         return SNAPSHOT_DIR / "index.html"
+
+    def _snapshot_write_file(self) -> Path:
+        if self.snapshot_write_dir is None:
+            raise RuntimeError(
+                "snapshot_write_dir is required for live snapshot writes; pass --snapshot-write-dir explicitly."
+            )
+        return Path(self.snapshot_write_dir) / "index.html"
 
     def fetch_jobs(self) -> List[RawJobPosting]:
         """
@@ -73,22 +70,22 @@ class OpenAICareersProvider(BaseJobProvider):
             print(f"[OpenAICareersProvider] LIVE blocked ({e}). Using snapshot.")
             return self.load_from_snapshot()
 
-        SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
-        _assert_pinned_snapshot_write_allowed(self._snapshot_file())
-        self._snapshot_file().write_text(html, encoding="utf-8")
+        snapshot_file = self._snapshot_write_file()
+        snapshot_file.parent.mkdir(parents=True, exist_ok=True)
+        snapshot_file.write_text(html, encoding="utf-8")
         if os.environ.get("JOBINTEL_PROVENANCE_LOG", "0") != "1":
             print(
                 "[OpenAICareersProvider] MODE=LIVE fetched_bytes=%d wrote_snapshot=%s"
-                % (len(html.encode("utf-8")), self._snapshot_file())
+                % (len(html.encode("utf-8")), snapshot_file)
             )
         return self._parse_html(html)
 
     def scrape_live(self) -> List[RawJobPosting]:
         """Attempt a live HTTP scrape, saving the HTML snapshot for reuse."""
         html = self._fetch_live_html()
-        SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
-        _assert_pinned_snapshot_write_allowed(self._snapshot_file())
-        self._snapshot_file().write_text(html, encoding="utf-8")
+        snapshot_file = self._snapshot_write_file()
+        snapshot_file.parent.mkdir(parents=True, exist_ok=True)
+        snapshot_file.write_text(html, encoding="utf-8")
         return self._parse_html(html)
 
     def load_from_snapshot(self) -> List[RawJobPosting]:
@@ -187,7 +184,6 @@ class OpenAICareersProvider(BaseJobProvider):
             )
             results.append(posting)
 
-        results.sort(key=self._stable_posting_key)
         print(f"[OpenAICareersProvider] Parsed {len(results)} jobs from HTML")
         return results
 
@@ -313,9 +309,6 @@ class OpenAICareersProvider(BaseJobProvider):
 
     def _extract_job_description_from_card(self, card: Tag, title: str) -> str:
         return f"Job Title: {title}\n\nFull job description available on detail page."
-
-    def _stable_posting_key(self, job: RawJobPosting) -> tuple[str, str, str, str]:
-        return (job.apply_url or "", job.title or "", job.location or "", job.team or "")
 
     def _element_before(self, elem1: Tag, elem2: Tag) -> bool:
         parent = elem1.find_parent()
