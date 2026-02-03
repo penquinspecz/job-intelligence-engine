@@ -9,6 +9,7 @@ import pytest
 
 from ji_engine.utils.verification import compute_sha256_file
 
+
 def _write_executable(path: Path, content: str) -> None:
     path.write_text(dedent(content).lstrip(), encoding="utf-8")
     path.chmod(0o755)

@@ -53,11 +53,6 @@ from ji_engine.config import (
     ranked_jobs_json,
     state_last_ranked,
 )
-from ji_engine.utils.verification import (
-    build_verifiable_artifacts,
-    compute_sha256_bytes,
-    compute_sha256_file,
-)
 from ji_engine.config import (
     shortlist_md as shortlist_md_path,
 )
@@ -65,6 +60,11 @@ from ji_engine.utils.content_fingerprint import content_fingerprint
 from ji_engine.utils.diff_report import build_diff_markdown, build_diff_report
 from ji_engine.utils.dotenv import load_dotenv
 from ji_engine.utils.job_identity import job_identity
+from ji_engine.utils.verification import (
+    build_verifiable_artifacts,
+    compute_sha256_bytes,
+    compute_sha256_file,
+)
 from jobintel.alerts import (
     build_last_seen,
     compute_alerts,

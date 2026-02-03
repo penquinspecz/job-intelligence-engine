@@ -10,8 +10,8 @@ import importlib
 import io
 import json
 import os
-import sys
 import shutil
+import sys
 import tempfile
 from contextlib import redirect_stdout
 from pathlib import Path

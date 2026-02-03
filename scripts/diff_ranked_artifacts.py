@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from ji_engine.utils.verification import compute_sha256_bytes
+
 VOLATILE_FIELDS = {
     "fetched_at",
     "scraped_at",

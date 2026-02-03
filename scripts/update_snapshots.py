@@ -22,8 +22,8 @@ from urllib.request import Request, urlopen
 
 from ji_engine.providers.openai_provider import CAREERS_SEARCH_URL
 from ji_engine.providers.registry import load_providers_config
-from ji_engine.utils.verification import compute_sha256_bytes, compute_sha256_file
 from ji_engine.utils.job_id import extract_job_id_from_url
+from ji_engine.utils.verification import compute_sha256_bytes, compute_sha256_file
 
 
 def _utcnow_iso() -> str:

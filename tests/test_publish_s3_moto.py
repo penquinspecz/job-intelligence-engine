@@ -13,8 +13,8 @@ except Exception:  # pragma: no cover
     mock_s3 = None
 
 import scripts.publish_s3 as publish_s3
-from scripts import verify_published_s3
 from ji_engine.utils.verification import compute_sha256_file
+from scripts import verify_published_s3
 
 pytestmark = pytest.mark.skipif(boto3 is None or mock_s3 is None, reason="boto3/moto not installed")
 

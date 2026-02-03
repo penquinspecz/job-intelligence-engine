@@ -1,12 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import importlib
 import json
 import sys
-import hashlib
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
-
 
 _CANONICAL_JSON_KWARGS = {"ensure_ascii": False, "sort_keys": True, "separators": (",", ":")}
 _PROJECTION_FIELDS = (

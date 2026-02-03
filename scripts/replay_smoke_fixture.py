@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
-import shutil
 import tempfile
 from pathlib import Path
 from typing import Dict

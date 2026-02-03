@@ -1,14 +1,14 @@
 from __future__ import annotations
 
+import csv
+import hashlib
 import importlib
 import json
 import os
 import shutil
 import sys
-from typing import Any, Dict, Iterable, List
 from pathlib import Path
-import csv
-import hashlib
+from typing import Any, Dict, Iterable, List
 
 HASHED_OUTPUT_FILES = [
     "openai_ranked_jobs.cs.json",

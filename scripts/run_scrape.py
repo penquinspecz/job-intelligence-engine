@@ -17,12 +17,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ji_engine.config import DATA_DIR, RAW_JOBS_JSON
-from ji_engine.utils.verification import compute_sha256_file
 from ji_engine.providers.ashby_provider import AshbyProvider
 from ji_engine.providers.openai_provider import OpenAICareersProvider
 from ji_engine.providers.registry import load_providers_config
 from ji_engine.providers.retry import ProviderFetchError
 from ji_engine.providers.snapshot_json_provider import SnapshotJsonProvider
+from ji_engine.utils.verification import compute_sha256_file
 from jobintel.snapshots.validate import validate_snapshot_file
 
 _STATUS_CODE_RE = re.compile(r"status (\d+)")

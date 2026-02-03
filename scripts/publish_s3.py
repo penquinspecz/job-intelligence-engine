@@ -13,6 +13,7 @@ from botocore.exceptions import ClientError
 
 from ji_engine.config import DATA_DIR, RUN_METADATA_DIR
 from jobintel.aws_runs import build_state_payload, write_last_success_state, write_provider_last_success_state
+
 try:
     from scripts import aws_env_check  # type: ignore
 except ModuleNotFoundError:
