@@ -166,36 +166,7 @@ jobs:
         run: |
           if [ ! -d smoke_artifacts ]; then
             mkdir -p smoke_artifacts
-            python - <<'PY'
-            import json
-            from pathlib import Path
-
-            artifacts = Path("smoke_artifacts")
-            artifacts.mkdir(parents=True, exist_ok=True)
-            (artifacts / "run_report.json").write_text(
-                json.dumps(
-                    {
-                        "run_id": "unknown",
-                        "status": "failed",
-                        "success": False,
-                        "error": "smoke_artifacts_missing",
-                    },
-                    sort_keys=True,
-                ),
-                encoding="utf-8",
-            )
-            (artifacts / "smoke_summary.json").write_text(
-                json.dumps(
-                    {
-                        "status": "failed",
-                        "exit_code": 1,
-                        "missing_artifacts": ["smoke_artifacts_dir"],
-                    },
-                    sort_keys=True,
-                ),
-                encoding="utf-8",
-            )
-            PY
+            python -c "import json; from pathlib import Path; artifacts=Path('smoke_artifacts'); artifacts.mkdir(parents=True, exist_ok=True); (artifacts/'run_report.json').write_text(json.dumps({'run_id':'unknown','status':'failed','success':False,'error':'smoke_artifacts_missing'}, sort_keys=True), encoding='utf-8'); (artifacts/'smoke_summary.json').write_text(json.dumps({'status':'failed','exit_code':1,'missing_artifacts':['smoke_artifacts_dir']}, sort_keys=True), encoding='utf-8')"
             echo "Smoke artifacts directory was missing; failing gate."
             exit 1
           fi
