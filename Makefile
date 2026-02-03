@@ -1,4 +1,4 @@
-.PHONY: test lint format-check gates gate gate-fast gate-truth gate-ci docker-build docker-run-local report snapshot snapshot-openai smoke image smoke-fast smoke-ci image-ci ci ci-local docker-ok daily debug-snapshots explain-smoke dashboard weekly publish-last aws-env-check aws-deploy aws-smoke aws-first-run aws-schedule-status aws-oneoff-run aws-bootstrap aws-bootstrap-help deps deps-sync deps-check snapshot-guard verify-snapshots install-hooks replay gate-replay verify-publish verify-publish-live cronjob-smoke
+.PHONY: test lint format-check gates gate gate-fast gate-truth gate-ci docker-build docker-run-local report snapshot snapshot-openai smoke image smoke-fast smoke-ci image-ci ci ci-local docker-ok daily debug-snapshots explain-smoke dashboard weekly publish-last aws-env-check aws-deploy aws-smoke aws-first-run aws-schedule-status aws-oneoff-run aws-bootstrap aws-bootstrap-help deps deps-sync deps-check snapshot-guard verify-snapshots install-hooks replay gate-replay verify-publish verify-publish-live cronjob-smoke k8s-commands
 
 # Prefer repo venv if present; fall back to system python3.
 PY ?= .venv/bin/python
@@ -104,6 +104,16 @@ cronjob-smoke:
 		$(PY) scripts/cronjob_simulate.py; \
 		$(PY) scripts/replay_run.py --run-dir $$tmp_state/runs/20260101T000000Z --profile cs --strict --json >/dev/null; \
 		rm -rf $$tmp_data $$tmp_state
+
+k8s-commands:
+	@echo "kubectl apply -f ops/k8s/namespace.yaml"
+	@echo "kubectl apply -f ops/k8s/serviceaccount.yaml"
+	@echo "kubectl apply -f ops/k8s/role.yaml"
+	@echo "kubectl apply -f ops/k8s/rolebinding.yaml"
+	@echo "kubectl apply -f ops/k8s/configmap.yaml"
+	@echo "kubectl apply -f ops/k8s/secret.example.yaml"
+	@echo "kubectl apply -f ops/k8s/cronjob.yaml"
+	@echo "kubectl apply -f ops/k8s/job.once.yaml  # optional one-off job"
 
 docker-build:
 	$(call check_buildkit)

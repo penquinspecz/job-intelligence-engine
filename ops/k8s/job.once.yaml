@@ -1,0 +1,70 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: jobintel-once
+  namespace: jobintel
+  labels:
+    app.kubernetes.io/name: jobintel
+    app.kubernetes.io/component: job
+  annotations:
+    app.kubernetes.io/managed-by: jobintel
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: jobintel
+        app.kubernetes.io/component: job
+    spec:
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+      restartPolicy: Never
+      serviceAccountName: jobintel-sa
+      containers:
+        - name: jobintel
+          image: ghcr.io/yourorg/jobintel:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            readOnlyRootFilesystem: true
+          command:
+            - bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              python scripts/run_daily.py --profiles cs --us_only --no_post --snapshot-only --offline
+              RUN_DIR="$(ls -1dt /app/state/runs/* | head -n1)"
+              python scripts/publish_s3.py --run-dir "$RUN_DIR" --plan --json > /app/state/publish_plan.json
+              python scripts/replay_run.py --run-dir "$RUN_DIR" --profile cs --strict --json > /app/state/replay_report.json
+          env:
+            - name: CAREERS_MODE
+              value: "SNAPSHOT"
+            - name: EMBED_PROVIDER
+              value: "stub"
+            - name: ENRICH_MAX_WORKERS
+              value: "1"
+          envFrom:
+            - configMapRef:
+                name: jobintel-config
+            - secretRef:
+                name: jobintel-secrets
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+          volumeMounts:
+            - name: jobintel-data
+              mountPath: /app/data
+            - name: jobintel-state
+              mountPath: /app/state
+      volumes:
+        - name: jobintel-data
+          emptyDir: {}
+        - name: jobintel-state
+          emptyDir: {}

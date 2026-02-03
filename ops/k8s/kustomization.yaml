@@ -11,3 +11,4 @@ resources:
   - pvc-data.yaml
   - pvc-state.yaml
   - cronjob.yaml
+  - job.once.yaml

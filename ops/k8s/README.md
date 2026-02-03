@@ -14,6 +14,7 @@ kubectl apply -f ops/k8s/rolebinding.yaml
 kubectl apply -f ops/k8s/configmap.yaml
 kubectl apply -f ops/k8s/secret.example.yaml  # replace with real secret
 kubectl apply -f ops/k8s/cronjob.yaml
+kubectl apply -f ops/k8s/job.once.yaml  # optional: one-off Job template
 ```
 
 ## Run a one-off Job
@@ -22,6 +23,12 @@ Use the CronJob template to run a single execution:
 ```bash
 kubectl create job -n jobintel --from=cronjob/jobintel-daily jobintel-run-once
 kubectl logs -n jobintel job/jobintel-run-once
+```
+
+Or apply the standalone Job manifest:
+```bash
+kubectl apply -f ops/k8s/job.once.yaml
+kubectl logs -n jobintel job/jobintel-once
 ```
 
 ## Required secrets

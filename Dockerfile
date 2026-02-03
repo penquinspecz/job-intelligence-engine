@@ -39,6 +39,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 COPY scripts /app/scripts
 COPY config /app/config
 COPY docs /app/docs
+COPY ops /app/ops
 COPY tests /app/tests
 COPY schemas /app/schemas
 # Copy committed snapshot fixtures (deterministic/offline)
