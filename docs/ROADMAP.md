@@ -25,12 +25,12 @@ If a change doesn’t advance a milestone’s Definition of Done (DoD), it’s p
 
 ## Updated Product Intent (so we don’t accidentally build the wrong thing)
 
-### Phase 1 (current focus): “Useful every day, deployable in AWS”
+### Phase 1 (current focus): “Useful every day, deployable via Kubernetes or cloud-agnostic schedulers”
 - Daily run produces artifacts + run registry
 - Discord notifications (deltas + top items)
 - Minimal dashboard API to browse runs/artifacts
 - Simple weekly AI insights report (cached, guarded, post summary to Discord)
-- AWS deployment: scheduled runs + S3 publishing + domain-backed dashboard endpoint
+- Kubernetes CronJob deployment: scheduled runs + object-store publishing + domain-backed dashboard endpoint (AWS optional)
 
 ### Phase 2+: “Multi-user + powerful UI + deeper AI”
 - Users upload resume/job profile → their own scoring runs, alerts, and state
@@ -80,14 +80,14 @@ If a change doesn’t advance a milestone’s Definition of Done (DoD), it’s p
 ---
 
 ## Known Sharp Edges / TODO (updated)
-- [ ] **Replayability gap:** archive *selected scoring inputs* per run (not just final outputs) to enable true regeneration
-- [ ] Provider failure surfacing: retries/backoff, explicit unavailable reasons in run report + Discord
+- [x] **Replayability gap closed:** selected scoring inputs are archived per run for regeneration
+- [x] Provider failure surfacing: retries/backoff, explicit unavailable reasons in run report + Discord
 - [ ] Log destination / rotation strategy for AWS runs (stdout + CloudWatch + retention)
-- [x] “Replay a run” workflow exists (`scripts/replay_run.py`) but currently validates hashes only
+- [x] “Replay a run” workflow exists (`scripts/replay_run.py`) with hash verification + optional `--recalc`
 - [ ] Dashboard dependency management (FastAPI/uvicorn must be installable in offline/CI contexts or tests should run in CI image)
 - [ ] AI insights scope: currently weekly “pulse”; Phase 2 adds per-job recommendations and profile-aware coaching.
 - [ ] Document CI smoke gate design and failure modes (why it fails, what to inspect)
-- [ ] **AWS IAM footguns:** document task role vs execution role and minimum S3/SSM permissions before first deploy
+- [ ] **AWS IAM footguns:** document execution role vs task role and any SSM permissions (if used) before first deploy
 - [ ] **Artifact hygiene:** ensure secrets never leak into run reports/artifacts; add a redaction sanity test if needed
 
 ---
@@ -121,44 +121,46 @@ If a change doesn’t advance a milestone’s Definition of Done (DoD), it’s p
 **Goal:** Given a run report, you can reproduce and explain the output.
 
 ### Definition of Done (DoD)
-- [ ] Run report records *why* each scoring input was selected (rule + freshness comparison),
+- [x] Run report records *why* each scoring input was selected (rule + freshness comparison),
       not just which file was used.
-- [ ] Run report has a stable schema contract documented:
+- [x] Run report has a stable schema contract documented:
   - [x] `run_report_schema_version` exists
   - [x] `docs/RUN_REPORT.md` documents fields + meanings
-- [ ] **Input archival exists for regeneration:** the *exact selected scoring inputs* for a run are copied into
+- [x] **Input archival exists for regeneration:** the *exact selected scoring inputs* for a run are copied into
       `state/runs/<run_id>/inputs/...` (or equivalent), sufficient to re-run scoring without mutable `data/` files.
-- [ ] “Replay a run” instructions exist:
+- [x] “Replay a run” instructions exist:
   - given a run_id (and/or archived history dir), reproduce the exact shortlist output
 - [x] Optional helper script `scripts/replay_run.py` validates hashes and prints a clear reproducibility report.
-- [ ] Optional but high-leverage: replay tool can **recalculate** scoring from archived inputs and diff against archived outputs.
+- [x] Optional but high-leverage: replay tool can **recalculate** scoring from archived inputs and diff against archived outputs.
 
 ### Work Items
-- [ ] Add `selection_reason` fields in run report for:
+- [x] Add `selection_reason` fields in run report for:
   - labeled vs enriched resolution
   - enriched vs AI-enriched resolution (when applicable)
 - [x] Add `docs/RUN_REPORT.md` with schema and troubleshooting
 - [x] Add `scripts/replay_run.py` (read-only) + tests
-- [ ] Add input archival step to end-of-run:
+- [x] Add input archival step to end-of-run:
   - archive the *selected* scoring inputs (labeled/enriched/ai-enriched, whichever won)
   - archive the candidate profile used for scoring
   - record archived paths + hashes in run report
-- [ ] Extend replay tooling with `--recalc` (or similar):
+- [x] Extend replay tooling with `--recalc` (or similar):
   - load archived inputs
   - run current scoring against them deterministically
   - diff outputs vs archived ranked artifacts
 
 ---
 
-## Milestone 2 — Deployment: scheduled run + S3 artifact publishing (Phase 1 target)
+## Milestone 2 — Scheduled run + object-store publishing (Kubernetes CronJob first)
 
-**Goal:** “It runs itself.” EventBridge/ECS runs daily, pushes outputs, optional alert.
+**Goal:** “It runs itself.” A Kubernetes CronJob (or equivalent orchestrator) runs daily, publishes to an
+S3-compatible object store, optional alerts.
 
 ### Definition of Done (DoD)
-- [ ] ECS task runs end-to-end with mounted/ephemeral state
-- [ ] Artifacts uploaded to S3 with stable keys (per profile + latest + run_id)
+- [ ] Kubernetes CronJob runs end-to-end with mounted/ephemeral state
+- [x] Publish plan + offline verification contract exists for object-store keys (verifiable allowlist)
+- [ ] End-to-end publish to a real object-store bucket verified (runs + latest keys)
 - [ ] Discord alerts sent only when diffs exist (or optionally always send summary; configurable)
-- [ ] Minimal IAM policy documented (least privilege)
+- [x] Minimal object-store IAM policy documented (least privilege; AWS example)
 - [ ] Domain-backed dashboard endpoint (API first; UI can come later)
 - [ ] Runbook: deploy, inspect last run, roll back, rotate secrets
  - [ ] Proof artifacts captured (for verification):
@@ -168,17 +170,19 @@ If a change doesn’t advance a milestone’s Definition of Done (DoD), it’s p
 
 ### Work Items
 - [x] Implement `scripts/publish_s3.py` and wire it into end-of-run (after artifacts persisted)
-- [ ] Define S3 key structure + retention strategy:
+- [x] Publish plan + offline verification (`publish_s3 --plan --json`, `verify_published_s3 --offline`)
+- [x] Orchestrator-shape local smoke (`make ecs-shape-smoke`)
+- [x] Define object-store key structure + retention strategy:
   - `s3://<bucket>/runs/<run_id>/...`
   - `s3://<bucket>/latest/<provider>/<profile>/...`
-- [ ] Add `ops/aws/README.md` with:
+- [x] Add `ops/aws/README.md` with:
   - required env vars/secrets (Discord webhook, AI keys, dashboard URL)
   - ECS taskdef + EventBridge schedule steps
-  - IAM least-privilege policy (**task role vs execution role explicitly**)
+  - IAM least-privilege policy (task role + operator verify role)
   - CloudWatch logs + metrics basics
 - [x] Add `ops/aws/infra/` scaffolding (Terraform or CDK — pick one; keep minimal)
 - [ ] Add a “deployment smoke” script to validate AWS env vars and connectivity
-- [ ] Add a published-artifact verification script (`scripts/verify_published_s3.py`) and CI-friendly checks (optional)
+- [x] Add a published-artifact verification script (`scripts/verify_published_s3.py`) and CI-friendly checks (optional)
 
 ---
 
@@ -317,7 +321,7 @@ If a change doesn’t advance a milestone’s Definition of Done (DoD), it’s p
 ---
 
 ## Non-goals (right now)
-- Big UI build until Milestone 2 (AWS scheduled runs + S3 publishing) is solid
+- Big UI build until Milestone 2 (scheduled runs + object-store publishing) is solid
 - Provider explosion until identity + history are stable (except targeted additions)
 - “LLM as scraper” without strict guardrails and caches
 
