@@ -44,8 +44,11 @@ test:
 lint:
 	$(PY) -m ruff check src scripts tests
 
+format:
+	$(PY) -m ruff format .
+
 format-check:
-	$(PY) -m ruff format --check src
+	$(PY) -m ruff format --check .
 
 deps:
 	$(PY) -m pip install -r requirements.txt
