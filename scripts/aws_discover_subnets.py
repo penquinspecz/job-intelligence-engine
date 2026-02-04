@@ -134,9 +134,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
         subnet_rows = sorted(subnet_rows, key=_sort_key)
         if excluded_azs:
-            subnet_rows = [
-                row for row in subnet_rows if row.get("AvailabilityZone") not in excluded_azs
-            ]
+            subnet_rows = [row for row in subnet_rows if row.get("AvailabilityZone") not in excluded_azs]
         selected = [row for row in subnet_rows if row.get("VpcId") in preferred_vpc_ids]
         if not selected:
             selected = subnet_rows
