@@ -3,8 +3,6 @@ from __future__ import annotations
 import json
 import subprocess
 
-import pytest
-
 from scripts import aws_discover_subnets
 
 
@@ -80,6 +78,4 @@ def test_discover_subnets_deterministic(monkeypatch, capsys):
     assert json_payload["region"] == "us-east-1"
     assert json_payload["preferred_vpc_ids"] == ["vpc-2"]
     assert json_payload["selected_subnet_ids"] == ["subnet-a", "subnet-b"]
-    assert "terraform apply -var 'subnet_ids=[\"subnet-a\",\"subnet-b\"]'" in json_payload[
-        "terraform_snippet"
-    ]
+    assert 'terraform apply -var \'subnet_ids=["subnet-a","subnet-b"]\'' in json_payload["terraform_snippet"]

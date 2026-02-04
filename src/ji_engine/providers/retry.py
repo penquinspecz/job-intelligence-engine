@@ -179,6 +179,7 @@ def fetch_urlopen_with_retry(
 
     raise ProviderFetchError(last_reason, attempts, last_status)
 
+
 def fetch_json_with_retry(
     url: str,
     *,
@@ -205,9 +206,9 @@ def fetch_json_with_retry(
                 raise ProviderFetchError(last_reason, attempt, resp.status_code)
             try:
                 data = resp.json()
-            except ValueError:
+            except ValueError as exc:
                 last_reason = "invalid_response"
-                raise ProviderFetchError(last_reason, attempt, resp.status_code)
+                raise ProviderFetchError(last_reason, attempt, resp.status_code) from exc
             if not isinstance(data, dict):
                 last_reason = "invalid_response"
                 raise ProviderFetchError(last_reason, attempt, resp.status_code)

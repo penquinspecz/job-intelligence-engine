@@ -9,7 +9,7 @@ except ModuleNotFoundError:
 import argparse
 import os
 import sys
-from typing import Dict, Iterable, List, Set, Tuple
+from typing import Iterable, List, Set, Tuple
 
 
 def _truthy(value: str | None) -> bool:
@@ -19,11 +19,7 @@ def _truthy(value: str | None) -> bool:
 
 
 def _region_present() -> bool:
-    return bool(
-        os.getenv("AWS_REGION")
-        or os.getenv("AWS_DEFAULT_REGION")
-        or os.getenv("JOBINTEL_AWS_REGION")
-    )
+    return bool(os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or os.getenv("JOBINTEL_AWS_REGION"))
 
 
 def _required_for_mode(mode: str) -> Tuple[List[str], List[str]]:

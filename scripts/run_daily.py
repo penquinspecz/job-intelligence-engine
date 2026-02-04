@@ -56,11 +56,11 @@ from ji_engine.config import (
 from ji_engine.config import (
     shortlist_md as shortlist_md_path,
 )
+from ji_engine.utils.atomic_write import atomic_write_text
 from ji_engine.utils.content_fingerprint import content_fingerprint
 from ji_engine.utils.diff_report import build_diff_markdown, build_diff_report
 from ji_engine.utils.dotenv import load_dotenv
 from ji_engine.utils.job_identity import job_identity
-from ji_engine.utils.atomic_write import atomic_write_text
 from ji_engine.utils.verification import (
     build_verifiable_artifacts,
     compute_sha256_bytes,
@@ -535,10 +535,7 @@ def _evaluate_provider_policy(
         "enrich_stats": enrich_stats,
     }
     meta["failure_policy"] = policy
-    line = (
-        f"Provider policy ({provider}): {decision} "
-        f"(parsed={parsed_jobs}, error_rate={round(error_rate, 3)})"
-    )
+    line = f"Provider policy ({provider}): {decision} (parsed={parsed_jobs}, error_rate={round(error_rate, 3)})"
     return decision == "fail", reason, line
 
 
@@ -692,9 +689,7 @@ def _local_last_success_pointer_paths(provider: str, profile: str) -> List[Path]
     ]
 
 
-def _resolve_local_last_success_ranked(
-    provider: str, profile: str, current_run_id: str
-) -> Optional[Path]:
+def _resolve_local_last_success_ranked(provider: str, profile: str, current_run_id: str) -> Optional[Path]:
     for pointer_path in _local_last_success_pointer_paths(provider, profile):
         if not pointer_path.exists():
             continue
@@ -814,9 +809,7 @@ def _archive_run_inputs(
         logger.error("Profiles config missing for archival: %s", profiles_config_path)
         raise SystemExit(2)
     return {
-        "selected_scoring_input": _archive_input(
-            run_dir, selected_input_path, base / "selected_scoring_input.json"
-        ),
+        "selected_scoring_input": _archive_input(run_dir, selected_input_path, base / "selected_scoring_input.json"),
         "profile_config": _archive_input(run_dir, profiles_config_path, base / "profiles.json"),
     }
 
@@ -1272,9 +1265,7 @@ def _build_delta_summary(run_id: str, providers: List[str], profiles: List[str])
                     bucket = os.environ.get("JOBINTEL_S3_BUCKET", "").strip()
                     prefix = os.environ.get("JOBINTEL_S3_PREFIX", "jobintel").strip("/")
                     if bucket:
-                        s3_info = _resolve_s3_baseline(
-                            provider, profile, run_id, bucket=bucket, prefix=prefix
-                        )
+                        s3_info = _resolve_s3_baseline(provider, profile, run_id, bucket=bucket, prefix=prefix)
                         if s3_info.run_id and s3_info.ranked_path:
                             baseline_run_id = s3_info.run_id
                             baseline_run_path = s3_info.path
@@ -2046,15 +2037,9 @@ def _diff_summary_entry(
     profile: str,
     diff_report: Dict[str, Any],
 ) -> Dict[str, Any]:
-    added_ids = sorted(
-        {item.get("id") for item in diff_report.get("added") or [] if item.get("id")}
-    )
-    changed_ids = sorted(
-        {item.get("id") for item in diff_report.get("changed") or [] if item.get("id")}
-    )
-    removed_ids = sorted(
-        {item.get("id") for item in diff_report.get("removed") or [] if item.get("id")}
-    )
+    added_ids = sorted({item.get("id") for item in diff_report.get("added") or [] if item.get("id")})
+    changed_ids = sorted({item.get("id") for item in diff_report.get("changed") or [] if item.get("id")})
+    removed_ids = sorted({item.get("id") for item in diff_report.get("removed") or [] if item.get("id")})
     counts = diff_report.get("counts") or {}
     return {
         "run_id": run_id,
@@ -2521,11 +2506,7 @@ def main() -> int:
         delta_summary = _build_delta_summary(run_id, providers, profiles_list)
         for provider, profiles in diff_summary_by_provider_profile.items():
             for profile, entry in profiles.items():
-                delta = (
-                    delta_summary.get("provider_profile", {})
-                    .get(provider, {})
-                    .get(profile, {})
-                )
+                delta = delta_summary.get("provider_profile", {}).get(provider, {}).get(profile, {})
                 entry["prior_run_id"] = delta.get("baseline_run_id")
                 entry["baseline_resolved"] = delta.get("baseline_resolved")
                 entry["baseline_source"] = delta.get("baseline_source")
@@ -2625,9 +2606,7 @@ def main() -> int:
         if publish_requested_cli:
             publish_enabled, require_s3, skip_reason = True, True, None
         else:
-            publish_enabled, require_s3, skip_reason = _resolve_publish_state(
-                publish_requested, resolved_bucket
-            )
+            publish_enabled, require_s3, skip_reason = _resolve_publish_state(publish_requested, resolved_bucket)
         if status != "success":
             skip_reason = f"skipped_status_{status}"
             publish_enabled = False
@@ -3105,7 +3084,9 @@ def main() -> int:
             if failed:
                 err_msg = f"Provider policy failed ({provider}): {reason}"
                 logger.error(err_msg)
-                _post_failure(webhook, stage=_stage_label("provider_policy", provider), error=err_msg, no_post=args.no_post)
+                _post_failure(
+                    webhook, stage=_stage_label("provider_policy", provider), error=err_msg, no_post=args.no_post
+                )
                 _finalize("error", {"error": err_msg, "failed_stage": _stage_label("provider_policy", provider)})
                 return 3
 
@@ -3244,9 +3225,7 @@ def main() -> int:
                     policy_line = provider_policy_lines.get(provider)
                     if policy_line:
                         extra_lines.append(policy_line)
-                    unavailable_line = _provider_unavailable_line(
-                        provider, provenance_by_provider.get(provider, {})
-                    )
+                    unavailable_line = _provider_unavailable_line(provider, provenance_by_provider.get(provider, {}))
                     if unavailable_line:
                         extra_lines.append(unavailable_line)
                     discord_status = _maybe_post_run_summary(
@@ -3290,9 +3269,7 @@ def main() -> int:
                     bucket = os.environ.get("JOBINTEL_S3_BUCKET", "").strip()
                     prefix = os.environ.get("JOBINTEL_S3_PREFIX", "jobintel").strip("/")
                     if bucket:
-                        s3_info = _resolve_s3_baseline(
-                            provider, profile, run_id, bucket=bucket, prefix=prefix
-                        )
+                        s3_info = _resolve_s3_baseline(provider, profile, run_id, bucket=bucket, prefix=prefix)
                         if s3_info.ranked_path and s3_info.ranked_path.exists():
                             prev = _read_json(s3_info.ranked_path)
                             baseline_exists = True
@@ -3400,9 +3377,7 @@ def main() -> int:
                 briefs_line = _briefs_status_line(run_id, profile)
                 if briefs_line:
                     extra_lines.append(briefs_line)
-                unavailable_line = _provider_unavailable_line(
-                    provider, provenance_by_provider.get(provider, {})
-                )
+                unavailable_line = _provider_unavailable_line(provider, provenance_by_provider.get(provider, {}))
                 if unavailable_line:
                     extra_lines.append(unavailable_line)
                 discord_status = _maybe_post_run_summary(

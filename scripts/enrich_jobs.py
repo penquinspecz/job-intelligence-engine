@@ -33,8 +33,8 @@ from bs4 import BeautifulSoup
 
 from ji_engine.config import ASHBY_CACHE_DIR, ENRICHED_JOBS_JSON, LABELED_JOBS_JSON, SNAPSHOT_DIR
 from ji_engine.integrations.ashby_graphql import fetch_job_posting
-from ji_engine.providers.retry import ProviderFetchError, classify_failure_type
 from ji_engine.integrations.html_to_text import html_to_text
+from ji_engine.providers.retry import ProviderFetchError, classify_failure_type
 from ji_engine.utils.atomic_write import atomic_write_text
 from ji_engine.utils.job_id import extract_job_id_from_url
 
@@ -44,6 +44,7 @@ _CANONICAL_JSON_KWARGS = {"ensure_ascii": False, "sort_keys": True, "separators"
 
 def _canonical_json(obj: Any) -> str:
     return json.dumps(obj, **_CANONICAL_JSON_KWARGS) + "\n"
+
 
 DEBUG = os.getenv("JI_DEBUG") == "1"
 

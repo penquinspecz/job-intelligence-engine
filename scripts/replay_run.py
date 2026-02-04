@@ -8,8 +8,8 @@ except ModuleNotFoundError:
 
 import argparse
 import json
-import sys
 import shutil
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -113,7 +113,9 @@ def _collect_archived_entries(
     return entries
 
 
-def _collect_entries(report: Dict[str, Any], profile: str, state_dir: Path) -> List[Tuple[str, Optional[str], Optional[str]]]:
+def _collect_entries(
+    report: Dict[str, Any], profile: str, state_dir: Path
+) -> List[Tuple[str, Optional[str], Optional[str]]]:
     entries: List[Tuple[str, Optional[str], Optional[str]]] = []
 
     archived_entries = _collect_archived_entries(report, profile, state_dir)
@@ -225,12 +227,17 @@ def _replay_report(
     else:
         entries.extend(_collect_expected_outputs(report, profile))
     if not entries:
-        return 2, ["FAIL: no inputs/outputs to verify in run report"], artifacts, {
-            "checked": 0,
-            "matched": 0,
-            "mismatched": 0,
-            "missing": 0,
-        }
+        return (
+            2,
+            ["FAIL: no inputs/outputs to verify in run report"],
+            artifacts,
+            {
+                "checked": 0,
+                "matched": 0,
+                "mismatched": 0,
+                "missing": 0,
+            },
+        )
 
     lines.append("REPLAY REPORT")
     for label, path_str, expected_hash in entries:
@@ -299,27 +306,42 @@ def _replay_report(
     lines.append(f"SUMMARY: checked={checked} matched={matched} mismatched={mismatched} missing={missing}")
     if missing > 0:
         lines.insert(0, "FAIL: missing artifacts")
-        return (2 if strict else 0), lines, artifacts, {
-            "checked": checked,
-            "matched": matched,
-            "mismatched": mismatched,
-            "missing": missing,
-        }
+        return (
+            (2 if strict else 0),
+            lines,
+            artifacts,
+            {
+                "checked": checked,
+                "matched": matched,
+                "mismatched": mismatched,
+                "missing": missing,
+            },
+        )
     if mismatched > 0:
         lines.insert(0, "FAIL: mismatched artifacts")
-        return (2 if strict else 0), lines, artifacts, {
+        return (
+            (2 if strict else 0),
+            lines,
+            artifacts,
+            {
+                "checked": checked,
+                "matched": matched,
+                "mismatched": mismatched,
+                "missing": missing,
+            },
+        )
+    lines.insert(0, "PASS: all artifacts match run report hashes")
+    return (
+        0,
+        lines,
+        artifacts,
+        {
             "checked": checked,
             "matched": matched,
             "mismatched": mismatched,
             "missing": missing,
-        }
-    lines.insert(0, "PASS: all artifacts match run report hashes")
-    return 0, lines, artifacts, {
-        "checked": checked,
-        "matched": matched,
-        "mismatched": mismatched,
-        "missing": missing,
-    }
+        },
+    )
 
 
 def _recalc_report(
@@ -333,21 +355,35 @@ def _recalc_report(
     provider = _resolve_provider(report)
     selected_input, profile_cfg = _resolve_archived_inputs(report, provider, profile, state_dir)
     if not selected_input or not profile_cfg:
-        return 2, ["FAIL: archived inputs missing for recalc"], artifacts, {
-            "checked": 0,
-            "matched": 0,
-            "mismatched": 0,
-            "missing": 0,
-        }, mismatched_keys, missing_keys
+        return (
+            2,
+            ["FAIL: archived inputs missing for recalc"],
+            artifacts,
+            {
+                "checked": 0,
+                "matched": 0,
+                "mismatched": 0,
+                "missing": 0,
+            },
+            mismatched_keys,
+            missing_keys,
+        )
 
     expected_outputs = _resolve_expected_outputs(report, provider, profile)
     if not expected_outputs:
-        return 2, ["FAIL: expected outputs missing for recalc"], artifacts, {
-            "checked": 0,
-            "matched": 0,
-            "mismatched": 0,
-            "missing": 0,
-        }, mismatched_keys, missing_keys
+        return (
+            2,
+            ["FAIL: expected outputs missing for recalc"],
+            artifacts,
+            {
+                "checked": 0,
+                "matched": 0,
+                "mismatched": 0,
+                "missing": 0,
+            },
+            mismatched_keys,
+            missing_keys,
+        )
 
     recalc_dir = run_dir / "_recalc" / provider / profile
     if recalc_dir.exists():
@@ -405,19 +441,33 @@ def _recalc_report(
             sys.argv = old_argv
     except SystemExit as exc:
         code = exc.code if isinstance(exc.code, int) else 3
-        return max(3, code), [f"FAIL: recalc failed ({exc})"], artifacts, {
-            "checked": 0,
-            "matched": 0,
-            "mismatched": 0,
-            "missing": 0,
-        }, mismatched_keys, missing_keys
+        return (
+            max(3, code),
+            [f"FAIL: recalc failed ({exc})"],
+            artifacts,
+            {
+                "checked": 0,
+                "matched": 0,
+                "mismatched": 0,
+                "missing": 0,
+            },
+            mismatched_keys,
+            missing_keys,
+        )
     except Exception as exc:
-        return 3, [f"FAIL: recalc failed ({exc!r})"], artifacts, {
-            "checked": 0,
-            "matched": 0,
-            "mismatched": 0,
-            "missing": 0,
-        }, mismatched_keys, missing_keys
+        return (
+            3,
+            [f"FAIL: recalc failed ({exc!r})"],
+            artifacts,
+            {
+                "checked": 0,
+                "matched": 0,
+                "mismatched": 0,
+                "missing": 0,
+            },
+            mismatched_keys,
+            missing_keys,
+        )
 
     output_paths = {
         "ranked_json": out_json,
@@ -472,27 +522,48 @@ def _recalc_report(
     lines.append(f"SUMMARY: checked={checked} matched={matched} mismatched={mismatched} missing={missing}")
     if missing > 0:
         lines.insert(0, "FAIL: missing recalc artifacts")
-        return (2 if strict else 0), lines, artifacts, {
-            "checked": checked,
-            "matched": matched,
-            "mismatched": mismatched,
-            "missing": missing,
-        }, mismatched_keys, missing_keys
+        return (
+            (2 if strict else 0),
+            lines,
+            artifacts,
+            {
+                "checked": checked,
+                "matched": matched,
+                "mismatched": mismatched,
+                "missing": missing,
+            },
+            mismatched_keys,
+            missing_keys,
+        )
     if mismatched > 0:
         lines.insert(0, "FAIL: recalc mismatched artifacts")
-        return (2 if strict else 0), lines, artifacts, {
+        return (
+            (2 if strict else 0),
+            lines,
+            artifacts,
+            {
+                "checked": checked,
+                "matched": matched,
+                "mismatched": mismatched,
+                "missing": missing,
+            },
+            mismatched_keys,
+            missing_keys,
+        )
+    lines.insert(0, "PASS: recalc outputs match run report hashes")
+    return (
+        0,
+        lines,
+        artifacts,
+        {
             "checked": checked,
             "matched": matched,
             "mismatched": mismatched,
             "missing": missing,
-        }, mismatched_keys, missing_keys
-    lines.insert(0, "PASS: recalc outputs match run report hashes")
-    return 0, lines, artifacts, {
-        "checked": checked,
-        "matched": matched,
-        "mismatched": mismatched,
-        "missing": missing,
-    }, mismatched_keys, missing_keys
+        },
+        mismatched_keys,
+        missing_keys,
+    )
 
 
 def main(argv: Optional[List[str]] = None) -> int:

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import scripts.prove_cloud_run as prove_cloud_run
 
@@ -23,8 +22,7 @@ def test_prove_cloud_run_extracts_and_writes(tmp_path, monkeypatch):
             calls["kubectl"] += 1
             return _Result(
                 0,
-                "JOBINTEL_RUN_ID=2026-01-02T03:04:05Z\n"
-                "===== jobintel start 2026-01-01T00:00:00Z =====\n",
+                "JOBINTEL_RUN_ID=2026-01-02T03:04:05Z\n===== jobintel start 2026-01-01T00:00:00Z =====\n",
             )
         if any("verify_published_s3.py" in part for part in cmd):
             calls["verify"] += 1
