@@ -180,6 +180,7 @@ S3-compatible object store, optional alerts.
 - [x] Deterministic helper exists to discover subnet_ids for EKS bootstrap
 - [ ] Proof run executed (EKS one-off job + real S3 publish + proof JSON captured)
 - [ ] EKS bootstrap path exists (Terraform) + IRSA wiring documented
+- [ ] EKS can pull image (ECR golden path documented + working)
 - Receipts rule: infra execution boxes are checked only with receipts in hand (proof JSON + verify output).
 - Note: check “Proof run executed” only after `state/proofs/<run_id>.json` exists locally and `verify_published_s3` is OK.
   - Evidence required:

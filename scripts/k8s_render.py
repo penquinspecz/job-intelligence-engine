@@ -103,6 +103,11 @@ def _render_with_overlays(overlays: list[str]) -> str:
     if not patch_paths:
         return _render_manifest(BASE_DIR)
 
+    require_image = "aws-eks" in overlays
+    image_override = os.getenv("JOBINTEL_IMAGE") if require_image else None
+    if require_image and not image_override:
+        raise RuntimeError("JOBINTEL_IMAGE is required when rendering aws-eks overlay")
+
     import tempfile
 
     with tempfile.TemporaryDirectory(dir=REPO_ROOT / "ops" / "k8s") as tmp_dir:
@@ -126,6 +131,18 @@ def _render_with_overlays(overlays: list[str]) -> str:
         ]
         for patch in rel_patches:
             kustomization.append(f"  - {patch.as_posix()}")
+        if image_override:
+            if ":" not in image_override:
+                raise RuntimeError("JOBINTEL_IMAGE must include a tag (e.g. repo:tag)")
+            image_repo, image_tag = image_override.rsplit(":", 1)
+            kustomization.extend(
+                [
+                    "images:",
+                    "  - name: ghcr.io/yourorg/jobintel",
+                    f"    newName: {image_repo}",
+                    f"    newTag: {image_tag}",
+                ]
+            )
         (tmp_path / "kustomization.yaml").write_text("\n".join(kustomization) + "\n", encoding="utf-8")
         return _render_manifest(tmp_path)
 

@@ -63,7 +63,9 @@ kubectl apply -k ops/k8s/jobintel
 
 For EKS with IRSA:
 ```bash
+export JOBINTEL_IMAGE="$(scripts/ecr_publish_image.sh | cut -d= -f2)"
 JOBINTEL_IRSA_ROLE_ARN=arn:aws:iam::<account>:role/<role> \
+  JOBINTEL_IMAGE="$JOBINTEL_IMAGE" \
   python scripts/k8s_render.py --overlay aws-eks > /tmp/jobintel.yaml
 kubectl apply -f /tmp/jobintel.yaml
 ```

@@ -9,6 +9,7 @@ It assumes you have valid AWS credentials and a target S3 bucket.
 - `kubectl` configured
 - AWS credentials with EKS + IAM + S3 access
 - An S3 bucket for publish (S3-compatible object store)
+- Docker (for image build/push)
 
 ## 1) Terraform apply (EKS + IRSA)
 
@@ -38,7 +39,14 @@ Copy/paste the command it prints, then select the context:
 kubectl config use-context <your-eks-context>
 ```
 
-## 3) Render + apply manifests (IRSA wired)
+## 3) Build + push image to ECR
+
+```bash
+IMAGE_URI="$(scripts/ecr_publish_image.sh | cut -d= -f2)"
+export JOBINTEL_IMAGE="$IMAGE_URI"
+```
+
+## 4) Render + apply manifests (IRSA wired)
 
 ```bash
 export JOBINTEL_IRSA_ROLE_ARN="$(terraform -chdir=ops/aws/infra/eks output -raw jobintel_irsa_role_arn)"
@@ -54,7 +62,7 @@ Optional sanity check:
 kubectl -n jobintel auth can-i create pods --as=system:serviceaccount:jobintel:jobintel
 ```
 
-## 4) Create secrets (no secrets in repo)
+## 5) Create secrets (no secrets in repo)
 
 ```bash
 kubectl -n jobintel create secret generic jobintel-secrets \
@@ -69,7 +77,7 @@ kubectl -n jobintel create secret generic jobintel-secrets \
 - Operator (your AWS user/role): can `GetObject`/`HeadObject` for `runs/` and `latest/` to verify.
 - See `ops/aws/IAM.md` for the exact policy shapes.
 
-## 5) Run one-off job from the CronJob template
+## 6) Run one-off job from the CronJob template
 
 ```bash
 kubectl delete job -n jobintel jobintel-manual-$(date +%Y%m%d) --ignore-not-found
@@ -83,7 +91,7 @@ You must see a log line like:
 JOBINTEL_RUN_ID=<run_id>
 ```
 
-## 6) Capture proof JSON (uses logs if run_id omitted)
+## 7) Capture proof JSON (uses logs if run_id omitted)
 
 ```bash
 python scripts/prove_cloud_run.py \
@@ -100,7 +108,7 @@ This writes the local proof receipt:
 state/proofs/<run_id>.json
 ```
 
-## 7) Verify latest keys
+## 8) Verify latest keys
 
 ```bash
 python scripts/verify_published_s3.py \
