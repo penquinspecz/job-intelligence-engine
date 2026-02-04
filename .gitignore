@@ -87,3 +87,9 @@ ops/aws/infra/.terraform.lock.hcl
 
 # local caches
 .cache/
+
+# Terraform (local)
+ops/aws/infra/eks/.terraform.lock.hcl
+ops/aws/infra/eks/terraform.tfstate
+ops/aws/infra/eks/terraform.tfstate.backup
+ops/aws/infra/eks/.terraform/
