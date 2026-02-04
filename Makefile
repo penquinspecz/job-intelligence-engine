@@ -142,6 +142,9 @@ proof-run-vars:
 	@echo "Optional:"
 	@echo "  PREFIX=jobintel"
 
+aws-discover-subnets:
+	$(PY) scripts/aws_discover_subnets.py
+
 k8s-commands:
 	@echo "kubectl apply -f ops/k8s/namespace.yaml"
 	@echo "kubectl apply -f ops/k8s/serviceaccount.yaml"

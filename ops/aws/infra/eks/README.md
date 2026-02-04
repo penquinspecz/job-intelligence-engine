@@ -34,6 +34,16 @@ terraform apply \
   -var 'subnet_ids=["subnet-aaaa","subnet-bbbb"]'
 ```
 
+## How to find subnet_ids
+
+Use the helper script (AWS CLI required):
+
+```bash
+python scripts/aws_discover_subnets.py
+```
+
+It prints a deterministic JSON summary and a suggested terraform command snippet.
+
 ## Outputs
 
 - `update_kubeconfig_command`: use to configure kubectl

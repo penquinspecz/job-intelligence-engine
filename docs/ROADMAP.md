@@ -87,7 +87,7 @@ If a change doesn’t advance a milestone’s Definition of Done (DoD), it’s p
 - [ ] Dashboard dependency management (FastAPI/uvicorn must be installable in offline/CI contexts or tests should run in CI image)
 - [ ] AI insights scope: currently weekly “pulse”; Phase 2 adds per-job recommendations and profile-aware coaching.
 - [ ] Document CI smoke gate design and failure modes (why it fails, what to inspect)
-- [ ] **IAM footguns:** document runtime vs operator verify roles for object-store access in K8s (IRSA) + AWS
+- [x] **IAM footguns:** document runtime vs operator verify roles for object-store access in K8s (IRSA) + AWS
 - [ ] **Artifact hygiene:** ensure secrets never leak into run reports/artifacts; add a redaction sanity test if needed
 
 ---
@@ -177,6 +177,7 @@ S3-compatible object store, optional alerts.
 - [x] Proof tooling exists (`scripts/prove_cloud_run.py`)
 - [x] Machine-parseable run_id log line + success pointer exists
 - [x] IRSA wiring is parameterized and documented (no manual YAML editing)
+- [x] Deterministic helper exists to discover subnet_ids for EKS bootstrap
 - [ ] Proof run executed (EKS one-off job + real S3 publish + proof JSON captured)
 - [ ] EKS bootstrap path exists (Terraform) + IRSA wiring documented
 - Receipts rule: infra execution boxes are checked only with receipts in hand (proof JSON + verify output).
