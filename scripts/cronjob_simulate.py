@@ -21,9 +21,7 @@ try:
 except ModuleNotFoundError:
     import importlib.util
 
-    _spec = importlib.util.spec_from_file_location(
-        "replay_run", Path(__file__).with_name("replay_run.py")
-    )
+    _spec = importlib.util.spec_from_file_location("replay_run", Path(__file__).with_name("replay_run.py"))
     if not _spec or not _spec.loader:
         raise
     replay_run = importlib.util.module_from_spec(_spec)
@@ -66,14 +64,13 @@ def main() -> int:
     _seed_snapshots(data_dir)
 
     import ji_engine.config as config
+
     try:
         from scripts import run_daily  # type: ignore
     except ModuleNotFoundError:
         import importlib.util
 
-        _spec = importlib.util.spec_from_file_location(
-            "run_daily", Path(__file__).with_name("run_daily.py")
-        )
+        _spec = importlib.util.spec_from_file_location("run_daily", Path(__file__).with_name("run_daily.py"))
         if not _spec or not _spec.loader:
             raise
         run_daily = importlib.util.module_from_spec(_spec)

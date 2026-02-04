@@ -60,9 +60,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     ranked_path = Path(args.ranked_path) if args.ranked_path else _default_ranked_path(args.provider, args.profile)
     prompt_path = Path(args.prompt_path) if args.prompt_path else PROMPT_PATH
 
-    ai_enabled = os.environ.get("AI_ENABLED", "0").strip() == "1" and os.environ.get(
-        "AI_JOB_BRIEFS_ENABLED", "0"
-    ).strip() == "1"
+    ai_enabled = (
+        os.environ.get("AI_ENABLED", "0").strip() == "1" and os.environ.get("AI_JOB_BRIEFS_ENABLED", "0").strip() == "1"
+    )
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     model_name = os.environ.get("AI_MODEL", "stub")
     if ai_enabled and not api_key:

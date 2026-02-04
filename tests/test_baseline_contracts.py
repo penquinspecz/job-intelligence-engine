@@ -31,10 +31,12 @@ def _setup_run_dir(tmp_path: Path, run_id: str, provider: str = "openai", profil
     provider_dir.mkdir(parents=True, exist_ok=True)
     ranked = provider_dir / f"{provider}_ranked_jobs.{profile}.json"
     ranked.write_text(
-        json.dumps([
-            {"job_id": "1", "title": "A", "apply_url": "x", "score": 10},
-            {"job_id": "2", "title": "B", "apply_url": "y", "score": 9},
-        ]),
+        json.dumps(
+            [
+                {"job_id": "1", "title": "A", "apply_url": "x", "score": 10},
+                {"job_id": "2", "title": "B", "apply_url": "y", "score": 9},
+            ]
+        ),
         encoding="utf-8",
     )
     verifiable = {
@@ -89,7 +91,15 @@ def test_contract_first_run_writes_pointer_and_new_equals_total(tmp_path, monkey
 
         # first-run diff: no baseline => new == total
         run_daily = importlib.reload(run_daily_module)
-        curr = _load_ranked(tmp_path / "state" / "runs" / publish_s3._sanitize_run_id(run_id) / "openai" / "cs" / "openai_ranked_jobs.cs.json")
+        curr = _load_ranked(
+            tmp_path
+            / "state"
+            / "runs"
+            / publish_s3._sanitize_run_id(run_id)
+            / "openai"
+            / "cs"
+            / "openai_ranked_jobs.cs.json"
+        )
         new, changed, removed, _ = run_daily._diff([], curr)
         assert len(new) == len(curr)
         assert len(changed) == 0
@@ -126,7 +136,15 @@ def test_contract_second_run_reuses_pointer_and_new_zero(tmp_path, monkeypatch):
         assert baseline.run_id == run_id
         assert baseline.ranked_path is not None
         prev = _load_ranked(baseline.ranked_path)
-        curr = _load_ranked(tmp_path / "state" / "runs" / publish_s3._sanitize_run_id(run_id) / "openai" / "cs" / "openai_ranked_jobs.cs.json")
+        curr = _load_ranked(
+            tmp_path
+            / "state"
+            / "runs"
+            / publish_s3._sanitize_run_id(run_id)
+            / "openai"
+            / "cs"
+            / "openai_ranked_jobs.cs.json"
+        )
         new, changed, removed, _ = run_daily._diff(prev, curr)
         assert len(new) == 0
         assert len(changed) == 0
@@ -188,7 +206,15 @@ def test_contract_deleted_pointer_returns_first_run_behavior(tmp_path, monkeypat
             prefix=prefix,
         )
         assert baseline.run_id is None
-        curr = _load_ranked(tmp_path / "state" / "runs" / publish_s3._sanitize_run_id(run_id) / "openai" / "cs" / "openai_ranked_jobs.cs.json")
+        curr = _load_ranked(
+            tmp_path
+            / "state"
+            / "runs"
+            / publish_s3._sanitize_run_id(run_id)
+            / "openai"
+            / "cs"
+            / "openai_ranked_jobs.cs.json"
+        )
         new, changed, removed, _ = run_daily._diff([], curr)
         assert len(new) == len(curr)
         assert len(changed) == 0

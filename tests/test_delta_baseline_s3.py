@@ -35,7 +35,9 @@ def test_delta_summary_uses_s3_baseline(tmp_path, monkeypatch):
             "provider_profiles": {f"{provider}:{profile}": "2026-01-01T00:00:00Z"},
         }
 
-    monkeypatch.setattr(run_daily, "read_last_success_state", lambda *args, **kwargs: (fake_state(None, None), "ok", "key"))
+    monkeypatch.setattr(
+        run_daily, "read_last_success_state", lambda *args, **kwargs: (fake_state(None, None), "ok", "key")
+    )
     monkeypatch.setattr(
         run_daily,
         "read_provider_last_success_state",

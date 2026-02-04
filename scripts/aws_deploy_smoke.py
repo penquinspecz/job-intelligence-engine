@@ -89,8 +89,7 @@ def _warn_plaintext_secrets(taskdef_path: Path) -> None:
     names = _find_plaintext_secrets(payload, ["OPENAI_API_KEY", "DISCORD_WEBHOOK_URL"])
     if names:
         logger.warning(
-            "Plaintext secrets found in task definition env: %s. "
-            "Use container_secrets with SSM/Secrets Manager.",
+            "Plaintext secrets found in task definition env: %s. Use container_secrets with SSM/Secrets Manager.",
             ", ".join(names),
         )
 

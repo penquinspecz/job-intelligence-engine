@@ -28,15 +28,13 @@ def test_replay_run_passes_with_matching_hashes(tmp_path: Path) -> None:
     report = {
         "run_report_schema_version": 1,
         "run_id": "2026-01-01T00:00:00Z",
-        "selection": {"scrape_provenance": {}, "classified_job_count": 0, "classified_job_count_by_provider": {"openai": 0}},
-        "scoring_inputs_by_profile": {
-            "cs": {"path": str(scoring_path), "sha256": scoring_sha}
+        "selection": {
+            "scrape_provenance": {},
+            "classified_job_count": 0,
+            "classified_job_count_by_provider": {"openai": 0},
         },
-        "outputs_by_profile": {
-            "cs": {
-                "ranked_json": {"path": str(ranked_path), "sha256": ranked_sha}
-            }
-        },
+        "scoring_inputs_by_profile": {"cs": {"path": str(scoring_path), "sha256": scoring_sha}},
+        "outputs_by_profile": {"cs": {"ranked_json": {"path": str(ranked_path), "sha256": ranked_sha}}},
     }
 
     report_path = run_dir / "run_report.json"
@@ -60,15 +58,13 @@ def test_replay_run_detects_mismatch(tmp_path: Path) -> None:
     report = {
         "run_report_schema_version": 1,
         "run_id": "2026-01-01T00:00:00Z",
-        "selection": {"scrape_provenance": {}, "classified_job_count": 0, "classified_job_count_by_provider": {"openai": 0}},
-        "scoring_inputs_by_profile": {
-            "cs": {"path": str(scoring_path), "sha256": scoring_sha}
+        "selection": {
+            "scrape_provenance": {},
+            "classified_job_count": 0,
+            "classified_job_count_by_provider": {"openai": 0},
         },
-        "outputs_by_profile": {
-            "cs": {
-                "ranked_json": {"path": str(ranked_path), "sha256": ranked_sha}
-            }
-        },
+        "scoring_inputs_by_profile": {"cs": {"path": str(scoring_path), "sha256": scoring_sha}},
+        "outputs_by_profile": {"cs": {"ranked_json": {"path": str(ranked_path), "sha256": ranked_sha}}},
     }
 
     report_path = run_dir / "run_report.json"

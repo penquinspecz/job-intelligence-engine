@@ -107,9 +107,7 @@ def test_pointers_written_and_read(monkeypatch, tmp_path, caplog):
         labeled.write_text(json.dumps(payload), encoding="utf-8")
 
         with caplog.at_level("INFO"):
-            summary = run_daily._build_delta_summary(
-                "2026-01-02T00:00:00Z", ["openai"], ["cs"]
-            )
+            summary = run_daily._build_delta_summary("2026-01-02T00:00:00Z", ["openai"], ["cs"])
 
         entry = summary["provider_profile"]["openai"]["cs"]
         assert entry["baseline_run_id"] == run_id

@@ -729,13 +729,17 @@ def score_job(job: Dict[str, Any], pos_rules: List[Rule], neg_rules: List[Rule])
             return
 
         weight = rule.weight
-        if rule.name in {
-            "research_scientist",
-            "phd_required",
-            "model_training_pretraining",
-            "compiler_kernels_cuda",
-            "theory_math_heavy",
-        } and not jd_rich:
+        if (
+            rule.name
+            in {
+                "research_scientist",
+                "phd_required",
+                "model_training_pretraining",
+                "compiler_kernels_cuda",
+                "theory_math_heavy",
+            }
+            and not jd_rich
+        ):
             weight = int(round(weight * 0.25))
         delta = weight * c
         base_score += delta

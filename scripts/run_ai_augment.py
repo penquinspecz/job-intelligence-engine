@@ -30,6 +30,7 @@ _CANONICAL_JSON_KWARGS = {"ensure_ascii": False, "sort_keys": True, "separators"
 def _canonical_json(obj: Any) -> str:
     return json.dumps(obj, **_CANONICAL_JSON_KWARGS) + "\n"
 
+
 OUTPUT_PATH = Path("data/openai_enriched_jobs_ai.json")
 PROFILE_PATH = Path("data/candidate_profile.json")
 

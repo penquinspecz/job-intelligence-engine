@@ -32,7 +32,12 @@ def test_smoke_contract_check_ok(tmp_path: Path) -> None:
             "providers": ["openai"],
             "run_report_schema_version": 1,
             "config_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "environment_fingerprint": {"python_version": "3.10.14", "platform": "test", "image_tag": None, "git_sha": None},
+            "environment_fingerprint": {
+                "python_version": "3.10.14",
+                "platform": "test",
+                "image_tag": None,
+                "git_sha": None,
+            },
             "verifiable_artifacts": {},
             "run_id": "run-1",
             "selection": {
@@ -84,7 +89,12 @@ def test_smoke_contract_check_missing_file(tmp_path: Path) -> None:
             "providers": ["openai"],
             "run_report_schema_version": 1,
             "config_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "environment_fingerprint": {"python_version": "3.10.14", "platform": "test", "image_tag": None, "git_sha": None},
+            "environment_fingerprint": {
+                "python_version": "3.10.14",
+                "platform": "test",
+                "image_tag": None,
+                "git_sha": None,
+            },
             "verifiable_artifacts": {},
             "run_id": "run-1",
             "selection": {
@@ -142,7 +152,12 @@ def test_smoke_contract_check_missing_classified_count(tmp_path: Path) -> None:
             "providers": ["openai"],
             "run_report_schema_version": 1,
             "config_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "environment_fingerprint": {"python_version": "3.10.14", "platform": "test", "image_tag": None, "git_sha": None},
+            "environment_fingerprint": {
+                "python_version": "3.10.14",
+                "platform": "test",
+                "image_tag": None,
+                "git_sha": None,
+            },
             "verifiable_artifacts": {},
             "run_id": "run-1",
             "selection": {
@@ -171,7 +186,12 @@ def test_smoke_contract_check_missing_delta_summary(tmp_path: Path) -> None:
             "providers": ["openai"],
             "run_report_schema_version": 1,
             "config_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "environment_fingerprint": {"python_version": "3.10.14", "platform": "test", "image_tag": None, "git_sha": None},
+            "environment_fingerprint": {
+                "python_version": "3.10.14",
+                "platform": "test",
+                "image_tag": None,
+                "git_sha": None,
+            },
             "verifiable_artifacts": {},
             "run_id": "run-1",
             "selection": {
@@ -266,7 +286,12 @@ def test_smoke_contract_check_min_schema_version(tmp_path: Path) -> None:
             "providers": ["openai"],
             "run_report_schema_version": 1,
             "config_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "environment_fingerprint": {"python_version": "3.10.14", "platform": "test", "image_tag": None, "git_sha": None},
+            "environment_fingerprint": {
+                "python_version": "3.10.14",
+                "platform": "test",
+                "image_tag": None,
+                "git_sha": None,
+            },
             "verifiable_artifacts": {},
             "run_id": "run-1",
             "selection": {
@@ -346,7 +371,12 @@ def test_smoke_contract_check_alerts_validation(tmp_path: Path) -> None:
             "providers": ["openai"],
             "run_report_schema_version": 1,
             "config_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "environment_fingerprint": {"python_version": "3.10.14", "platform": "test", "image_tag": None, "git_sha": None},
+            "environment_fingerprint": {
+                "python_version": "3.10.14",
+                "platform": "test",
+                "image_tag": None,
+                "git_sha": None,
+            },
             "verifiable_artifacts": {},
             "run_id": "run-1",
             "selection": {
@@ -417,7 +447,12 @@ def test_smoke_contract_check_alerts_count_mismatch(tmp_path: Path) -> None:
             "providers": ["openai"],
             "run_report_schema_version": 1,
             "config_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "environment_fingerprint": {"python_version": "3.10.14", "platform": "test", "image_tag": None, "git_sha": None},
+            "environment_fingerprint": {
+                "python_version": "3.10.14",
+                "platform": "test",
+                "image_tag": None,
+                "git_sha": None,
+            },
             "verifiable_artifacts": {},
             "run_id": "run-1",
             "selection": {
@@ -473,7 +508,12 @@ def test_smoke_contract_check_classified_total_mismatch(tmp_path: Path) -> None:
             "providers": ["openai"],
             "run_report_schema_version": 1,
             "config_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "environment_fingerprint": {"python_version": "3.10.14", "platform": "test", "image_tag": None, "git_sha": None},
+            "environment_fingerprint": {
+                "python_version": "3.10.14",
+                "platform": "test",
+                "image_tag": None,
+                "git_sha": None,
+            },
             "verifiable_artifacts": {},
             "run_id": "run-1",
             "selection": {
@@ -529,7 +569,12 @@ def test_smoke_contract_check_ranked_total_csv_mismatch(tmp_path: Path) -> None:
             "providers": ["openai"],
             "run_report_schema_version": 1,
             "config_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "environment_fingerprint": {"python_version": "3.10.14", "platform": "test", "image_tag": None, "git_sha": None},
+            "environment_fingerprint": {
+                "python_version": "3.10.14",
+                "platform": "test",
+                "image_tag": None,
+                "git_sha": None,
+            },
             "verifiable_artifacts": {},
             "run_id": "run-1",
             "selection": {

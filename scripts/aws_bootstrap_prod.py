@@ -71,10 +71,10 @@ def write_tfvars(path: Path, data: dict[str, object]) -> None:
     lines: list[str] = []
     for key, value in data.items():
         if isinstance(value, list):
-            quoted = ",".join(f"\"{item}\"" for item in value)
+            quoted = ",".join(f'"{item}"' for item in value)
             lines.append(f"{key} = [{quoted}]")
         else:
-            lines.append(f"{key} = \"{value}\"")
+            lines.append(f'{key} = "{value}"')
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 

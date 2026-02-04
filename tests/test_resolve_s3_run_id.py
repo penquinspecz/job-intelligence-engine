@@ -46,9 +46,15 @@ def test_resolve_prefers_pointer_over_latest() -> None:
 
         _put_json(client, bucket, f"{prefix}/state/{provider}/{profile}/last_success.json", {"run_id": run_id_pointer})
         _put_text(client, bucket, f"{prefix}/runs/{run_id_pointer}/run_report.json")
-        _put_text(client, bucket, f"{prefix}/runs/{run_id_pointer}/{provider}/{profile}/{provider}_ranked_families.{profile}.json")
+        _put_text(
+            client,
+            bucket,
+            f"{prefix}/runs/{run_id_pointer}/{provider}/{profile}/{provider}_ranked_families.{profile}.json",
+        )
         _put_text(client, bucket, f"{prefix}/runs/{run_id_new}/run_report.json")
-        _put_text(client, bucket, f"{prefix}/runs/{run_id_new}/{provider}/{profile}/{provider}_ranked_families.{profile}.json")
+        _put_text(
+            client, bucket, f"{prefix}/runs/{run_id_new}/{provider}/{profile}/{provider}_ranked_families.{profile}.json"
+        )
 
         resolved = resolve_run_id(bucket, prefix, provider, profile, client=client)
         assert resolved == run_id_pointer
@@ -68,7 +74,11 @@ def test_resolve_skips_missing_ranked_and_falls_back() -> None:
 
         _put_text(client, bucket, f"{prefix}/runs/{run_id_missing}/run_report.json")
         _put_text(client, bucket, f"{prefix}/runs/{run_id_valid}/run_report.json")
-        _put_text(client, bucket, f"{prefix}/runs/{run_id_valid}/{provider}/{profile}/{provider}_ranked_families.{profile}.json")
+        _put_text(
+            client,
+            bucket,
+            f"{prefix}/runs/{run_id_valid}/{provider}/{profile}/{provider}_ranked_families.{profile}.json",
+        )
 
         resolved = resolve_run_id(bucket, prefix, provider, profile, client=client)
         assert resolved == run_id_valid
@@ -90,7 +100,11 @@ def test_resolve_pointer_missing_artifacts_falls_back() -> None:
         _put_text(client, bucket, f"{prefix}/runs/{run_id_bad}/run_report.json")
 
         _put_text(client, bucket, f"{prefix}/runs/{run_id_good}/run_report.json")
-        _put_text(client, bucket, f"{prefix}/runs/{run_id_good}/{provider}/{profile}/{provider}_ranked_families.{profile}.json")
+        _put_text(
+            client,
+            bucket,
+            f"{prefix}/runs/{run_id_good}/{provider}/{profile}/{provider}_ranked_families.{profile}.json",
+        )
 
         resolved = resolve_run_id(bucket, prefix, provider, profile, client=client)
         assert resolved == run_id_good

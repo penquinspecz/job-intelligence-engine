@@ -59,9 +59,7 @@ def _run_report_key(prefix: str, run_id: str) -> str:
 
 def _ranked_families_key(prefix: str, run_id: str, provider: str, profile: str) -> str:
     clean = _normalize_prefix(prefix)
-    return f"{clean}/runs/{run_id}/{provider}/{profile}/{provider}_ranked_families.{profile}.json".strip(
-        "/"
-    )
+    return f"{clean}/runs/{run_id}/{provider}/{profile}/{provider}_ranked_families.{profile}.json".strip("/")
 
 
 def _resolve_from_pointers(

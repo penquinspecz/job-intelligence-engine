@@ -19,9 +19,7 @@ try:
 except ModuleNotFoundError:
     import importlib.util
 
-    _spec = importlib.util.spec_from_file_location(
-        "aws_env_check", Path(__file__).with_name("aws_env_check.py")
-    )
+    _spec = importlib.util.spec_from_file_location("aws_env_check", Path(__file__).with_name("aws_env_check.py"))
     if not _spec or not _spec.loader:
         raise
     aws_env_check = importlib.util.module_from_spec(_spec)

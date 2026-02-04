@@ -7,8 +7,7 @@ from ji_engine.utils import verification
 
 def test_compute_sha256_bytes_stable() -> None:
     assert (
-        verification.compute_sha256_bytes(b"abc")
-        == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        verification.compute_sha256_bytes(b"abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
     )
 
 

@@ -32,9 +32,7 @@ def test_snapshot_only_allows_snapshot_provider(tmp_path: Path, monkeypatch) -> 
         ],
     )
     monkeypatch.setenv("JOBINTEL_DATA_DIR", str(data_dir))
-    exit_code = run_scrape.main(
-        ["--providers", "demo", "--providers-config", str(providers_cfg), "--snapshot-only"]
-    )
+    exit_code = run_scrape.main(["--providers", "demo", "--providers-config", str(providers_cfg), "--snapshot-only"])
     assert exit_code == 0
 
 
@@ -58,9 +56,7 @@ def test_snapshot_only_blocks_live_provider(tmp_path: Path, monkeypatch, caplog)
     )
     monkeypatch.setenv("JOBINTEL_DATA_DIR", str(data_dir))
     with pytest.raises(SystemExit) as excinfo:
-        run_scrape.main(
-            ["--providers", "demo", "--providers-config", str(providers_cfg), "--snapshot-only"]
-        )
+        run_scrape.main(["--providers", "demo", "--providers-config", str(providers_cfg), "--snapshot-only"])
     assert excinfo.value.code == 2
     messages = [record.message for record in caplog.records]
     assert any("demo" in message for message in messages)

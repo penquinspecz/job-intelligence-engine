@@ -70,8 +70,6 @@ def test_run_daily_archives_selected_inputs_and_replay(tmp_path, monkeypatch) ->
 
     report_path = run_dir / "run_report.json"
     report = json.loads(report_path.read_text(encoding="utf-8"))
-    exit_code, lines, _artifacts, _counts = replay_run._replay_report(
-        report, "cs", strict=True, state_dir=state_dir
-    )
+    exit_code, lines, _artifacts, _counts = replay_run._replay_report(report, "cs", strict=True, state_dir=state_dir)
     assert exit_code == 0
     assert any(line.startswith("PASS:") for line in lines)

@@ -15,7 +15,9 @@ def test_diff_report_deterministic_ordering() -> None:
         {"provider": "openai", "job_id": "3", "title": "C", "apply_url": "https://c.example"},
     ]
     report = build_diff_report(prev, curr, provider="openai", profile="cs", baseline_exists=True)
-    report_again = build_diff_report(list(reversed(prev)), list(reversed(curr)), provider="openai", profile="cs", baseline_exists=True)
+    report_again = build_diff_report(
+        list(reversed(prev)), list(reversed(curr)), provider="openai", profile="cs", baseline_exists=True
+    )
 
     assert report == report_again
     assert report["counts"]["added"] == 1
@@ -42,7 +44,9 @@ def test_diff_report_stable_with_randomized_inputs() -> None:
     rng.shuffle(curr)
 
     report = build_diff_report(prev, curr, provider="openai", profile="cs", baseline_exists=True)
-    report_again = build_diff_report(list(reversed(prev)), list(reversed(curr)), provider="openai", profile="cs", baseline_exists=True)
+    report_again = build_diff_report(
+        list(reversed(prev)), list(reversed(curr)), provider="openai", profile="cs", baseline_exists=True
+    )
 
     assert report == report_again
 

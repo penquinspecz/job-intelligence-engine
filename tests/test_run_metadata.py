@@ -259,15 +259,17 @@ def test_run_metadata_written_and_deterministic(tmp_path: Path, monkeypatch) -> 
     assert (
         data["scoring_input_selection_by_provider"]["openai"]["cs"]["decision"]["rule"] == "default_enriched_required"
     )
-    assert data["scoring_input_selection_by_profile"]["cs"]["selection_reason_details"]["labeled_vs_enriched"][
-        "rule_id"
-    ] == "labeled_vs_enriched.enriched_required"
+    assert (
+        data["scoring_input_selection_by_profile"]["cs"]["selection_reason_details"]["labeled_vs_enriched"]["rule_id"]
+        == "labeled_vs_enriched.enriched_required"
+    )
     assert data["scoring_input_selection_by_profile"]["cs"]["selection_reason_details"]["labeled_vs_enriched"][
         "chosen_path"
     ] == str(enriched_path)
-    assert data["scoring_input_selection_by_profile"]["tam"]["selection_reason_details"]["labeled_vs_enriched"][
-        "rule_id"
-    ] == "labeled_vs_enriched.labeled_newer_or_equal"
+    assert (
+        data["scoring_input_selection_by_profile"]["tam"]["selection_reason_details"]["labeled_vs_enriched"]["rule_id"]
+        == "labeled_vs_enriched.labeled_newer_or_equal"
+    )
     assert data["scoring_input_selection_by_profile"]["tam"]["selection_reason_details"]["labeled_vs_enriched"][
         "chosen_path"
     ] == str(labeled_path)

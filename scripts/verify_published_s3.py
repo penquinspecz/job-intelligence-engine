@@ -23,9 +23,7 @@ try:
 except ModuleNotFoundError:
     import importlib.util
 
-    _spec = importlib.util.spec_from_file_location(
-        "publish_s3", Path(__file__).with_name("publish_s3.py")
-    )
+    _spec = importlib.util.spec_from_file_location("publish_s3", Path(__file__).with_name("publish_s3.py"))
     if not _spec or not _spec.loader:
         raise
     publish_s3 = importlib.util.module_from_spec(_spec)

@@ -128,7 +128,11 @@ def test_replay_recalc_passes(tmp_path: Path, monkeypatch) -> None:
             }
         },
         "outputs_by_profile": {"cs": expected_outputs},
-        "selection": {"scrape_provenance": {}, "classified_job_count": 0, "classified_job_count_by_provider": {"openai": 0}},
+        "selection": {
+            "scrape_provenance": {},
+            "classified_job_count": 0,
+            "classified_job_count_by_provider": {"openai": 0},
+        },
     }
     report_path = run_dir / "run_report.json"
     report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -180,7 +184,11 @@ def test_replay_recalc_detects_mismatch(tmp_path: Path, monkeypatch) -> None:
             }
         },
         "outputs_by_profile": {"cs": expected_outputs},
-        "selection": {"scrape_provenance": {}, "classified_job_count": 0, "classified_job_count_by_provider": {"openai": 0}},
+        "selection": {
+            "scrape_provenance": {},
+            "classified_job_count": 0,
+            "classified_job_count_by_provider": {"openai": 0},
+        },
     }
     report_path = run_dir / "run_report.json"
     report_path.parent.mkdir(parents=True, exist_ok=True)

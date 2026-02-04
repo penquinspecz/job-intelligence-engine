@@ -22,10 +22,8 @@ def _resolve_bucket(explicit: str | None) -> str | None:
 
 def _resolve_region(explicit: str | None) -> str | None:
     return (
-        (explicit or os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or os.getenv("REGION") or "")
-        .strip()
-        or None
-    )
+        explicit or os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or os.getenv("REGION") or ""
+    ).strip() or None
 
 
 def _resolve_prefix(explicit: str | None) -> Tuple[str | None, List[str]]:

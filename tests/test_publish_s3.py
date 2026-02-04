@@ -254,9 +254,7 @@ def test_publish_s3_pointer_write_error(monkeypatch, tmp_path):
     class ErrorClient(DummyClient):
         def put_object(self, Bucket, Key, Body):
             if Key.endswith("state/last_success.json"):
-                raise ClientError(
-                    {"Error": {"Code": "AccessDenied", "Message": "denied"}}, "PutObject"
-                )
+                raise ClientError({"Error": {"Code": "AccessDenied", "Message": "denied"}}, "PutObject")
             super().put_object(Bucket=Bucket, Key=Key, Body=Body)
 
     client = ErrorClient()

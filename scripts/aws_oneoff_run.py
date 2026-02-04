@@ -27,8 +27,8 @@ def parse_tfvars(text: str) -> dict[str, Any]:
         key, value = match.group(1), match.group(2).strip()
         if value.startswith("["):
             data[key] = _QUOTED_RE.findall(value)
-        elif value.startswith("\"") and value.endswith("\""):
-            data[key] = value.strip("\"")
+        elif value.startswith('"') and value.endswith('"'):
+            data[key] = value.strip('"')
         else:
             data[key] = value
     return data
@@ -50,7 +50,7 @@ def build_run_task_command(config: dict[str, Any]) -> str:
         f"\n  --task-definition {taskdef} \\"
         "\n  --launch-type FARGATE \\"
         "\n  --network-configuration "
-        f"\"awsvpcConfiguration={{subnets=[{subnet_part}],securityGroups=[{sg_part}],assignPublicIp=ENABLED}}\""
+        f'"awsvpcConfiguration={{subnets=[{subnet_part}],securityGroups=[{sg_part}],assignPublicIp=ENABLED}}"'
     )
 
 

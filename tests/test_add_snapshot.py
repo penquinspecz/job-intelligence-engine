@@ -9,9 +9,7 @@ def test_add_snapshot_copies_html(tmp_path: Path, monkeypatch) -> None:
     src = tmp_path / "source.html"
     src.write_text("<html>ok</html>", encoding="utf-8")
 
-    rc = add_snapshot.main(
-        ["--provider", "openai", "--from-file", str(src), "--out-dir", str(data_dir)]
-    )
+    rc = add_snapshot.main(["--provider", "openai", "--from-file", str(src), "--out-dir", str(data_dir)])
     assert rc == 0
 
     dest = data_dir / "openai_snapshots" / "index.html"

@@ -13,9 +13,7 @@ def _write_json(path: Path, payload: dict) -> None:
 def test_proof_run_extract_outputs_expected_lines(tmp_path: Path) -> None:
     run_report = {
         "run_id": "run_123",
-        "verifiable_artifacts": {
-            "output:ranked_json": {"path": "ranked.json", "sha256": "abc", "bytes": 123}
-        },
+        "verifiable_artifacts": {"output:ranked_json": {"path": "ranked.json", "sha256": "abc", "bytes": 123}},
         "config_fingerprint": "deadbeef",
         "environment_fingerprint": "cafebabe",
         "replay_verification": {"ok": True, "checked": 1, "mismatched": 0, "missing": 0},
@@ -55,4 +53,3 @@ def test_proof_run_extract_outputs_expected_lines(tmp_path: Path) -> None:
     assert "plan_items: 2" in output
     assert "plan_missing_sha_or_bytes: 1" in output
     assert "replay_ok: true" in output
-

@@ -55,11 +55,7 @@ def _summarize_tags(tags: Dict[str, str]) -> str:
 
 
 def _preferred_vpcs(vpcs: List[Dict[str, Any]]) -> List[str]:
-    jobintel = [
-        vpc["VpcId"]
-        for vpc in vpcs
-        if "jobintel" in vpc.get("Name", "").lower()
-    ]
+    jobintel = [vpc["VpcId"] for vpc in vpcs if "jobintel" in vpc.get("Name", "").lower()]
     if jobintel:
         return sorted(jobintel)
     defaults = [vpc["VpcId"] for vpc in vpcs if vpc.get("IsDefault")]
@@ -72,9 +68,7 @@ def main() -> int:
     try:
         region = _region()
         vpcs_raw = _run_aws(["ec2", "describe-vpcs", "--region", region, "--output", "json"])
-        subnets_raw = _run_aws(
-            ["ec2", "describe-subnets", "--region", region, "--output", "json"]
-        )
+        subnets_raw = _run_aws(["ec2", "describe-subnets", "--region", region, "--output", "json"])
         vpcs: List[Dict[str, Any]] = []
         for vpc in vpcs_raw.get("Vpcs", []):
             tags = _tag_lookup(vpc.get("Tags"))
@@ -119,7 +113,7 @@ def main() -> int:
         selected_ids = [row["SubnetId"] for row in selected if row.get("SubnetId")]
         terraform_snippet = (
             "terraform apply -var 'subnet_ids=["
-            + ",".join(f'\"{sid}\"' for sid in selected_ids)
+            + ",".join(f'"{sid}"' for sid in selected_ids)
             + "]' -var 's3_bucket=<bucket>'"
         )
 

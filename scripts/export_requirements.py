@@ -89,8 +89,7 @@ def _pip_args_for_ci() -> list[str]:
     if not _is_ci() and os.environ.get("JIE_DEPS_TARGET") != "ci":
         return []
     return [
-        "--pip-args=--platform manylinux_2_17_x86_64 --implementation cp "
-        "--python-version 3.12 --abi cp312",
+        "--pip-args=--platform manylinux_2_17_x86_64 --implementation cp --python-version 3.12 --abi cp312",
     ]
 
 
