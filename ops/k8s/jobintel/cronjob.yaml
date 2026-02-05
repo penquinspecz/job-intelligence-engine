@@ -31,7 +31,7 @@ spec:
             runAsGroup: 1000
           containers:
             - name: jobintel
-              image: ghcr.io/yourorg/jobintel:latest
+              image: 048622080012.dkr.ecr.us-east-1.amazonaws.com/jobintel:live-snapshotdir-20260205-082950
               imagePullPolicy: IfNotPresent
               workingDir: /app
               command:
@@ -42,8 +42,13 @@ spec:
                 - cs
                 - --us_only
                 - --no_post
-                - --snapshot-only
-                - --offline
+              env:
+                - name: PUBLISH_S3_REQUIRE
+                  value: "1"
+                - name: JOBINTEL_SNAPSHOT_WRITE_DIR
+                  value: "/work/jobintel_snapshots"
+                - name: CAREERS_MODE
+                  value: "AUTO"
               envFrom:
                 - configMapRef:
                     name: jobintel-config
@@ -63,8 +68,9 @@ spec:
                   mountPath: /tmp
                 - name: work
                   mountPath: /work
+                # Mount /app/data/ashby_cache for writable pipeline outputs.
                 - name: jobintel-data
-                  mountPath: /app/data
+                  mountPath: /app/data/ashby_cache
                 - name: jobintel-state
                   mountPath: /app/state
           volumes:

@@ -19,6 +19,12 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 
+def _output_dir(data_dir: Path) -> Path:
+    out = data_dir / "ashby_cache"
+    out.mkdir(parents=True, exist_ok=True)
+    return out
+
+
 def _build_env(data_dir: Path, state_dir: Path) -> Dict[str, str]:
     """Build environment dict with overridden data/state directories."""
     env = os.environ.copy()
@@ -43,9 +49,9 @@ def test_default_run_includes_all_stages(tmp_path: Path, monkeypatch: Any) -> No
     (snapshot_dir / "index.html").write_text("<html>test</html>")
 
     # Create minimal inputs
-    (data_dir / "openai_raw_jobs.json").write_text("[]")
-    (data_dir / "openai_labeled_jobs.json").write_text("[]")
-    (data_dir / "openai_enriched_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_raw_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_labeled_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_enriched_jobs.json").write_text("[]")
     (data_dir / "candidate_profile.json").write_text('{"skills": [], "roles": []}')
 
     # Run with --no_subprocess to capture stage execution
@@ -94,9 +100,9 @@ def test_default_scoring_does_not_prefer_ai(tmp_path: Path, monkeypatch: Any) ->
     snapshot_dir = data_dir / "openai_snapshots"
     snapshot_dir.mkdir()
     (snapshot_dir / "index.html").write_text("<html>test</html>")
-    (data_dir / "openai_raw_jobs.json").write_text("[]")
-    (data_dir / "openai_labeled_jobs.json").write_text("[]")
-    (data_dir / "openai_enriched_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_raw_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_labeled_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_enriched_jobs.json").write_text("[]")
     (data_dir / "candidate_profile.json").write_text('{"skills": [], "roles": []}')
 
     monkeypatch.setenv("JOBINTEL_DATA_DIR", str(data_dir))
@@ -114,19 +120,19 @@ def test_default_scoring_does_not_prefer_ai(tmp_path: Path, monkeypatch: Any) ->
 
     def fake_run(cmd, *, stage):
         if stage == "scrape":
-            (data_dir / "openai_raw_jobs.json").write_text("[]")
+            (_output_dir(data_dir) / "openai_raw_jobs.json").write_text("[]")
         if stage == "classify":
-            (data_dir / "openai_labeled_jobs.json").write_text("[]")
+            (_output_dir(data_dir) / "openai_labeled_jobs.json").write_text("[]")
         if stage == "enrich":
-            (data_dir / "openai_enriched_jobs.json").write_text("[]")
+            (_output_dir(data_dir) / "openai_enriched_jobs.json").write_text("[]")
         if stage.startswith("score:"):
             captured.append(cmd)
             profile = stage.split(":", 1)[1]
             for path in (
-                run_daily.ranked_jobs_json(profile),
-                run_daily.ranked_jobs_csv(profile),
-                run_daily.ranked_families_json(profile),
-                run_daily.shortlist_md_path(profile),
+                run_daily._provider_ranked_jobs_json("openai", profile),
+                run_daily._provider_ranked_jobs_csv("openai", profile),
+                run_daily._provider_ranked_families_json("openai", profile),
+                run_daily._provider_shortlist_md("openai", profile),
             ):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("[]", encoding="utf-8")
@@ -151,65 +157,65 @@ def test_ai_run_sets_prefer_ai(tmp_path: Path, monkeypatch: Any) -> None:
     snapshot_dir = data_dir / "openai_snapshots"
     snapshot_dir.mkdir()
     (snapshot_dir / "index.html").write_text("<html>test</html>")
-    (data_dir / "openai_raw_jobs.json").write_text("[]")
-    (data_dir / "openai_labeled_jobs.json").write_text("[]")
-    (data_dir / "openai_enriched_jobs.json").write_text("[]")
-    (data_dir / "openai_enriched_jobs_ai.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_raw_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_labeled_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_enriched_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_enriched_jobs_ai.json").write_text("[]")
     (data_dir / "candidate_profile.json").write_text('{"skills": [], "roles": []}')
-    labeled_path = data_dir / "openai_labeled_jobs.json"
-    enriched_path = data_dir / "openai_enriched_jobs.json"
+    labeled_path = _output_dir(data_dir) / "openai_labeled_jobs.json"
+    enriched_path = _output_dir(data_dir) / "openai_enriched_jobs.json"
     ts_now = time.time()
     os.utime(labeled_path, (ts_now - 120, ts_now - 120))
     os.utime(enriched_path, (ts_now, ts_now))
-    labeled_path = data_dir / "openai_labeled_jobs.json"
-    enriched_path = data_dir / "openai_enriched_jobs.json"
+    labeled_path = _output_dir(data_dir) / "openai_labeled_jobs.json"
+    enriched_path = _output_dir(data_dir) / "openai_enriched_jobs.json"
     ts_now = time.time()
     os.utime(labeled_path, (ts_now - 120, ts_now - 120))
     os.utime(enriched_path, (ts_now, ts_now))
-    labeled_path = data_dir / "openai_labeled_jobs.json"
-    enriched_path = data_dir / "openai_enriched_jobs.json"
+    labeled_path = _output_dir(data_dir) / "openai_labeled_jobs.json"
+    enriched_path = _output_dir(data_dir) / "openai_enriched_jobs.json"
     ts_now = time.time()
     os.utime(labeled_path, (ts_now - 30, ts_now - 30))
     os.utime(enriched_path, (ts_now, ts_now))
 
-    labeled_path = data_dir / "openai_labeled_jobs.json"
-    enriched_path = data_dir / "openai_enriched_jobs.json"
+    labeled_path = _output_dir(data_dir) / "openai_labeled_jobs.json"
+    enriched_path = _output_dir(data_dir) / "openai_enriched_jobs.json"
     base_ts = time.time()
     os.utime(labeled_path, (base_ts - 20, base_ts - 20))
     os.utime(enriched_path, (base_ts, base_ts))
-    labeled_path = data_dir / "openai_labeled_jobs.json"
-    enriched_path = data_dir / "openai_enriched_jobs.json"
+    labeled_path = _output_dir(data_dir) / "openai_labeled_jobs.json"
+    enriched_path = _output_dir(data_dir) / "openai_enriched_jobs.json"
     base_ts = time.time()
     os.utime(labeled_path, (base_ts - 20, base_ts - 20))
     os.utime(enriched_path, (base_ts, base_ts))
-    labeled_path = data_dir / "openai_labeled_jobs.json"
-    enriched_path = data_dir / "openai_enriched_jobs.json"
+    labeled_path = _output_dir(data_dir) / "openai_labeled_jobs.json"
+    enriched_path = _output_dir(data_dir) / "openai_enriched_jobs.json"
     base_ts = time.time()
     os.utime(labeled_path, (base_ts - 20, base_ts - 20))
     os.utime(enriched_path, (base_ts, base_ts))
-    labeled_path = data_dir / "openai_labeled_jobs.json"
-    enriched_path = data_dir / "openai_enriched_jobs.json"
+    labeled_path = _output_dir(data_dir) / "openai_labeled_jobs.json"
+    enriched_path = _output_dir(data_dir) / "openai_enriched_jobs.json"
     base_ts = time.time()
     os.utime(labeled_path, (base_ts - 20, base_ts - 20))
     os.utime(enriched_path, (base_ts, base_ts))
-    labeled_path = data_dir / "openai_labeled_jobs.json"
-    enriched_path = data_dir / "openai_enriched_jobs.json"
+    labeled_path = _output_dir(data_dir) / "openai_labeled_jobs.json"
+    enriched_path = _output_dir(data_dir) / "openai_enriched_jobs.json"
     base_ts = time.time()
     os.utime(labeled_path, (base_ts - 20, base_ts - 20))
     os.utime(enriched_path, (base_ts, base_ts))
-    labeled_path = data_dir / "openai_labeled_jobs.json"
-    enriched_path = data_dir / "openai_enriched_jobs.json"
+    labeled_path = _output_dir(data_dir) / "openai_labeled_jobs.json"
+    enriched_path = _output_dir(data_dir) / "openai_enriched_jobs.json"
     base_ts = time.time()
     os.utime(labeled_path, (base_ts - 20, base_ts - 20))
     os.utime(enriched_path, (base_ts, base_ts))
-    labeled_path = data_dir / "openai_labeled_jobs.json"
-    enriched_path = data_dir / "openai_enriched_jobs.json"
+    labeled_path = _output_dir(data_dir) / "openai_labeled_jobs.json"
+    enriched_path = _output_dir(data_dir) / "openai_enriched_jobs.json"
     base_ts = time.time()
     os.utime(labeled_path, (base_ts - 20, base_ts - 20))
     os.utime(enriched_path, (base_ts, base_ts))
     # Make enriched newer than labeled so resolver prefers enriched
-    labeled_path = data_dir / "openai_labeled_jobs.json"
-    enriched_path = data_dir / "openai_enriched_jobs.json"
+    labeled_path = _output_dir(data_dir) / "openai_labeled_jobs.json"
+    enriched_path = _output_dir(data_dir) / "openai_enriched_jobs.json"
     ts_now = time.time()
     os.utime(labeled_path, (ts_now - 20, ts_now - 20))
     os.utime(enriched_path, (ts_now, ts_now))
@@ -229,21 +235,21 @@ def test_ai_run_sets_prefer_ai(tmp_path: Path, monkeypatch: Any) -> None:
 
     def fake_run(cmd, *, stage):
         if stage == "scrape":
-            (data_dir / "openai_raw_jobs.json").write_text("[]")
+            (_output_dir(data_dir) / "openai_raw_jobs.json").write_text("[]")
         if stage == "classify":
-            (data_dir / "openai_labeled_jobs.json").write_text("[]")
+            (_output_dir(data_dir) / "openai_labeled_jobs.json").write_text("[]")
         if stage == "enrich":
-            (data_dir / "openai_enriched_jobs.json").write_text("[]")
+            (_output_dir(data_dir) / "openai_enriched_jobs.json").write_text("[]")
         if stage == "ai_augment":
-            (data_dir / "openai_enriched_jobs_ai.json").write_text("[]")
+            (_output_dir(data_dir) / "openai_enriched_jobs_ai.json").write_text("[]")
         if stage.startswith("score:"):
             captured.append(cmd)
             profile = stage.split(":", 1)[1]
             for path in (
-                run_daily.ranked_jobs_json(profile),
-                run_daily.ranked_jobs_csv(profile),
-                run_daily.ranked_families_json(profile),
-                run_daily.shortlist_md_path(profile),
+                run_daily._provider_ranked_jobs_json("openai", profile),
+                run_daily._provider_ranked_jobs_csv("openai", profile),
+                run_daily._provider_ranked_families_json("openai", profile),
+                run_daily._provider_shortlist_md("openai", profile),
             ):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("[]", encoding="utf-8")
@@ -268,14 +274,14 @@ def test_short_circuit_ai_sets_prefer_ai(tmp_path: Path, monkeypatch: Any) -> No
     snapshot_dir = data_dir / "openai_snapshots"
     snapshot_dir.mkdir()
     (snapshot_dir / "index.html").write_text("<html>test</html>")
-    (data_dir / "openai_raw_jobs.json").write_text("[]")
-    (data_dir / "openai_labeled_jobs.json").write_text("[]")
-    (data_dir / "openai_enriched_jobs.json").write_text("[]")
-    (data_dir / "openai_enriched_jobs_ai.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_raw_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_labeled_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_enriched_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_enriched_jobs_ai.json").write_text("[]")
     (data_dir / "candidate_profile.json").write_text('{"skills": [], "roles": []}')
 
-    labeled_path = data_dir / "openai_labeled_jobs.json"
-    enriched_path = data_dir / "openai_enriched_jobs.json"
+    labeled_path = _output_dir(data_dir) / "openai_labeled_jobs.json"
+    enriched_path = _output_dir(data_dir) / "openai_enriched_jobs.json"
     base_ts = time.time()
     os.utime(labeled_path, (base_ts - 20, base_ts - 20))
     os.utime(enriched_path, (base_ts, base_ts))
@@ -295,15 +301,15 @@ def test_short_circuit_ai_sets_prefer_ai(tmp_path: Path, monkeypatch: Any) -> No
 
     def fake_run(cmd, *, stage):
         if stage == "ai_augment":
-            (data_dir / "openai_enriched_jobs_ai.json").write_text("[]")
+            (_output_dir(data_dir) / "openai_enriched_jobs_ai.json").write_text("[]")
         if stage.startswith("score:"):
             captured.append(cmd)
             profile = stage.split(":", 1)[1]
             for path in (
-                run_daily.ranked_jobs_json(profile),
-                run_daily.ranked_jobs_csv(profile),
-                run_daily.ranked_families_json(profile),
-                run_daily.shortlist_md_path(profile),
+                run_daily._provider_ranked_jobs_json("openai", profile),
+                run_daily._provider_ranked_jobs_csv("openai", profile),
+                run_daily._provider_ranked_families_json("openai", profile),
+                run_daily._provider_shortlist_md("openai", profile),
             ):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("[]", encoding="utf-8")
@@ -333,14 +339,14 @@ def test_no_enrich_uses_labeled_input_even_if_ai_exists(tmp_path: Path, monkeypa
     (snapshot_dir / "index.html").write_text("<html>ok</html>")
 
     # Create required files, including enriched/ai artifacts (to simulate their presence).
-    (data_dir / "openai_raw_jobs.json").write_text("[]")
-    (data_dir / "openai_labeled_jobs.json").write_text("[]")
-    (data_dir / "openai_enriched_jobs.json").write_text("[]")
-    (data_dir / "openai_enriched_jobs_ai.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_raw_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_labeled_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_enriched_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_enriched_jobs_ai.json").write_text("[]")
     (data_dir / "candidate_profile.json").write_text('{"skills": [], "roles": []}')
 
-    labeled_path = data_dir / "openai_labeled_jobs.json"
-    enriched_path = data_dir / "openai_enriched_jobs.json"
+    labeled_path = _output_dir(data_dir) / "openai_labeled_jobs.json"
+    enriched_path = _output_dir(data_dir) / "openai_enriched_jobs.json"
     base_ts = time.time()
     os.utime(labeled_path, (base_ts - 20, base_ts - 20))
     os.utime(enriched_path, (base_ts, base_ts))
@@ -360,19 +366,19 @@ def test_no_enrich_uses_labeled_input_even_if_ai_exists(tmp_path: Path, monkeypa
 
     def fake_run(cmd: List[str], *, stage: str) -> None:
         if stage == "scrape":
-            (data_dir / "openai_raw_jobs.json").write_text("[]")
+            (_output_dir(data_dir) / "openai_raw_jobs.json").write_text("[]")
         if stage == "classify":
-            (data_dir / "openai_labeled_jobs.json").write_text("[]")
+            (_output_dir(data_dir) / "openai_labeled_jobs.json").write_text("[]")
             os.utime(labeled_path, (base_ts - 20, base_ts - 20))
         if stage.startswith("score:"):
             os.utime(enriched_path, (base_ts, base_ts))
             captured.append(cmd)
             profile = stage.split(":", 1)[1]
             for path in (
-                run_daily.ranked_jobs_json(profile),
-                run_daily.ranked_jobs_csv(profile),
-                run_daily.ranked_families_json(profile),
-                run_daily.shortlist_md_path(profile),
+                run_daily._provider_ranked_jobs_json("openai", profile),
+                run_daily._provider_ranked_jobs_csv("openai", profile),
+                run_daily._provider_ranked_families_json("openai", profile),
+                run_daily._provider_shortlist_md("openai", profile),
             ):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("[]", encoding="utf-8")
@@ -412,13 +418,13 @@ def test_short_circuit_scoring_uses_labeled_input(tmp_path: Path, monkeypatch: A
     (snapshot_dir / "index.html").write_text("<html>ok</html>")
 
     # Create base inputs, including AI artifact
-    (data_dir / "openai_raw_jobs.json").write_text("[]")
-    (data_dir / "openai_labeled_jobs.json").write_text("[]")
-    (data_dir / "openai_enriched_jobs.json").write_text("[]")
-    (data_dir / "openai_enriched_jobs_ai.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_raw_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_labeled_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_enriched_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_enriched_jobs_ai.json").write_text("[]")
     (data_dir / "candidate_profile.json").write_text('{"skills": [], "roles": []}')
-    labeled_path = data_dir / "openai_labeled_jobs.json"
-    enriched_path = data_dir / "openai_enriched_jobs.json"
+    labeled_path = _output_dir(data_dir) / "openai_labeled_jobs.json"
+    enriched_path = _output_dir(data_dir) / "openai_enriched_jobs.json"
     ts_now = time.time()
     os.utime(labeled_path, (ts_now - 120, ts_now - 120))
     os.utime(enriched_path, (ts_now, ts_now))
@@ -459,13 +465,13 @@ def test_short_circuit_scoring_uses_labeled_input(tmp_path: Path, monkeypatch: A
             profile = stage.split(":", 1)[1]
             # Ensure ranking outputs exist for _read_json after scoring.
             for path in (
-                run_daily.ranked_jobs_json(profile),
-                run_daily.ranked_jobs_csv(profile),
-                run_daily.ranked_families_json(profile),
+                run_daily._provider_ranked_jobs_json("openai", profile),
+                run_daily._provider_ranked_jobs_csv("openai", profile),
+                run_daily._provider_ranked_families_json("openai", profile),
             ):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("[]", encoding="utf-8")
-            shortlist = run_daily.shortlist_md_path(profile)
+            shortlist = run_daily._provider_shortlist_md("openai", profile)
             shortlist.parent.mkdir(parents=True, exist_ok=True)
             shortlist.write_text("# shortlist\n", encoding="utf-8")
             captured_score.append(cmd)
@@ -481,7 +487,7 @@ def test_short_circuit_scoring_uses_labeled_input(tmp_path: Path, monkeypatch: A
 
     assert captured_score, "Score stage should have run during short-circuit path"
     assert recorded_inputs
-    assert recorded_inputs[-1] == data_dir / "openai_enriched_jobs.json"
+    assert recorded_inputs[-1] == _output_dir(data_dir) / "openai_enriched_jobs.json"
     # prefer_ai should be present because argv includes --ai
     assert captured_score
     assert any("--prefer_ai" in cmd for cmd in captured_score for cmd in cmd)
@@ -498,14 +504,14 @@ def test_score_input_selection_no_enrich_prefers_newer_enriched(tmp_path: Path, 
     snapshot_dir = data_dir / "openai_snapshots"
     snapshot_dir.mkdir()
     (snapshot_dir / "index.html").write_text("<html>test</html>")
-    (data_dir / "openai_raw_jobs.json").write_text("[]")
-    (data_dir / "openai_labeled_jobs.json").write_text("[]")
-    (data_dir / "openai_enriched_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_raw_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_labeled_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_enriched_jobs.json").write_text("[]")
     (data_dir / "candidate_profile.json").write_text('{"skills": [], "roles": []}')
 
     # Make enriched newer than labeled
-    labeled_path = data_dir / "openai_labeled_jobs.json"
-    enriched_path = data_dir / "openai_enriched_jobs.json"
+    labeled_path = _output_dir(data_dir) / "openai_labeled_jobs.json"
+    enriched_path = _output_dir(data_dir) / "openai_enriched_jobs.json"
     ts_now = time.time()
     os.utime(labeled_path, (ts_now - 30, ts_now - 30))
     os.utime(enriched_path, (ts_now, ts_now))
@@ -525,19 +531,19 @@ def test_score_input_selection_no_enrich_prefers_newer_enriched(tmp_path: Path, 
 
     def fake_run(cmd, *, stage):
         if stage == "scrape":
-            (data_dir / "openai_raw_jobs.json").write_text("[]")
+            (_output_dir(data_dir) / "openai_raw_jobs.json").write_text("[]")
         if stage == "classify":
-            (data_dir / "openai_labeled_jobs.json").write_text("[]")
+            (_output_dir(data_dir) / "openai_labeled_jobs.json").write_text("[]")
             os.utime(labeled_path, (ts_now - 30, ts_now - 30))
         if stage.startswith("score:"):
             os.utime(enriched_path, (ts_now, ts_now))
             seen_cmds.append(cmd)
             profile = stage.split(":", 1)[1]
             for path in (
-                run_daily.ranked_jobs_json(profile),
-                run_daily.ranked_jobs_csv(profile),
-                run_daily.ranked_families_json(profile),
-                run_daily.shortlist_md_path(profile),
+                run_daily._provider_ranked_jobs_json("openai", profile),
+                run_daily._provider_ranked_jobs_csv("openai", profile),
+                run_daily._provider_ranked_families_json("openai", profile),
+                run_daily._provider_shortlist_md("openai", profile),
             ):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("[]", encoding="utf-8")
@@ -572,9 +578,9 @@ def test_no_enrich_reaches_score_when_fixtures_exist(tmp_path: Path, monkeypatch
     (snapshot_dir / "index.html").write_text("<html>test</html>")
 
     # Create minimal inputs (including enriched data)
-    (data_dir / "openai_raw_jobs.json").write_text("[]")
-    (data_dir / "openai_labeled_jobs.json").write_text("[]")
-    (data_dir / "openai_enriched_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_raw_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_labeled_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_enriched_jobs.json").write_text("[]")
     (data_dir / "candidate_profile.json").write_text('{"skills": [], "roles": []}')
 
     # Run with --no_enrich and --no_subprocess
@@ -635,8 +641,8 @@ def test_missing_scoring_prerequisites_fail_with_exit_code_2(tmp_path: Path, mon
     (snapshot_dir / "index.html").write_text("<html>test</html>")
 
     # Create all required files
-    (data_dir / "openai_raw_jobs.json").write_text("[]")
-    (data_dir / "openai_labeled_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_raw_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_labeled_jobs.json").write_text("[]")
     (data_dir / "candidate_profile.json").write_text('{"skills": [], "roles": []}')
 
     # Run with --no_enrich (scoring will use labeled as input)
@@ -687,7 +693,7 @@ def test_scrape_only_flag_exits_after_scrape(tmp_path: Path, monkeypatch: Any) -
     (snapshot_dir / "index.html").write_text("<html>test</html>")
 
     # Create minimal inputs
-    (data_dir / "openai_raw_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_raw_jobs.json").write_text("[]")
     (data_dir / "candidate_profile.json").write_text('{"skills": [], "roles": []}')
 
     # Run with --scrape_only
@@ -751,7 +757,7 @@ def test_stage_systemexit_is_reflected_in_metadata(tmp_path: Path, monkeypatch: 
 
     def fake_run(cmd, *, stage):
         if stage == "scrape":
-            (data_dir / "openai_raw_jobs.json").write_text("[]")
+            (_output_dir(data_dir) / "openai_raw_jobs.json").write_text("[]")
         if stage == "classify":
             raise SystemExit(3)
 
@@ -868,18 +874,18 @@ def test_systemexit_zero_stage_allows_pipeline_to_continue(tmp_path: Path, monke
 
     def fake_run(cmd, *, stage):
         if stage == "scrape":
-            (data_dir / "openai_raw_jobs.json").write_text("[]")
+            (_output_dir(data_dir) / "openai_raw_jobs.json").write_text("[]")
             raise SystemExit(0)
         if stage == "classify":
-            (data_dir / "openai_labeled_jobs.json").write_text("[]")
+            (_output_dir(data_dir) / "openai_labeled_jobs.json").write_text("[]")
             raise SystemExit(0)
         if stage.startswith("score:"):
             profile = stage.split(":", 1)[1]
             for path in (
-                run_daily.ranked_jobs_json(profile),
-                run_daily.ranked_jobs_csv(profile),
-                run_daily.ranked_families_json(profile),
-                run_daily.shortlist_md_path(profile),
+                run_daily._provider_ranked_jobs_json("openai", profile),
+                run_daily._provider_ranked_jobs_csv("openai", profile),
+                run_daily._provider_ranked_families_json("openai", profile),
+                run_daily._provider_shortlist_md("openai", profile),
             ):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("[]", encoding="utf-8")
@@ -927,7 +933,7 @@ def test_scrape_only_writes_history_summary(tmp_path: Path, monkeypatch: Any) ->
     def fake_run(cmd, *, stage):
         stages.append(stage)
         if stage == "scrape":
-            (data_dir / "openai_raw_jobs.json").write_text("[]")
+            (_output_dir(data_dir) / "openai_raw_jobs.json").write_text("[]")
 
     monkeypatch.setattr(run_daily, "_run", fake_run)
     monkeypatch.setattr(
@@ -954,9 +960,9 @@ def test_score_input_selection_no_enrich(tmp_path: Path, monkeypatch: Any) -> No
     snapshot_dir = data_dir / "openai_snapshots"
     snapshot_dir.mkdir(parents=True, exist_ok=True)
     (snapshot_dir / "index.html").write_text("<html>test</html>")
-    (data_dir / "openai_raw_jobs.json").write_text("[]")
-    (data_dir / "openai_labeled_jobs.json").write_text("[]")
-    (data_dir / "openai_enriched_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_raw_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_labeled_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_enriched_jobs.json").write_text("[]")
     (data_dir / "candidate_profile.json").write_text('{"skills": [], "roles": []}')
 
     monkeypatch.setenv("JOBINTEL_DATA_DIR", str(data_dir))
@@ -975,17 +981,17 @@ def test_score_input_selection_no_enrich(tmp_path: Path, monkeypatch: Any) -> No
 
     def fake_run(cmd, *, stage):
         if stage == "scrape" and create_files:
-            (data_dir / "openai_raw_jobs.json").write_text("[]")
+            (_output_dir(data_dir) / "openai_raw_jobs.json").write_text("[]")
         elif stage == "classify" and create_files:
-            (data_dir / "openai_labeled_jobs.json").write_text("[]")
+            (_output_dir(data_dir) / "openai_labeled_jobs.json").write_text("[]")
         elif stage.startswith("score:") and create_files:
             seen_cmds.append(cmd)
             profile = stage.split(":", 1)[1]
             for path in (
-                run_daily.ranked_jobs_json(profile),
-                run_daily.ranked_jobs_csv(profile),
-                run_daily.ranked_families_json(profile),
-                run_daily.shortlist_md_path(profile),
+                run_daily._provider_ranked_jobs_json("openai", profile),
+                run_daily._provider_ranked_jobs_csv("openai", profile),
+                run_daily._provider_ranked_families_json("openai", profile),
+                run_daily._provider_shortlist_md("openai", profile),
             ):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("[]", encoding="utf-8")
@@ -999,14 +1005,14 @@ def test_score_input_selection_no_enrich(tmp_path: Path, monkeypatch: Any) -> No
     assert rc == 0
     assert seen_cmds, "score command should have run"
     score_cmd = seen_cmds[0]
-    labeled_path = data_dir / "openai_labeled_jobs.json"
+    labeled_path = _output_dir(data_dir) / "openai_labeled_jobs.json"
     assert "--in_path" in score_cmd
     # Either path is acceptable here since both exist; assert scoring ran.
-    assert str(labeled_path) in score_cmd or str(data_dir / "openai_enriched_jobs.json") in score_cmd
+    assert str(labeled_path) in score_cmd or str(_output_dir(data_dir) / "openai_enriched_jobs.json") in score_cmd
 
     # Now delete both labeled and enriched to trigger the error path
-    (data_dir / "openai_labeled_jobs.json").unlink(missing_ok=True)
-    (data_dir / "openai_enriched_jobs.json").unlink(missing_ok=True)
+    (_output_dir(data_dir) / "openai_labeled_jobs.json").unlink(missing_ok=True)
+    (_output_dir(data_dir) / "openai_enriched_jobs.json").unlink(missing_ok=True)
     create_files = False
     lock_path = state_dir / "run_daily.lock"
     if lock_path.exists():
@@ -1029,9 +1035,9 @@ def test_score_input_selection_ai_only(tmp_path: Path, monkeypatch: Any) -> None
     snapshot_dir = data_dir / "openai_snapshots"
     snapshot_dir.mkdir(parents=True, exist_ok=True)
     (snapshot_dir / "index.html").write_text("<html>test</html>")
-    (data_dir / "openai_raw_jobs.json").write_text("[]")
-    (data_dir / "openai_labeled_jobs.json").write_text("[]")
-    (data_dir / "openai_enriched_jobs_ai.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_raw_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_labeled_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_enriched_jobs_ai.json").write_text("[]")
     (data_dir / "candidate_profile.json").write_text('{"skills": [], "roles": []}')
 
     monkeypatch.setenv("JOBINTEL_DATA_DIR", str(data_dir))
@@ -1050,19 +1056,19 @@ def test_score_input_selection_ai_only(tmp_path: Path, monkeypatch: Any) -> None
 
     def fake_run(cmd, *, stage):
         if stage == "scrape" and create_files:
-            (data_dir / "openai_raw_jobs.json").write_text("[]")
+            (_output_dir(data_dir) / "openai_raw_jobs.json").write_text("[]")
         elif stage == "classify" and create_files:
-            (data_dir / "openai_labeled_jobs.json").write_text("[]")
+            (_output_dir(data_dir) / "openai_labeled_jobs.json").write_text("[]")
         elif stage == "ai_augment" and create_files:
-            (data_dir / "openai_enriched_jobs_ai.json").write_text("[]")
+            (_output_dir(data_dir) / "openai_enriched_jobs_ai.json").write_text("[]")
         elif stage.startswith("score:") and create_files:
             seen_cmds.append(cmd)
             profile = stage.split(":", 1)[1]
             for path in (
-                run_daily.ranked_jobs_json(profile),
-                run_daily.ranked_jobs_csv(profile),
-                run_daily.ranked_families_json(profile),
-                run_daily.shortlist_md_path(profile),
+                run_daily._provider_ranked_jobs_json("openai", profile),
+                run_daily._provider_ranked_jobs_csv("openai", profile),
+                run_daily._provider_ranked_families_json("openai", profile),
+                run_daily._provider_shortlist_md("openai", profile),
             ):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("[]", encoding="utf-8")
@@ -1076,12 +1082,12 @@ def test_score_input_selection_ai_only(tmp_path: Path, monkeypatch: Any) -> None
     assert rc == 0
     assert seen_cmds, "score command should have run"
     score_cmd = seen_cmds[0]
-    ai_path = data_dir / "openai_enriched_jobs_ai.json"
+    ai_path = _output_dir(data_dir) / "openai_enriched_jobs_ai.json"
     assert "--in_path" in score_cmd
     assert str(ai_path) in score_cmd
 
     # Missing AI file should fail with exit 2
-    (data_dir / "openai_enriched_jobs_ai.json").unlink()
+    (_output_dir(data_dir) / "openai_enriched_jobs_ai.json").unlink()
     create_files = False
     lock_path = state_dir / "run_daily.lock"
     if lock_path.exists():
@@ -1104,8 +1110,8 @@ def test_score_input_selection_default_enriched(tmp_path: Path, monkeypatch: Any
     snapshot_dir = data_dir / "openai_snapshots"
     snapshot_dir.mkdir(parents=True, exist_ok=True)
     (snapshot_dir / "index.html").write_text("<html>test</html>")
-    (data_dir / "openai_raw_jobs.json").write_text("[]")
-    (data_dir / "openai_enriched_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_raw_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_enriched_jobs.json").write_text("[]")
     (data_dir / "candidate_profile.json").write_text('{"skills": [], "roles": []}')
 
     monkeypatch.setenv("JOBINTEL_DATA_DIR", str(data_dir))
@@ -1124,19 +1130,19 @@ def test_score_input_selection_default_enriched(tmp_path: Path, monkeypatch: Any
 
     def fake_run(cmd, *, stage):
         if stage == "scrape" and create_files:
-            (data_dir / "openai_raw_jobs.json").write_text("[]")
+            (_output_dir(data_dir) / "openai_raw_jobs.json").write_text("[]")
         elif stage == "classify" and create_files:
-            (data_dir / "openai_labeled_jobs.json").write_text("[]")
+            (_output_dir(data_dir) / "openai_labeled_jobs.json").write_text("[]")
         elif stage == "enrich" and create_files:
-            (data_dir / "openai_enriched_jobs.json").write_text("[]")
+            (_output_dir(data_dir) / "openai_enriched_jobs.json").write_text("[]")
         elif stage.startswith("score:") and create_files:
             seen_cmds.append(cmd)
             profile = stage.split(":", 1)[1]
             for path in (
-                run_daily.ranked_jobs_json(profile),
-                run_daily.ranked_jobs_csv(profile),
-                run_daily.ranked_families_json(profile),
-                run_daily.shortlist_md_path(profile),
+                run_daily._provider_ranked_jobs_json("openai", profile),
+                run_daily._provider_ranked_jobs_csv("openai", profile),
+                run_daily._provider_ranked_families_json("openai", profile),
+                run_daily._provider_shortlist_md("openai", profile),
             ):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("[]", encoding="utf-8")
@@ -1148,12 +1154,12 @@ def test_score_input_selection_default_enriched(tmp_path: Path, monkeypatch: Any
     assert rc == 0
     assert seen_cmds, "score command should have run"
     score_cmd = seen_cmds[0]
-    enriched_path = data_dir / "openai_enriched_jobs.json"
+    enriched_path = _output_dir(data_dir) / "openai_enriched_jobs.json"
     assert "--in_path" in score_cmd
     assert str(enriched_path) in score_cmd
 
     # Missing enriched should fail with exit 2
-    (data_dir / "openai_enriched_jobs.json").unlink()
+    (_output_dir(data_dir) / "openai_enriched_jobs.json").unlink()
     create_files = False
     lock_path = state_dir / "run_daily.lock"
     if lock_path.exists():
@@ -1171,9 +1177,9 @@ def test_stage_output_before_end_marker(caplog, tmp_path: Path, monkeypatch: Any
     snapshot_dir = data_dir / "openai_snapshots"
     snapshot_dir.mkdir(parents=True, exist_ok=True)
     (snapshot_dir / "index.html").write_text("<html>test</html>")
-    (data_dir / "openai_raw_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_raw_jobs.json").write_text("[]")
     (data_dir / "candidate_profile.json").write_text('{"skills": [], "roles": []}')
-    (data_dir / "openai_enriched_jobs.json").write_text("[]")
+    (_output_dir(data_dir) / "openai_enriched_jobs.json").write_text("[]")
 
     monkeypatch.setenv("JOBINTEL_DATA_DIR", str(data_dir))
     monkeypatch.setenv("JOBINTEL_STATE_DIR", str(state_dir))
@@ -1189,14 +1195,14 @@ def test_stage_output_before_end_marker(caplog, tmp_path: Path, monkeypatch: Any
         logger = logging.getLogger("scripts.run_daily")
         logger.info("SENTINEL STAGE")
         if stage == "scrape":
-            (data_dir / "openai_raw_jobs.json").write_text("[]")
+            (_output_dir(data_dir) / "openai_raw_jobs.json").write_text("[]")
         elif stage.startswith("score:"):
             profile = stage.split(":", 1)[1]
             for path in (
-                run_daily.ranked_jobs_json(profile),
-                run_daily.ranked_jobs_csv(profile),
-                run_daily.ranked_families_json(profile),
-                run_daily.shortlist_md_path(profile),
+                run_daily._provider_ranked_jobs_json("openai", profile),
+                run_daily._provider_ranked_jobs_csv("openai", profile),
+                run_daily._provider_ranked_families_json("openai", profile),
+                run_daily._provider_shortlist_md("openai", profile),
             ):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("[]", encoding="utf-8")

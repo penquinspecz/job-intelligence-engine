@@ -275,7 +275,7 @@ def _upload_plan(client, bucket: str, plan: List[UploadItem], dry_run: bool) -> 
             logger.info("uploaded %s -> s3://%s/%s", item.source, bucket, item.key)
             uploaded += 1
         except ClientError as exc:
-            logger.error("upload failed: %s", exc)
+            logger.error("upload failed: %s", _format_s3_client_error(exc, bucket))
             raise
     return uploaded
 
@@ -313,6 +313,37 @@ def _run_preflight(
         report["errors"] = errors
         report["ok"] = len(errors) == 0
     return report
+
+
+def _format_s3_client_error(exc: ClientError, bucket: str) -> str:
+    response = exc.response or {}
+    error = response.get("Error", {}) or {}
+    code = str(error.get("Code", "Unknown"))
+    msg = str(error.get("Message", "Unknown"))
+    meta = response.get("ResponseMetadata", {}) or {}
+    status = meta.get("HTTPStatusCode")
+    headers = meta.get("HTTPHeaders", {}) or {}
+    bucket_region = headers.get("x-amz-bucket-region")
+    role = os.getenv("AWS_ROLE_ARN") or "unknown"
+    region = (
+        os.getenv("JOBINTEL_AWS_REGION")
+        or os.getenv("AWS_REGION")
+        or os.getenv("AWS_DEFAULT_REGION")
+        or os.getenv("REGION")
+        or ""
+    )
+
+    if status == 404 or code in {"NoSuchBucket", "NotFound"}:
+        return f"S3 bucket not found: {bucket}. Create it or verify name."
+    if status == 403 or code in {"AccessDenied"}:
+        return f"Access denied to bucket: {bucket}. Verify IAM policy for role {role}."
+    if status == 301 or code in {"PermanentRedirect"}:
+        if bucket_region:
+            return f"Bucket exists in region {bucket_region}; set JOBINTEL_AWS_REGION accordingly."
+        return f"S3 error {code} (HTTP {status}) for bucket {bucket}: {msg}"
+    if bucket_region and region and bucket_region != region:
+        return f"Bucket exists in region {bucket_region}; set JOBINTEL_AWS_REGION accordingly."
+    return f"S3 error {code} (HTTP {status}) for bucket {bucket}: {msg}"
 
 
 def publish_run(
@@ -418,7 +449,7 @@ def publish_run(
             )
             pointer_write["global"] = "ok"
         except ClientError as exc:
-            logger.error("baseline pointer write failed: %s", exc)
+            logger.error("baseline pointer write failed: %s", _format_s3_client_error(exc, resolved_bucket))
             pointer_write["global"] = "error"
             pointer_write["error"] = str(exc)
         if pointer_write["global"] == "ok":
@@ -450,7 +481,7 @@ def publish_run(
                         )
                         pointer_write["provider_profile"][key] = "ok"
                     except ClientError as exc:
-                        logger.error("baseline pointer write failed: %s", exc)
+                        logger.error("baseline pointer write failed: %s", _format_s3_client_error(exc, resolved_bucket))
                         pointer_write["provider_profile"][key] = "error"
                         pointer_write["error"] = str(exc)
         else:

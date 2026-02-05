@@ -45,5 +45,12 @@ def test_publish_state_missing_bucket_skips() -> None:
 def test_publish_state_with_bucket_enables() -> None:
     enabled, required, reason = run_daily._resolve_publish_state(True, "bucket")
     assert enabled is True
+    assert required is False
+    assert reason is None
+
+
+def test_publish_state_required_with_bucket() -> None:
+    enabled, required, reason = run_daily._resolve_publish_state(True, "bucket", require_s3=True)
+    assert enabled is True
     assert required is True
     assert reason is None

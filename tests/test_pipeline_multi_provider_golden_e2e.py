@@ -76,6 +76,7 @@ def test_pipeline_multi_provider_golden_e2e(tmp_path: Path, monkeypatch, request
 
     monkeypatch.setenv("JOBINTEL_DATA_DIR", str(data_dir))
     monkeypatch.setenv("JOBINTEL_STATE_DIR", str(state_dir))
+    monkeypatch.delenv("JOBINTEL_OUTPUT_DIR", raising=False)
     monkeypatch.setenv("DISCORD_WEBHOOK_URL", "")
     monkeypatch.setenv("CAREERS_MODE", "SNAPSHOT")
 
@@ -142,7 +143,7 @@ def test_pipeline_multi_provider_golden_e2e(tmp_path: Path, monkeypatch, request
     hashes: Dict[str, Dict[str, str]] = {}
     job_ids: Dict[str, set[str]] = {}
     for provider in ("openai", "anthropic"):
-        ranked_path = data_dir / f"{provider}_ranked_jobs.cs.json"
+        ranked_path = data_dir / "ashby_cache" / f"{provider}_ranked_jobs.cs.json"
         assert ranked_path.exists()
         ranked = json.loads(ranked_path.read_text(encoding="utf-8"))
         assert ranked
@@ -160,7 +161,7 @@ def test_pipeline_multi_provider_golden_e2e(tmp_path: Path, monkeypatch, request
     # - OpenAI: volatile upstream; assert structural/behavioral invariants only.
     # - Providers must be isolated (no shared job_ids).
     fixture_path = repo_root / "tests" / "fixtures" / "golden" / "multi_provider_hashes.json"
-    update_golden = bool(request.config.getoption("--update-golden"))
+    update_golden = bool(request.config.getoption("--update-golden", default=False))
     if update_golden:
         fixture_path.parent.mkdir(parents=True, exist_ok=True)
         fixture_path.write_text(json.dumps(hashes, indent=2, sort_keys=True), encoding="utf-8")

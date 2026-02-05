@@ -63,6 +63,7 @@ spec:
                   cpu: "2"
                   memory: "4Gi"
               volumeMounts:
+                # Mount /app/data for writable pipeline outputs.
                 - name: jobintel-data
                   mountPath: /app/data
                 - name: jobintel-state

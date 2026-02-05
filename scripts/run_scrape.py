@@ -154,7 +154,8 @@ def main(argv: List[str] | None = None) -> int:
         if provider_id not in provider_map:
             raise SystemExit(f"Unknown provider_id '{provider_id}' in --providers")
 
-    output_dir = Path(DATA_DIR)
+    output_dir = Path(os.environ.get("JOBINTEL_OUTPUT_DIR") or (Path(DATA_DIR) / "ashby_cache"))
+    output_dir.mkdir(parents=True, exist_ok=True)
     snapshot_write_dir = Path(args.snapshot_write_dir).expanduser() if args.snapshot_write_dir else None
     for provider_id in requested:
         os.environ["JOBINTEL_PROVENANCE_LOG"] = "1"
@@ -279,8 +280,10 @@ def main(argv: List[str] | None = None) -> int:
                 provenance["live_result"] = "skipped"
             _write_scrape_meta(provider_id, output_dir, provenance)
             _log_provenance(provider_id, provenance)
-            # For backward compatibility, also write to canonical RAW_JOBS_JSON.
-            if provider_id == "openai":
+            # For backward compatibility, also write to canonical RAW_JOBS_JSON when writable.
+            if provider_id == "openai" and RAW_JOBS_JSON.parent.exists() and os.access(
+                RAW_JOBS_JSON.parent, os.W_OK
+            ):
                 RAW_JOBS_JSON.write_text(json.dumps(jobs, indent=2, ensure_ascii=False), encoding="utf-8")
         else:
             if provider_type == "ashby":
@@ -392,7 +395,9 @@ def main(argv: List[str] | None = None) -> int:
                     provenance["snapshot_used"] = True
                 _write_scrape_meta(provider_id, output_dir, provenance)
                 _log_provenance(provider_id, provenance)
-                if provider_id == "openai":
+                if provider_id == "openai" and RAW_JOBS_JSON.parent.exists() and os.access(
+                    RAW_JOBS_JSON.parent, os.W_OK
+                ):
                     RAW_JOBS_JSON.write_text(json.dumps(jobs, indent=2, ensure_ascii=False), encoding="utf-8")
             else:
                 if mode == "AUTO":

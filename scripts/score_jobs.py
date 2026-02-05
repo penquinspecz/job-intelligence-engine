@@ -1463,7 +1463,7 @@ def main() -> int:
     ap.add_argument("--top_n", type=int, default=25, help="Number of jobs to include in Top N markdown output.")
     ap.add_argument(
         "--out_md_ai",
-        default=str(shortlist_md("cs").with_name(shortlist_md("cs").stem + "_ai.md")),
+        default="",
         help="AI-aware shortlist markdown output",
     )
     ap.add_argument(
@@ -1508,7 +1508,11 @@ def main() -> int:
     out_families = Path(args.out_families)
     out_md = Path(args.out_md)
     out_md_top_n = Path(args.out_md_top_n) if args.out_md_top_n else None
-    out_md_ai = Path(args.out_md_ai) if args.out_md_ai else None
+    if args.out_md_ai:
+        out_md_ai = Path(args.out_md_ai)
+    else:
+        base_md = out_md
+        out_md_ai = base_md.with_name(f"{base_md.stem}_ai{base_md.suffix}") if base_md else None
     out_app_kit = Path(args.out_app_kit) if args.out_app_kit else None
 
     for p in (
@@ -1520,7 +1524,13 @@ def main() -> int:
         if "<function " in str(p):
             raise SystemExit(f"Refusing invalid output path (looks like function repr): {p}")
 
-    out_json.parent.mkdir(parents=True, exist_ok=True)
+    for p in (
+        [out_json, out_csv, out_families, out_md]
+        + ([out_md_top_n] if out_md_top_n else [])
+        + ([out_md_ai] if out_md_ai else [])
+        + ([out_app_kit] if out_app_kit else [])
+    ):
+        p.parent.mkdir(parents=True, exist_ok=True)
     # ----------------------------
 
     profiles = load_profiles(args.profiles)
