@@ -10,46 +10,92 @@ def _hash_payload(payload: dict) -> str:
 
 
 def test_job_identity_prefers_job_id():
-    job = {"job_id": "ABC-123", "apply_url": "https://example.com/a"}
-    assert job_identity(job) == "abc-123"
+    job = {"provider": "openai", "job_id": "ABC-123", "apply_url": "https://example.com/a"}
+    expected = _hash_payload(
+        {
+            "strategy": "provider_requisition",
+            "provider": "openai",
+            "requisition_id": "abc-123",
+        }
+    )
+    assert job_identity(job, mode="provider") == expected
 
 
 def test_job_identity_prefers_apply_url():
-    job = {"apply_url": " https://example.com/a ", "title": "A", "location": "SF"}
-    assert job_identity(job) == "https://example.com/a"
+    job = {
+        "provider": "openai",
+        "apply_url": " https://example.com/a ",
+        "title": "A",
+        "location": "SF",
+    }
+    identity = job_identity(job, mode="provider")
+    assert identity == job_identity(
+        {
+            "provider": "openai",
+            "apply_url": "https://example.com/a?utm_source=ignored",
+            "title": " a ",
+            "location": " sf ",
+        },
+        mode="provider",
+    )
+    assert len(identity) == 64
 
 
 def test_job_identity_falls_back_to_detail_url():
-    job = {"detail_url": " /jobs/123 ", "title": "A", "location": "SF"}
-    assert job_identity(job) == "/jobs/123"
+    job = {
+        "provider": "openai",
+        "detail_url": " https://example.com/jobs/123 ",
+        "title": "A",
+        "location": "SF",
+    }
+    identity = job_identity(job, mode="provider")
+    assert identity == job_identity(
+        {
+            "provider": "openai",
+            "detail_url": "https://example.com/jobs/123#fragment",
+            "title": "A",
+            "location": "SF",
+        },
+        mode="provider",
+    )
+    assert len(identity) == 64
 
 
 def test_job_identity_falls_back_to_content_hash():
-    job = {"title": " Role ", "location": "  Remote  "}
-    expected = _hash_payload({"title": "role", "location": "remote", "team": "", "description": ""})
-    assert job_identity(job) == expected
+    job = {"provider": "openai", "title": " Role ", "location": "  Remote  "}
+    identity = job_identity(job, mode="provider")
+    assert identity == job_identity(
+        {"provider": "openai", "title": "role", "location": "remote"},
+        mode="provider",
+    )
+    assert len(identity) == 64
 
 
 def test_job_identity_changes_with_description():
-    base = {"title": "Role", "location": "Remote"}
-    variant = {"title": "Role", "location": "Remote", "description": "desc"}
-    assert job_identity(base) != job_identity(variant)
+    base = {"provider": "openai", "title": "Role", "location": "Remote"}
+    variant = {"provider": "openai", "title": "Role", "location": "Remote", "description": "desc"}
+    assert job_identity(base, mode="provider") != job_identity(variant, mode="provider")
 
 
 def test_job_identity_returns_hash_when_nothing_else():
-    job = {"description": "Only description"}
-    expected = _hash_payload({"title": "", "location": "", "team": "", "description": "only description"})
-    assert job_identity(job) == expected
+    job = {"provider": "openai", "description": "Only description"}
+    identity = job_identity(job, mode="provider")
+    assert identity == job_identity({"provider": "openai", "description": " only description "}, mode="provider")
+    assert len(identity) == 64
 
 
 def test_job_identity_is_deterministic_for_identical_dicts():
-    job = {"apply_url": "https://example.com/a", "title": "A"}
-    assert job_identity(job) == job_identity({"apply_url": "https://example.com/a", "title": "A"})
+    job = {"provider": "openai", "apply_url": "https://example.com/a", "title": "A"}
+    assert job_identity(job, mode="provider") == job_identity(
+        {"provider": "openai", "apply_url": "https://example.com/a", "title": "A"},
+        mode="provider",
+    )
 
 
-def test_job_identity_provider_mode_prefixes_job_id():
-    job = {"provider": "OpenAI", "job_id": "ABC-123", "apply_url": "https://example.com/a"}
-    assert job_identity(job, mode="provider") == "openai:abc-123"
+def test_job_identity_provider_namespace_changes_id():
+    job = {"provider": "OpenAI", "job_id": "ABC-123"}
+    other = {"provider": "Anthropic", "job_id": "ABC-123"}
+    assert job_identity(job, mode="provider") != job_identity(other, mode="provider")
 
 
 def test_job_identity_returns_hash_if_missing():
@@ -62,23 +108,35 @@ def test_job_identity_returns_hash_if_missing():
 
 
 def test_job_identity_normalizes_url_query_params():
-    base = {"apply_url": "https://example.com/jobs/123?utm_source=a&utm_medium=b"}
-    variant = {"apply_url": "https://example.com/jobs/123?utm_source=other"}
-    assert job_identity(base) == job_identity(variant)
+    base = {"provider": "openai", "apply_url": "https://example.com/jobs/123?utm_source=a&utm_medium=b"}
+    variant = {"provider": "openai", "apply_url": "https://example.com/jobs/123?utm_source=other"}
+    assert job_identity(base, mode="provider") == job_identity(variant, mode="provider")
 
 
 def test_job_identity_normalizes_url_fragments():
-    base = {"detail_url": "https://example.com/jobs/123#section-a"}
-    variant = {"detail_url": "https://example.com/jobs/123#section-b"}
-    assert job_identity(base) == job_identity(variant)
+    base = {"provider": "openai", "detail_url": "https://example.com/jobs/123#section-a"}
+    variant = {"provider": "openai", "detail_url": "https://example.com/jobs/123#section-b"}
+    assert job_identity(base, mode="provider") == job_identity(variant, mode="provider")
 
 
 def test_job_identity_drops_tracking_params():
-    base = {"apply_url": "https://example.com/jobs/123?gh_jid=abc&utm_campaign=x"}
-    variant = {"apply_url": "https://example.com/jobs/123?gh_jid=def&utm_campaign=y"}
-    assert job_identity(base) == job_identity(variant)
+    base = {"provider": "openai", "apply_url": "https://example.com/jobs/123?gh_jid=abc&utm_campaign=x"}
+    variant = {"provider": "openai", "apply_url": "https://example.com/jobs/123?gh_jid=def&utm_campaign=y"}
+    assert job_identity(base, mode="provider") == job_identity(variant, mode="provider")
 
 
 def test_job_identity_normalizes_whitespace_and_case():
-    job = {"job_id": " AbC-123 "}
-    assert job_identity(job) == "abc-123"
+    job = {"provider": "openai", "title": "  Senior  Manager ", "location": " REMOTE ", "team": " CS "}
+    variant = {"provider": "openai", "title": "senior manager", "location": "remote", "team": "cs"}
+    assert job_identity(job, mode="provider") == job_identity(variant, mode="provider")
+
+
+def test_job_identity_changes_when_key_fields_change_without_req_id():
+    base = {
+        "provider": "openai",
+        "apply_url": "https://example.com/jobs/123",
+        "title": "Solutions Architect",
+        "location": "Remote",
+    }
+    variant = {**base, "location": "San Francisco"}
+    assert job_identity(base, mode="provider") != job_identity(variant, mode="provider")

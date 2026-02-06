@@ -954,12 +954,20 @@ def _dedupe_jobs_for_scoring(jobs: List[Dict[str, Any]]) -> List[Dict[str, Any]]
     groups: Dict[str, List[Dict[str, Any]]] = {}
     order: List[str] = []
     for job in jobs:
-        jid = _norm(job.get("job_id")) or job_identity(job)
-        job["job_id"] = jid
-        if jid not in groups:
-            groups[jid] = []
-            order.append(jid)
-        groups[jid].append(job)
+        source_job_id = _norm(job.get("job_id") or job.get("id"))
+        if source_job_id:
+            job.setdefault("source_job_id", source_job_id)
+        stable_provider_job_id = job_identity(job, mode="provider")
+
+        group_id = source_job_id or _norm(job.get("apply_url") or job.get("detail_url")) or stable_provider_job_id
+        if not source_job_id:
+            # Ensure downstream artifacts always have a job_id for stable diffs/alerts.
+            job["job_id"] = _norm(job.get("apply_url") or job.get("detail_url")) or stable_provider_job_id
+
+        if group_id not in groups:
+            groups[group_id] = []
+            order.append(group_id)
+        groups[group_id].append(job)
 
     out: List[Dict[str, Any]] = []
     for jid in order:

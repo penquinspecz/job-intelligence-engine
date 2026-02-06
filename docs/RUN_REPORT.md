@@ -25,6 +25,10 @@ debugging, and audit trails. They are versioned with `run_report_schema_version`
   - `classified_job_count_by_provider`
 - `inputs`: raw/labeled/enriched input file metadata (path, mtime, sha256).
 - `outputs_by_profile`: ranked outputs (paths + sha256).
+- Ranked job artifacts include a deterministic `job_id` per posting:
+  - Preserve source `job_id` when provided.
+  - Else use canonical apply/detail URL.
+  - Else fall back to provider-aware deterministic identity.
 - `inputs_by_provider`, `outputs_by_provider`: provider-specific input/output metadata.
 - `verifiable_artifacts`: mapping of logical artifact keys to hashes:
   - Keys are `"<provider>:<profile>:<output_key>"`.

@@ -29,6 +29,7 @@ from ji_engine.providers.retry import (
     record_policy_block,
 )
 from ji_engine.providers.snapshot_json_provider import SnapshotJsonProvider
+from ji_engine.utils.job_identity import job_identity
 from jobintel.snapshots.validate import validate_snapshot_file
 
 _STATUS_CODE_RE = re.compile(r"status (\d+)")
@@ -46,9 +47,15 @@ def _normalize_jobs(raw: List[Any]) -> List[Dict[str, Any]]:
     jobs: List[Dict[str, Any]] = []
     for item in raw:
         if hasattr(item, "to_dict"):
-            jobs.append(item.to_dict())
+            job = item.to_dict()
+            if not job.get("job_id"):
+                job["job_id"] = job_identity(job, mode="provider")
+            jobs.append(job)
         elif isinstance(item, dict):
-            jobs.append(item)
+            job = dict(item)
+            if not job.get("job_id"):
+                job["job_id"] = job_identity(job, mode="provider")
+            jobs.append(job)
     return sorted(jobs, key=_sort_key)
 
 
