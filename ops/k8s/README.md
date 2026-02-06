@@ -4,6 +4,8 @@ This directory contains a minimal, Kubernetes-native CronJob shape for running J
 It is intentionally plain YAML + kustomize (no Helm).
 The CronJob YAML uses a placeholder image name; replace it with your registry/repo tag.
 
+Runbook: `ops/k8s/RUNBOOK.md` (deploy, inspect, rollback, rotate secrets).
+
 ## Runtime contract
 
 Required env vars (names only):
