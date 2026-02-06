@@ -5,6 +5,8 @@ It is intentionally plain YAML + kustomize (no Helm).
 The CronJob YAML uses a placeholder image name; replace it with your registry/repo tag.
 
 Runbook: `ops/k8s/RUNBOOK.md` (deploy, inspect, rollback, rotate secrets).
+Nodegroup upgrade recovery: `ops/k8s/RUNBOOK_NODEGROUP_UPGRADE_RECOVERY.md`.
+Triage helper: `scripts/ops/eks_nodegroup_upgrade_triage.sh` (read-only; prints recommended actions).
 
 ## Runtime contract
 
