@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../..
+  - pvc-data.yaml
+  - pvc-state.yaml
+  - ingress-dashboard.yaml
+
+patchesStrategicMerge:
+  - patch-cronjob-storage.yaml
+  - patch-dashboard-storage.yaml

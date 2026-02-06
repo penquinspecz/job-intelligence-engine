@@ -15,6 +15,7 @@ BASE_DIR = REPO_ROOT / "ops" / "k8s" / "jobintel"
 OVERLAY_DIRS = {
     "aws-eks": REPO_ROOT / "ops" / "k8s" / "overlays" / "aws-eks",
     "live": REPO_ROOT / "ops" / "k8s" / "overlays" / "live",
+    "onprem": REPO_ROOT / "ops" / "k8s" / "jobintel" / "overlays" / "onprem",
 }
 
 REQUIRED_SECRET_KEYS = ["JOBINTEL_S3_BUCKET"]

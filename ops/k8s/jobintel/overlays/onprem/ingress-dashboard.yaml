@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: jobintel-dashboard
+  namespace: jobintel
+  annotations:
+    kubernetes.io/ingress.class: traefik
+spec:
+  tls:
+    - hosts:
+        - jobintel.internal
+      secretName: jobintel-dashboard-tls
+  rules:
+    - host: jobintel.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: jobintel-dashboard
+                port:
+                  number: 80

@@ -7,6 +7,7 @@ The CronJob YAML uses a placeholder image name; replace it with your registry/re
 Runbook: `ops/k8s/RUNBOOK.md` (deploy, inspect, rollback, rotate secrets).
 Nodegroup upgrade recovery: `ops/k8s/RUNBOOK_NODEGROUP_UPGRADE_RECOVERY.md`.
 Triage helper: `scripts/ops/eks_nodegroup_upgrade_triage.sh` (read-only; prints recommended actions).
+On-prem baseline docs: `ops/onprem/README.md`, `ops/onprem/RUNBOOK_ONPREM_INSTALL.md`, `ops/onprem/RUNBOOK_DEPLOY.md`, `ops/onprem/RUNBOOK_UPGRADES.md`.
 
 ## Runtime contract
 
@@ -55,6 +56,9 @@ AWS EKS overlay (IRSA + publish toggles):
 Live overlay (opt-in):
 - `ops/k8s/overlays/live/`
 
+On-prem overlay (k3s/local-path PVCs + ingress):
+- `ops/k8s/jobintel/overlays/onprem/`
+
 IRSA note (conceptual):
 - IRSA maps a Kubernetes ServiceAccount to a cloud IAM role so pods can access object stores without static keys.
 - The AWS overlay expects `JOBINTEL_IRSA_ROLE_ARN` at render time (no manual YAML edits).
@@ -75,6 +79,12 @@ kubectl apply -f /tmp/jobintel.yaml
 ```
 
 Full AWS flow (ECR push + preflight + render/apply): `ops/aws/EKS_ECR_GOLDEN_PATH.md`.
+
+For on-prem k3s:
+```bash
+python scripts/k8s_render.py --overlay onprem > /tmp/jobintel-onprem.yaml
+kubectl apply -f /tmp/jobintel-onprem.yaml
+```
 
 Preflight (offline, no AWS calls):
 ```bash
