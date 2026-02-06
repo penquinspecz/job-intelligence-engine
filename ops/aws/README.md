@@ -1,5 +1,13 @@
 # AWS Deployment (Milestone 2)
 
+## EKS + ECR golden path
+
+Use `ops/aws/EKS_ECR_GOLDEN_PATH.md` for the copy/paste flow:
+- bootstrap EKS with Terraform
+- build and push image to ECR
+- render/apply `aws-eks` overlay with explicit image
+- run `scripts/aws_preflight_eks.py` to validate identity/cluster/ECR/S3 before proof runs
+
 ## Minimal IAM policy (least privilege)
 ```json
 {

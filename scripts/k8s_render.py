@@ -94,7 +94,7 @@ def _substitute_placeholders(content: str, source_path: Path) -> str:
     return rendered
 
 
-def _render_with_overlays(overlays: list[str]) -> str:
+def _render_with_overlays(overlays: list[str], image_override_arg: str | None = None) -> str:
     overlay_dirs = [OVERLAY_DIRS[name] for name in overlays]
     patch_paths: list[Path] = []
     for overlay_dir in overlay_dirs:
@@ -104,7 +104,7 @@ def _render_with_overlays(overlays: list[str]) -> str:
         return _render_manifest(BASE_DIR)
 
     require_image = "aws-eks" in overlays
-    image_override = os.getenv("JOBINTEL_IMAGE") if require_image else None
+    image_override = image_override_arg or (os.getenv("JOBINTEL_IMAGE") if require_image else None)
     if require_image and not image_override:
         raise RuntimeError("JOBINTEL_IMAGE is required when rendering aws-eks overlay")
 
@@ -174,13 +174,18 @@ def main(argv: list[str] | None = None) -> int:
         choices=sorted(OVERLAY_DIRS.keys()),
         help="Render one or more overlays (default: base). Repeat to stack.",
     )
+    parser.add_argument(
+        "--image",
+        default=None,
+        help="Override container image URI (e.g., <acct>.dkr.ecr.<region>.amazonaws.com/jobintel:<tag>).",
+    )
     parser.add_argument("--validate", action="store_true", help="kubectl apply --dry-run=client")
     parser.add_argument("--secrets", action="store_true", help="Print required secret keys")
     args = parser.parse_args(argv)
 
     overlays = args.overlay or []
     if overlays:
-        manifest = _render_with_overlays(overlays)
+        manifest = _render_with_overlays(overlays, image_override_arg=args.image)
     else:
         manifest = _render_manifest(BASE_DIR)
     print(manifest)

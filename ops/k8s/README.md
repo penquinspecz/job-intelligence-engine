@@ -65,12 +65,14 @@ kubectl apply -k ops/k8s/jobintel
 
 For EKS with IRSA:
 ```bash
-export JOBINTEL_IMAGE="$(scripts/ecr_publish_image.sh | cut -d= -f2)"
+export JOBINTEL_IMAGE=<account>.dkr.ecr.<region>.amazonaws.com/jobintel:<tag-or-digest>
 JOBINTEL_IRSA_ROLE_ARN=arn:aws:iam::<account>:role/<role> \
   JOBINTEL_IMAGE="$JOBINTEL_IMAGE" \
-  python scripts/k8s_render.py --overlay aws-eks > /tmp/jobintel.yaml
+  python scripts/k8s_render.py --overlay aws-eks --image "$JOBINTEL_IMAGE" > /tmp/jobintel.yaml
 kubectl apply -f /tmp/jobintel.yaml
 ```
+
+Full AWS flow (ECR push + preflight + render/apply): `ops/aws/EKS_ECR_GOLDEN_PATH.md`.
 
 Preflight (offline, no AWS calls):
 ```bash

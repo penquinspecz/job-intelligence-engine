@@ -63,6 +63,12 @@ make aws-discover-subnets EXCLUDE_AZ=us-east-1e
 - `update_kubeconfig_command`: use to configure kubectl
 - `jobintel_irsa_role_arn`: paste into `ops/k8s/overlays/aws-eks/patch-serviceaccount.yaml`
 - `serviceaccount_annotation`: full annotation string
+- `cluster_name`: EKS cluster name
+- `region`: AWS region for the cluster
+- `oidc_provider_arn`: OIDC provider ARN for IRSA
+- `node_role_arn`: managed node group role ARN (ECR pull via this role)
+- `subnet_ids`: subnets used by cluster and node group
+- `cluster_security_group_id`: cluster security group ID
 
 ## Notes
 
