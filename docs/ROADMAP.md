@@ -163,8 +163,8 @@ S3-compatible object store, optional alerts.
 - [x] Minimal object-store IAM policy documented (least privilege; AWS example)
 - [ ] Live scraping verified in-cluster (EKS) with provenance showing live_attempted=true and live_result=success (not skipped/failed) — run + commit proof log
 - [ ] Scrape politeness, rate limiting, and anti-bot hardening implemented (required before adding more providers)
-- [ ] Domain-backed dashboard endpoint (API first; UI can come later)
-- [ ] Runbook: deploy, inspect last run, roll back, rotate secrets
+- [x] Domain-backed dashboard endpoint (API first; UI can come later)
+- [x] Runbook: deploy, inspect last run, roll back, rotate secrets
  - [ ] Proof artifacts captured (for verification):
    - CloudWatch log line with `run_id`
    - Provenance JSON line captured showing `live_attempted=true` and `live_result != skipped`
@@ -174,6 +174,10 @@ S3-compatible object store, optional alerts.
    - Live proof manifest stored in repo: `ops/k8s/jobintel/jobs/jobintel-liveproof.job.yaml`
    - `s3://<bucket>/<prefix>/runs/<run_id>/<provider>/<profile>/...` populated
    - `python scripts/verify_published_s3.py --bucket <bucket> --run-id <run_id> --verify-latest` outputs OK
+
+Current Status:
+- Remaining Milestone 2 blockers are receipt-driven: in-cluster live proof, proof artifacts capture (`state/proofs/<run_id>.json` + verify output), and evidence that politeness signals (rate-limit/backoff/circuit-breaker + robots/allowlist) are present in real run logs/provenance.
+- Deployment surfaces are in place (`ops/k8s/jobintel/dashboard.yaml`, `ops/k8s/RUNBOOK.md`, `src/ji_engine/dashboard/app.py`); remaining work is operational proof completion.
 
 ### Work Items
 - [x] Implement `scripts/publish_s3.py` and wire it into end-of-run (after artifacts persisted)
