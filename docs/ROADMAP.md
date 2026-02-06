@@ -41,7 +41,7 @@ If a change doesn’t advance a milestone’s Definition of Done (DoD), it’s p
 
 ## Current State (as of this commit)
 
-Last verified: `2026-02-06T22:10:17Z` @ `e270332`
+Last verified: `2026-02-06T23:34:55Z` @ `d957489`
 
 ### Completed foundation (verified in repo/tests)
 - [x] Deterministic ranking + tie-breakers
@@ -77,7 +77,7 @@ Last verified: `2026-02-06T22:10:17Z` @ `e270332`
 ### New conventions added (scaffold + partial integration)
 - [x] `state/user_state/` convention + loader utility returning `{}` if missing (scaffold)
 - [x] User state overlay annotated in outputs (status tags/notes)
-- [ ] User state overlay influences filtering/alert semantics (Milestone 3 work item)
+- [x] User state overlay influences filtering/alert semantics (ignore/applied/interviewing suppression in shortlist + diffs + Discord paths)
 
 ---
 
@@ -356,25 +356,25 @@ Backups must cover the “four truths”:
 #### 7) Cloud DR Path is Real (Cold Standby), Proven Once, and Tear-Down Friendly
 The goal is **rebuild on demand**, not “always-on cloud.”
 
-- [ ] DR infrastructure definition exists (Terraform or equivalent):
+- [x] DR infrastructure definition exists (Terraform or equivalent):
   - [ ] Either:
     - [ ] EKS minimal cluster definition, or
-    - [ ] EC2 + k3s (cheaper and simpler for “cold standby”)
-- [ ] DR runbook exists: “from zero to running JobIntel”
-  - [ ] provision infra
-  - [ ] deploy manifests
-  - [ ] restore DB + artifacts
-  - [ ] validate a job run
-  - [ ] tear down cloud infra
+    - [x] EC2 + k3s (cheaper and simpler for “cold standby”)
+- [x] DR runbook exists: “from zero to running JobIntel”
+  - [x] provision infra
+  - [x] deploy manifests
+  - [x] restore DB + artifacts
+  - [x] validate a job run
+  - [x] tear down cloud infra
 - [ ] DR rehearsal performed end-to-end at least once:
-  - [ ] evidence captured (logs, output artifacts)
-  - [ ] teardown succeeded and verified (no lingering spend)
+  - [ ] evidence captured (logs, output artifacts). Receipt missing: committed DR rehearsal logs under `ops/proof/` tied to timestamps/run_id.
+  - [ ] teardown succeeded and verified (no lingering spend). Receipt missing: committed destroy output transcript for same rehearsal.
 
 #### 8) Runbooks: Normal Ops, Upgrades, Disaster Recovery
 Minimum required runbooks:
-- [ ] `RUNBOOK_ONPREM_INSTALL.md` (k3s bootstrap, storage, networking)
-- [ ] `RUNBOOK_DEPLOY.md` (deploy app, rotate secrets, inspect last run)
-- [ ] `RUNBOOK_UPGRADES.md` (k3s + add-ons + app image)
+- [x] `RUNBOOK_ONPREM_INSTALL.md` (k3s bootstrap, storage, networking)
+- [x] `RUNBOOK_DEPLOY.md` (deploy app, rotate secrets, inspect last run)
+- [x] `RUNBOOK_UPGRADES.md` (k3s + add-ons + app image)
 - [ ] `RUNBOOK_BACKUPS.md` (what is backed up, schedule, retention, restore steps)
 - [ ] `RUNBOOK_DISASTER_RECOVERY.md` (AWS cold start restore + validation + teardown)
 - [ ] Each runbook includes:
@@ -407,19 +407,19 @@ Minimum required runbooks:
 ---
 
 ### Deliverables (Repo Artifacts)
-- [ ] `ops/onprem/`:
-  - [ ] k3s install scripts or automation
-  - [ ] storage setup notes/scripts
-  - [ ] networking notes (ingress/DNS/VPN)
-- [ ] `ops/dr/`:
-  - [ ] Terraform (EKS or EC2+k3s) OR equivalent reproducible infra code
-  - [ ] teardown scripts
+- [x] `ops/onprem/`:
+  - [x] k3s install scripts or automation
+  - [x] storage setup notes/scripts
+  - [x] networking notes (ingress/DNS/VPN)
+- [x] `ops/dr/`:
+  - [x] Terraform (EKS or EC2+k3s) OR equivalent reproducible infra code
+  - [x] teardown scripts
 - [ ] `ops/runbooks/` (or `ops/k8s/` if that’s your existing convention):
   - [ ] all runbooks listed above
 - [ ] `scripts/ops/`:
-  - [ ] backup script(s) (db + artifacts) with encryption + verification
-  - [ ] restore script(s)
-  - [ ] DR bring-up + validate + teardown orchestration script
+  - [ ] backup script(s) (db + artifacts) with encryption + verification. Receipt missing: committed backup/retention scripts under `scripts/ops/`.
+  - [x] restore script(s)
+  - [x] DR bring-up + validate + teardown orchestration script
 
 ---
 
@@ -469,20 +469,20 @@ Milestone 4 is DONE when the above is rehearsed once end-to-end and you can repe
 **Goal:** track jobs across time, reduce noise, and make changes meaningful.
 
 ### Definition of Done (DoD)
-- [ ] `job_identity()` produces stable IDs across runs for the same posting
+- [x] `job_identity()` produces stable IDs across runs for the same posting
 - [x] URL normalization reduces false deltas
-- [ ] Dedupe collapse: same job across multiple listings/URLs → one canonical record
-- [ ] “Changes since last run” uses identity-based diffing (not just row diffs)
+- [x] Dedupe collapse: same job across multiple listings/URLs → one canonical record
+- [x] “Changes since last run” uses identity-based diffing (not just row diffs)
 - [ ] History directory grows predictably (retention rules)
-- [ ] **User State overlay** exists and affects outputs:
+- [x] **User State overlay** exists and affects outputs:
   - applied / ignore / interviewing / saved, etc.
   - shortlist + alerts respect this state (filter or annotate)
 
 ### Work Items
-- [ ] Implement/validate identity strategy (title/location/team + URL + JD hash fallback)
-- [ ] Store per-run identity map + provenance in `state/history/<profile>/...`
-- [ ] Identity-based diffs for new/changed/removed
-- [ ] Implement `state/user_state/<profile>.json` overlay:
+- [x] Implement/validate identity strategy (title/location/team + URL + JD hash fallback)
+- [ ] Store per-run identity map + provenance in `state/history/<profile>/...`. Receipt missing: committed `state/history/<profile>/` artifacts and test coverage for retention/shape.
+- [x] Identity-based diffs for new/changed/removed
+- [x] Implement `state/user_state/<profile>.json` overlay:
   - schema: `{ "<job_id>": { "status": "...", "date": "...", "notes": "..." } }`
   - integrate into shortlist writer and alerting (filtering semantics defined)
 - [ ] Retention policy (keep last N runs + daily snapshots) documented and enforced
