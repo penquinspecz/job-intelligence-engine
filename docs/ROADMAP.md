@@ -116,7 +116,7 @@ If a change doesn’t advance a milestone’s Definition of Done (DoD), it’s p
 
 ---
 
-## Milestone 1.5 — Determinism Contract & Replayability (Local Truth > Vibes)
+## Milestone 2 — Determinism Contract & Replayability (Local Truth > Vibes)
 
 **Goal:** Given a run report, you can reproduce and explain the output.
 
@@ -150,7 +150,7 @@ If a change doesn’t advance a milestone’s Definition of Done (DoD), it’s p
 
 ---
 
-## Milestone 2 — Scheduled run + object-store publishing (Kubernetes CronJob first)
+## Milestone 3 — Scheduled run + object-store publishing (Kubernetes CronJob first)
 
 **Goal:** “It runs itself.” A Kubernetes CronJob (or equivalent orchestrator) runs daily, publishes to an
 S3-compatible object store, optional alerts.
@@ -227,7 +227,210 @@ Current Status:
 
 ---
 
-## Milestone 2.5 — Provider Expansion (Safe, Config-Driven, Deterministic)
+## Milestone 4 — On-Prem Primary (k3s) + Cloud DR (AWS) Without Babysitting
+
+**Intent:** Move JobIntel to an **on-prem primary runtime** (Raspberry Pi k3s) with a **cloud disaster-recovery path** (AWS) that is **validated, rehearsed, and reproducible** — without turning AWS into a permanently running cost sink, and without creating a fragile “active/active” science project.
+
+**Principles / Non-Goals (keep us honest):**
+- ✅ **Primary execution on-prem** (k3s). Cloud is **cold standby** / DR only.
+- ✅ **Deterministic rebuild**: infra + k8s + app comes up from code + backups.
+- ✅ **Backups are boring**: scheduled, encrypted, checksummed, and tested.
+- ✅ **Upgrades are routine**: simple runbooks, no heroics.
+- ❌ No active/active between on-prem and cloud.
+- ❌ No dual-write / live replication complexity.
+- ❌ No permanent “always-on” EKS as the normal operating model.
+
+### Definition of Done (DoD)
+This milestone is complete only when all items below are **true and proven with artifacts**:
+
+#### 1) On-Prem k3s Cluster is Operational + Documented
+- [ ] k3s cluster (3x Pi4, 8GB each) runs stable for 72h with:
+  - [ ] control plane stable (no crash loops / repeated restarts)
+  - [ ] node readiness stable (no flapping, no frequent NotReady)
+  - [ ] time sync verified (NTP) and consistent across nodes
+- [ ] Storage strategy implemented:
+  - [ ] **Primary storage** on USB3 1TB for stateful data (not SD)
+  - [ ] SD used only for OS boot (or documented if otherwise)
+  - [ ] filesystem choice documented (e.g., ext4) + mount options
+  - [ ] clear capacity expectations: DB size growth, artifact growth
+- [ ] Networking baseline documented:
+  - [ ] LAN assumptions and DHCP/static IP plan
+  - [ ] DNS + local name resolution strategy
+  - [ ] ingress strategy (see section 4)
+- [ ] k3s install is automated / reproducible:
+  - [ ] scripts or IaC-style automation (idempotent)
+  - [ ] pinned versions (k3s + critical components)
+  - [ ] upgrade plan documented + tested at least once in a safe rehearsal
+
+#### 2) Cluster Management Strategy Chosen and Hardened (Rancher Optional but Supported)
+Choose **one** as the default path and keep the others as optional:
+
+**Option A (Lean):** “kubectl + GitOps” (default for lowest maintenance)
+- [ ] GitOps tool chosen (Flux or ArgoCD) and deployed OR explicit rationale for not using
+- [ ] cluster state fully described by manifests in repo (excluding secrets)
+
+**Option B (Operable UI):** Rancher manages k3s cluster
+- [ ] Rancher installed in a dedicated namespace
+- [ ] k3s cluster imported/managed and health is green
+- [ ] access model documented (local admin, SSO optional)
+- [ ] clear statement on what Rancher is used for:
+  - [ ] visibility + upgrades + cluster lifecycle
+  - [ ] NOT a dumping ground for manual drift
+
+**DoD requirement regardless of option:**
+- [ ] “Single source of truth” is explicit (Git is truth; UI changes must reconcile back)
+- [ ] Manual UI-only changes are treated as a failure condition (documented)
+
+#### 3) “Low Maintenance” Guardrails Implemented (No Regular Babysitting)
+- [ ] Observability baseline exists:
+  - [ ] log access is easy (kubectl logs + centralized option documented)
+  - [ ] core health check commands documented and fast (<5 minutes)
+- [ ] Node health is self-healing where feasible:
+  - [ ] k3s service auto-restart enabled and validated
+  - [ ] kubelet/container runtime stability verified
+- [ ] Upgrade discipline codified:
+  - [ ] “upgrade checklist” runbook exists
+  - [ ] “rollback / restore” runbook exists
+- [ ] Maintenance boundaries defined:
+  - [ ] what will be upgraded on schedule (k3s, app image, add-ons)
+  - [ ] what is “as-needed” (Rancher, OS packages)
+  - [ ] what is intentionally NOT part of scope (active/active replication)
+
+#### 4) Ingress + TLS + DNS: Production-Grade but Not Fancy
+- [ ] Ingress chosen and deployed (Traefik default for k3s is fine, or NGINX if preferred)
+- [ ] TLS strategy implemented:
+  - [ ] local CA or Let’s Encrypt (document constraints if no public DNS)
+  - [ ] cert rotation and renewal documented + validated
+- [ ] DNS strategy:
+  - [ ] local DNS (Pi-hole / router DNS / internal) OR public DNS if exposed
+- [ ] Access strategy for “home/office” vs “away” documented:
+  - [ ] preferred: VPN (Tailscale/WireGuard) to avoid exposing services publicly
+  - [ ] explicitly disallow “random open ports” without a documented reason
+
+#### 5) App Runs on k3s: CronJob-First, Kubernetes-Native (CNCF discipline)
+- [ ] JobIntel runs as a Kubernetes CronJob on k3s
+- [ ] All required secrets/config are Kubernetes-native:
+  - [ ] Secrets stored as encrypted at rest (SOPS/age preferred) OR clear alternative documented
+  - [ ] ConfigMaps for non-sensitive configs
+- [ ] Storage and state:
+  - [ ] `state/` and proof artifacts persist across pod restarts
+  - [ ] DB is stateful (Postgres) with persistent volume claims
+- [ ] “No drift” deployment:
+  - [ ] manifests templated (kustomize/helm) and tracked in repo
+  - [ ] deploy is one command (or one GitOps sync)
+
+#### 6) Backup System (On-Prem → Cloud) is Implemented, Encrypted, and Tested
+Backups must cover the “four truths”:
+1) **Database** (Postgres)
+2) **Artifacts / state** (proofs, snapshots, outputs)
+3) **Manifests / config** (Git)
+4) **Infra definition** (IaC / scripts)
+
+**Requirements:**
+- [ ] DB backups:
+  - [ ] scheduled `pg_dump` (or pg_basebackup if justified)
+  - [ ] compressed + encrypted
+  - [ ] retention policy (e.g., daily 14 days, weekly 8 weeks)
+- [ ] Artifact backups:
+  - [ ] `state/` + proof receipts + published outputs (as applicable)
+  - [ ] checksummed (hash manifest) and verified after upload
+- [ ] Offsite target:
+  - [ ] AWS S3 bucket with versioning enabled
+  - [ ] least-privilege IAM user/role credentials
+  - [ ] SSE-S3 or SSE-KMS + documented key ownership
+- [ ] Restore test:
+  - [ ] at least one full restore to a clean environment (local or cloud)
+  - [ ] evidence captured (timestamps, run IDs, checksums)
+
+#### 7) Cloud DR Path is Real (Cold Standby), Proven Once, and Tear-Down Friendly
+The goal is **rebuild on demand**, not “always-on cloud.”
+
+- [ ] DR infrastructure definition exists (Terraform or equivalent):
+  - [ ] Either:
+    - [ ] EKS minimal cluster definition, or
+    - [ ] EC2 + k3s (cheaper and simpler for “cold standby”)
+- [ ] DR runbook exists: “from zero to running JobIntel”
+  - [ ] provision infra
+  - [ ] deploy manifests
+  - [ ] restore DB + artifacts
+  - [ ] validate a job run
+  - [ ] tear down cloud infra
+- [ ] DR rehearsal performed end-to-end at least once:
+  - [ ] evidence captured (logs, output artifacts)
+  - [ ] teardown succeeded and verified (no lingering spend)
+
+#### 8) Runbooks: Normal Ops, Upgrades, Disaster Recovery
+Minimum required runbooks:
+- [ ] `RUNBOOK_ONPREM_INSTALL.md` (k3s bootstrap, storage, networking)
+- [ ] `RUNBOOK_DEPLOY.md` (deploy app, rotate secrets, inspect last run)
+- [ ] `RUNBOOK_UPGRADES.md` (k3s + add-ons + app image)
+- [ ] `RUNBOOK_BACKUPS.md` (what is backed up, schedule, retention, restore steps)
+- [ ] `RUNBOOK_DISASTER_RECOVERY.md` (AWS cold start restore + validation + teardown)
+- [ ] Each runbook includes:
+  - [ ] preflight checks
+  - [ ] success criteria
+  - [ ] “if it fails” branches
+  - [ ] commands that can be copy/pasted
+
+#### 9) Evidence / Proof Artifacts (So This Isn’t Just “It Works On My Desk”)
+- [ ] Proof artifacts stored in repo or documented location:
+  - [ ] backup success logs + checksum verification output
+  - [ ] restore proof (DB restored + artifacts present)
+  - [ ] DR rehearsal proof (cloud came up, run executed, outputs produced)
+- [ ] All evidence references run_id and timestamps.
+
+---
+
+### Implementation Notes / Guardrails (Hard Rules)
+- No manual “clickops drift”: if UI is used (Rancher/AWS console), the final state must be reflected back into code or documented as intentional.
+- Cloud DR must be “cheap by default”:
+  - keep nodes scaled to zero where possible
+  - use teardown as part of rehearsal
+- Security baseline:
+  - no plaintext secrets in repo
+  - no long-lived admin keys without rotation plan
+- Upgrade safety:
+  - always validate add-on versions compatibility (coredns, vpc-cni, kube-proxy if applicable)
+  - keep rollback options clear (restore from backup beats fiddling)
+
+---
+
+### Deliverables (Repo Artifacts)
+- [ ] `ops/onprem/`:
+  - [ ] k3s install scripts or automation
+  - [ ] storage setup notes/scripts
+  - [ ] networking notes (ingress/DNS/VPN)
+- [ ] `ops/dr/`:
+  - [ ] Terraform (EKS or EC2+k3s) OR equivalent reproducible infra code
+  - [ ] teardown scripts
+- [ ] `ops/runbooks/` (or `ops/k8s/` if that’s your existing convention):
+  - [ ] all runbooks listed above
+- [ ] `scripts/ops/`:
+  - [ ] backup script(s) (db + artifacts) with encryption + verification
+  - [ ] restore script(s)
+  - [ ] DR bring-up + validate + teardown orchestration script
+
+---
+
+### Acceptance Test (Single Command “Prove It”)
+A “prove it” sequence exists that can be run by Future You:
+- [ ] On-prem:
+  - [ ] deploy
+  - [ ] run a scrape/job
+  - [ ] confirm outputs + proof receipts
+  - [ ] run backups
+- [ ] DR rehearsal:
+  - [ ] bring up cloud infra
+  - [ ] restore
+  - [ ] run job
+  - [ ] verify outputs
+  - [ ] teardown cloud infra
+
+Milestone 4 is DONE when the above is rehearsed once end-to-end and you can repeat it without discovering surprise tribal knowledge.
+
+---
+
+## Milestone 5 — Provider Expansion (Safe, Config-Driven, Deterministic)
 
 **Goal:** Add multiple AI companies without turning this into a scraper-maintenance job.
 
@@ -250,7 +453,7 @@ Current Status:
 
 ---
 
-## Milestone 3 — History & intelligence (identity, dedupe, trends + user state)
+## Milestone 6 — History & intelligence (identity, dedupe, trends + user state)
 
 **Goal:** track jobs across time, reduce noise, and make changes meaningful.
 
@@ -275,7 +478,32 @@ Current Status:
 
 ---
 
-## Milestone 3.5 — Semantic Safety Net (Deterministic Discovery)
+## Milestone 7 — History & intelligence (identity, dedupe, trends + user state)
+
+**Goal:** track jobs across time, reduce noise, and make changes meaningful.
+
+### Definition of Done (DoD)
+- [ ] `job_identity()` produces stable IDs across runs for the same posting
+- [x] URL normalization reduces false deltas
+- [ ] Dedupe collapse: same job across multiple listings/URLs → one canonical record
+- [ ] “Changes since last run” uses identity-based diffing (not just row diffs)
+- [ ] History directory grows predictably (retention rules)
+- [ ] **User State overlay** exists and affects outputs:
+  - applied / ignore / interviewing / saved, etc.
+  - shortlist + alerts respect this state (filter or annotate)
+
+### Work Items
+- [ ] Implement/validate identity strategy (title/location/team + URL + JD hash fallback)
+- [ ] Store per-run identity map + provenance in `state/history/<profile>/...`
+- [ ] Identity-based diffs for new/changed/removed
+- [ ] Implement `state/user_state/<profile>.json` overlay:
+  - schema: `{ "<job_id>": { "status": "...", "date": "...", "notes": "..." } }`
+  - integrate into shortlist writer and alerting (filtering semantics defined)
+- [ ] Retention policy (keep last N runs + daily snapshots) documented and enforced
+
+---
+
+## Milestone 8 — Semantic Safety Net (Deterministic Discovery)
 
 **Goal:** Catch “good fits with weird wording” without losing explainability.
 
@@ -293,7 +521,7 @@ Current Status:
 
 ---
 
-## Milestone 4 — Hardening & scaling (providers, cost controls, observability)
+## Milestone 9 — Hardening & scaling (providers, cost controls, observability)
 
 **Goal:** resilient providers, predictable cost, better monitoring.
 
@@ -311,7 +539,7 @@ Current Status:
 
 ---
 
-## Milestone 5 — Multi-user (Phase 2/3) — Profiles, uploads, and per-user experiences
+## Milestone 10 — Multi-user (Phase 2/3) — Profiles, uploads, and per-user experiences
 
 **Goal:** other people can use the engine safely, with isolation and a clean UX.
 
