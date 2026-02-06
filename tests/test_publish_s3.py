@@ -8,6 +8,33 @@ import pytest
 from botocore.exceptions import ClientError
 
 import scripts.publish_s3 as publish_s3
+
+
+def _client_error(code: str, status: int, headers: dict | None = None, message: str = "Denied") -> ClientError:
+    return ClientError(
+        {
+            "Error": {"Code": code, "Message": message},
+            "ResponseMetadata": {"HTTPStatusCode": status, "HTTPHeaders": headers or {}},
+        },
+        "HeadBucket",
+    )
+
+
+def test_format_s3_client_error_messages(monkeypatch):
+    monkeypatch.setenv("AWS_ROLE_ARN", "arn:aws:iam::123:role/jobintel")
+    monkeypatch.setenv("JOBINTEL_AWS_REGION", "us-east-1")
+    assert "S3 bucket not found: bucket." in publish_s3._format_s3_client_error(
+        _client_error("NoSuchBucket", 404), "bucket"
+    )
+    assert "Access denied to bucket: bucket." in publish_s3._format_s3_client_error(
+        _client_error("AccessDenied", 403), "bucket"
+    )
+    msg = publish_s3._format_s3_client_error(
+        _client_error("PermanentRedirect", 301, headers={"x-amz-bucket-region": "us-west-2"}), "bucket"
+    )
+    assert "Bucket exists in region us-west-2" in msg
+
+
 from ji_engine.utils.verification import compute_sha256_file
 
 
@@ -74,6 +101,23 @@ def test_publish_s3_uploads_runs_and_latest(tmp_path, monkeypatch):
     monkeypatch.setenv("AWS_REGION", "us-east-1")
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "AKIA_TEST_KEY")
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "SUPER_SECRET")
+
+    class _StubCreds:
+        method = "env"
+
+    class _StubSTS:
+        def get_caller_identity(self):
+            return {"Account": "123456789012"}
+
+    class _StubSession:
+        def get_credentials(self):
+            return _StubCreds()
+
+        def client(self, _service, region_name=None):
+            assert region_name
+            return _StubSTS()
+
+    monkeypatch.setattr(publish_s3.aws_env_check.boto3.session, "Session", _StubSession)
 
     client = DummyClient()
     monkeypatch.setattr(boto3, "client", lambda *args, **kwargs: client)
@@ -218,6 +262,12 @@ def test_publish_s3_missing_creds_fails_without_dry_run(monkeypatch, tmp_path, c
             run_id,
         ],
     )
+
+    class _StubSession:
+        def get_credentials(self):
+            return None
+
+    monkeypatch.setattr(publish_s3.aws_env_check.boto3.session, "Session", _StubSession)
 
     with caplog.at_level(logging.ERROR), pytest.raises(SystemExit) as exc:
         publish_s3.main()

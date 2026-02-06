@@ -29,6 +29,7 @@ import runpy
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -85,6 +86,8 @@ from jobintel.aws_runs import (
 )
 from jobintel.delta import compute_delta
 from jobintel.discord_notify import build_run_summary_message, post_discord, resolve_webhook
+
+OUTPUT_DIR = DATA_DIR
 
 try:
     import scripts.publish_s3 as publish_s3  # type: ignore
@@ -398,12 +401,16 @@ def _publish_contract_failed(publish_section: Dict[str, Any]) -> bool:
     return not _pointer_write_ok(publish_section.get("pointer_write"))
 
 
-def _resolve_publish_state(publish_requested: bool, bucket: str) -> Tuple[bool, bool, Optional[str]]:
+def _resolve_publish_state(
+    publish_requested: bool, bucket: str, require_s3: bool = False
+) -> Tuple[bool, bool, Optional[str]]:
     if not publish_requested:
         return False, False, None
     if not bucket:
+        if require_s3:
+            return False, True, "missing_bucket_required"
         return False, False, "skipped_missing_bucket"
-    return True, True, None
+    return True, require_s3, None
 
 
 def _score_meta_path(ranked_json: Path) -> Path:
@@ -411,13 +418,15 @@ def _score_meta_path(ranked_json: Path) -> Path:
 
 
 def _scrape_meta_path(provider: str) -> Path:
-    return DATA_DIR / f"{provider}_scrape_meta.json"
+    return OUTPUT_DIR / f"{provider}_scrape_meta.json"
 
 
 def _load_scrape_provenance(providers: List[str]) -> Dict[str, Dict[str, Any]]:
     out: Dict[str, Dict[str, Any]] = {}
     for provider in providers:
         meta_path = _scrape_meta_path(provider)
+        if not meta_path.exists() and OUTPUT_DIR != DATA_DIR:
+            meta_path = DATA_DIR / f"{provider}_scrape_meta.json"
         if not meta_path.exists():
             continue
         try:
@@ -606,28 +615,38 @@ def _resolve_providers(args: argparse.Namespace) -> List[str]:
     return out
 
 
+def _resolve_output_dir() -> Path:
+    env_value = os.environ.get("JOBINTEL_OUTPUT_DIR")
+    if env_value:
+        output_dir = Path(env_value).expanduser()
+    else:
+        output_dir = DATA_DIR / "ashby_cache"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return output_dir
+
+
 def _provider_raw_jobs_json(provider: str) -> Path:
     if provider == "openai":
         return RAW_JOBS_JSON
-    return DATA_DIR / f"{provider}_raw_jobs.json"
+    return OUTPUT_DIR / f"{provider}_raw_jobs.json"
 
 
 def _provider_labeled_jobs_json(provider: str) -> Path:
     if provider == "openai":
         return LABELED_JOBS_JSON
-    return DATA_DIR / f"{provider}_labeled_jobs.json"
+    return OUTPUT_DIR / f"{provider}_labeled_jobs.json"
 
 
 def _provider_enriched_jobs_json(provider: str) -> Path:
     if provider == "openai":
         return ENRICHED_JOBS_JSON
-    return DATA_DIR / f"{provider}_enriched_jobs.json"
+    return OUTPUT_DIR / f"{provider}_enriched_jobs.json"
 
 
 def _alerts_paths(provider: str, profile: str) -> Tuple[Path, Path]:
     return (
-        DATA_DIR / f"{provider}_alerts.{profile}.json",
-        DATA_DIR / f"{provider}_alerts.{profile}.md",
+        OUTPUT_DIR / f"{provider}_alerts.{profile}.json",
+        OUTPUT_DIR / f"{provider}_alerts.{profile}.md",
     )
 
 
@@ -638,41 +657,41 @@ def _last_seen_path(provider: str, profile: str) -> Path:
 def _provider_ai_jobs_json(provider: str) -> Path:
     if provider == "openai":
         return ENRICHED_JOBS_JSON.with_name("openai_enriched_jobs_ai.json")
-    return DATA_DIR / f"{provider}_enriched_jobs_ai.json"
+    return OUTPUT_DIR / f"{provider}_enriched_jobs_ai.json"
 
 
 def _provider_ranked_jobs_json(provider: str, profile: str) -> Path:
     if provider == "openai":
-        return ranked_jobs_json(profile)
-    return DATA_DIR / f"{provider}_ranked_jobs.{profile}.json"
+        return OUTPUT_DIR / ranked_jobs_json(profile).name
+    return OUTPUT_DIR / f"{provider}_ranked_jobs.{profile}.json"
 
 
 def _provider_ranked_jobs_csv(provider: str, profile: str) -> Path:
     if provider == "openai":
-        return ranked_jobs_csv(profile)
-    return DATA_DIR / f"{provider}_ranked_jobs.{profile}.csv"
+        return OUTPUT_DIR / ranked_jobs_csv(profile).name
+    return OUTPUT_DIR / f"{provider}_ranked_jobs.{profile}.csv"
 
 
 def _provider_ranked_families_json(provider: str, profile: str) -> Path:
     if provider == "openai":
-        return ranked_families_json(profile)
-    return DATA_DIR / f"{provider}_ranked_families.{profile}.json"
+        return OUTPUT_DIR / ranked_families_json(profile).name
+    return OUTPUT_DIR / f"{provider}_ranked_families.{profile}.json"
 
 
 def _provider_shortlist_md(provider: str, profile: str) -> Path:
     if provider == "openai":
-        return shortlist_md_path(profile)
-    return DATA_DIR / f"{provider}_shortlist.{profile}.md"
+        return OUTPUT_DIR / shortlist_md_path(profile).name
+    return OUTPUT_DIR / f"{provider}_shortlist.{profile}.md"
 
 
 def _provider_top_md(provider: str, profile: str) -> Path:
-    return DATA_DIR / f"{provider}_top.{profile}.md"
+    return OUTPUT_DIR / f"{provider}_top.{profile}.md"
 
 
 def _provider_diff_paths(provider: str, profile: str) -> Tuple[Path, Path]:
     return (
-        DATA_DIR / f"{provider}_diff.{profile}.json",
-        DATA_DIR / f"{provider}_diff.{profile}.md",
+        OUTPUT_DIR / f"{provider}_diff.{profile}.json",
+        OUTPUT_DIR / f"{provider}_diff.{profile}.md",
     )
 
 
@@ -959,21 +978,21 @@ def _persist_run_metadata(
 ) -> Path:
     run_report_schema_version = RUN_REPORT_SCHEMA_VERSION
     inputs: Dict[str, Dict[str, Optional[str]]] = {
-        "raw_jobs_json": _file_metadata(RAW_JOBS_JSON),
-        "labeled_jobs_json": _file_metadata(LABELED_JOBS_JSON),
-        "enriched_jobs_json": _file_metadata(ENRICHED_JOBS_JSON),
+        "raw_jobs_json": _file_metadata(_provider_raw_jobs_json("openai")),
+        "labeled_jobs_json": _file_metadata(_provider_labeled_jobs_json("openai")),
+        "enriched_jobs_json": _file_metadata(_provider_enriched_jobs_json("openai")),
     }
-    ai_path = ENRICHED_JOBS_JSON.with_name("openai_enriched_jobs_ai.json")
+    ai_path = _provider_ai_jobs_json("openai")
     if ai_path.exists():
         inputs["ai_enriched_jobs_json"] = _file_metadata(ai_path)
 
     outputs_by_profile: Dict[str, Dict[str, Dict[str, Optional[str]]]] = {}
     for profile in profiles:
         outputs_by_profile[profile] = {
-            "ranked_json": _output_metadata(ranked_jobs_json(profile)),
-            "ranked_csv": _output_metadata(ranked_jobs_csv(profile)),
-            "ranked_families_json": _output_metadata(ranked_families_json(profile)),
-            "shortlist_md": _output_metadata(shortlist_md_path(profile)),
+            "ranked_json": _output_metadata(_provider_ranked_jobs_json("openai", profile)),
+            "ranked_csv": _output_metadata(_provider_ranked_jobs_csv("openai", profile)),
+            "ranked_families_json": _output_metadata(_provider_ranked_families_json("openai", profile)),
+            "shortlist_md": _output_metadata(_provider_shortlist_md("openai", profile)),
             "top_md": _output_metadata(_provider_top_md("openai", profile)),
         }
 
@@ -2373,6 +2392,13 @@ def main() -> int:
     args = ap.parse_args()
     if args.snapshot_only and not args.offline:
         args.offline = True
+    global OUTPUT_DIR, RAW_JOBS_JSON, LABELED_JOBS_JSON, ENRICHED_JOBS_JSON
+    OUTPUT_DIR = _resolve_output_dir()
+    os.environ.setdefault("JOBINTEL_OUTPUT_DIR", str(OUTPUT_DIR))
+    if RAW_JOBS_JSON.parent != OUTPUT_DIR:
+        RAW_JOBS_JSON = OUTPUT_DIR / RAW_JOBS_JSON.name
+        LABELED_JOBS_JSON = OUTPUT_DIR / LABELED_JOBS_JSON.name
+        ENRICHED_JOBS_JSON = OUTPUT_DIR / ENRICHED_JOBS_JSON.name
     providers = _resolve_providers(args)
     openai_only = providers == ["openai"]
     run_id = _utcnow_iso()
@@ -2414,9 +2440,9 @@ def main() -> int:
     prev_hashes = prev_run.get("hashes", {}) if prev_run else {}
     prev_ai = prev_run.get("ai", {}) if prev_run else {}
     curr_hashes = {
-        "raw": _hash_file(RAW_JOBS_JSON),
-        "labeled": _hash_file(LABELED_JOBS_JSON),
-        "enriched": _hash_file(ENRICHED_JOBS_JSON),
+        "raw": _hash_file(_provider_raw_jobs_json("openai")),
+        "labeled": _hash_file(_provider_labeled_jobs_json("openai")),
+        "enriched": _hash_file(_provider_enriched_jobs_json("openai")),
     }
     ai_path = _provider_ai_jobs_json("openai")
     ai_hash = _hash_file(ai_path)
@@ -2452,14 +2478,14 @@ def main() -> int:
     def _finalize(status: str, extra: Optional[Dict[str, Any]] = None) -> None:
         telemetry["status"] = status
         telemetry["hashes"] = {
-            "raw": _hash_file(RAW_JOBS_JSON),
-            "labeled": _hash_file(LABELED_JOBS_JSON),
-            "enriched": _hash_file(ENRICHED_JOBS_JSON),
+            "raw": _hash_file(_provider_raw_jobs_json("openai")),
+            "labeled": _hash_file(_provider_labeled_jobs_json("openai")),
+            "enriched": _hash_file(_provider_enriched_jobs_json("openai")),
         }
         telemetry["counts"] = {
-            "raw": _safe_len(RAW_JOBS_JSON),
-            "labeled": _safe_len(LABELED_JOBS_JSON),
-            "enriched": _safe_len(ENRICHED_JOBS_JSON),
+            "raw": _safe_len(_provider_raw_jobs_json("openai")),
+            "labeled": _safe_len(_provider_labeled_jobs_json("openai")),
+            "enriched": _safe_len(_provider_enriched_jobs_json("openai")),
         }
         # First-class AI telemetry (even on short-circuit runs).
         telemetry["ai_requested"] = bool(telemetry.get("ai_requested", False))
@@ -2602,19 +2628,30 @@ def main() -> int:
         publish_requested_env = os.environ.get("PUBLISH_S3", "0").strip() == "1"
         publish_requested_cli = bool(args.publish_s3 or args.publish_dry_run)
         publish_requested = publish_requested_env or publish_requested_cli
+        publish_required_env = (
+            os.environ.get("PUBLISH_S3_REQUIRE", "0").strip() == "1"
+            or os.environ.get("JOBINTEL_PUBLISH_REQUIRE", "0").strip() == "1"
+        )
+        publish_required = publish_required_env
         resolved_bucket, resolved_prefix = publish_s3._resolve_bucket_prefix(None, None)
-        if publish_requested_cli:
-            publish_enabled, require_s3, skip_reason = True, True, None
-        else:
-            publish_enabled, require_s3, skip_reason = _resolve_publish_state(publish_requested, resolved_bucket)
+        publish_enabled, require_s3, skip_reason = _resolve_publish_state(
+            publish_requested, resolved_bucket, publish_required
+        )
         if status != "success":
             skip_reason = f"skipped_status_{status}"
             publish_enabled = False
             require_s3 = False
             s3_meta = {"status": "skipped", "reason": skip_reason}
         elif skip_reason:
-            logger.warning("S3 publish requested but bucket is unset; skipping.")
-            s3_meta = {"status": skip_reason, "reason": skip_reason}
+            if skip_reason == "missing_bucket_required":
+                err = "S3 publish required but JOBINTEL_S3_BUCKET is unset."
+                logger.error(err)
+                s3_meta = {"status": "error", "reason": "missing_bucket", "error": err}
+                s3_exit_code = 2
+                s3_failed = True
+            else:
+                logger.warning("S3 publish requested but bucket is unset; skipping.")
+                s3_meta = {"status": "skipped", "reason": skip_reason}
 
         if publish_enabled:
             dry_run = bool(args.publish_dry_run) or os.environ.get("PUBLISH_S3_DRY_RUN", "0").strip() == "1"
@@ -2730,6 +2767,7 @@ def main() -> int:
             "providers=%s\n"
             "profiles=%s\n"
             "s3_status=%s\n"
+            "s3_reason=%s\n"
             "s3_bucket=%s\n"
             "s3_prefixes=%s\n"
             "dashboard_url=%s\n"
@@ -2739,6 +2777,7 @@ def main() -> int:
             ",".join(providers),
             ",".join(profiles_list),
             s3_meta.get("status", "unknown") if isinstance(s3_meta, dict) else "unknown",
+            s3_meta.get("reason") if isinstance(s3_meta, dict) else None,
             s3_meta.get("bucket") if isinstance(s3_meta, dict) else None,
             json.dumps(s3_prefixes, sort_keys=True) if s3_prefixes else None,
             dashboard_url,
@@ -2770,7 +2809,7 @@ def main() -> int:
         ai_required = args.ai
 
         # Self-check: warn if common artifacts/directories are not writable (e.g., root-owned from Docker).
-        warn_paths: List[Path] = [DATA_DIR, STATE_DIR, LAST_RUN_JSON]
+        warn_paths: List[Path] = [DATA_DIR / "ashby_cache", STATE_DIR, LAST_RUN_JSON, Path("/tmp"), Path("/work")]
         for provider in providers:
             warn_paths.extend(
                 [
@@ -2799,7 +2838,7 @@ def main() -> int:
             if ai_mtime is None:
                 return False
             for p in profiles:
-                rjson = ranked_jobs_json(p)
+                rjson = _provider_ranked_jobs_json("openai", p)
                 if (not rjson.exists()) or ((_file_mtime(rjson) or 0) < ai_mtime):
                     return False
             return True
@@ -2825,21 +2864,25 @@ def main() -> int:
             if not ai_required:
                 missing_artifacts: List[Path] = []
                 for p in profiles:
-                    if not ranked_jobs_json(p).exists():
-                        missing_artifacts.append(ranked_jobs_json(p))
-                    if not ranked_jobs_csv(p).exists():
-                        missing_artifacts.append(ranked_jobs_csv(p))
-                    if not ranked_families_json(p).exists():
-                        missing_artifacts.append(ranked_families_json(p))
-                    if not shortlist_md_path(p).exists():
-                        missing_artifacts.append(shortlist_md_path(p))
+                    ranked_json = _provider_ranked_jobs_json("openai", p)
+                    ranked_csv = _provider_ranked_jobs_csv("openai", p)
+                    ranked_families = _provider_ranked_families_json("openai", p)
+                    shortlist_md = _provider_shortlist_md("openai", p)
+                    if not ranked_json.exists():
+                        missing_artifacts.append(ranked_json)
+                    if not ranked_csv.exists():
+                        missing_artifacts.append(ranked_csv)
+                    if not ranked_families.exists():
+                        missing_artifacts.append(ranked_families)
+                    if not shortlist_md.exists():
+                        missing_artifacts.append(shortlist_md)
 
                 if not missing_artifacts:
                     telemetry["hashes"] = curr_hashes
                     telemetry["counts"] = {
-                        "raw": _safe_len(RAW_JOBS_JSON),
-                        "labeled": _safe_len(LABELED_JOBS_JSON),
-                        "enriched": _safe_len(ENRICHED_JOBS_JSON),
+                        "raw": _safe_len(_provider_raw_jobs_json("openai")),
+                        "labeled": _safe_len(_provider_labeled_jobs_json("openai")),
+                        "enriched": _safe_len(_provider_enriched_jobs_json("openai")),
                     }
                     telemetry["stages"] = {"short_circuit": {"duration_sec": 0.0}}
                     _update_ai_telemetry(False)
@@ -2869,9 +2912,9 @@ def main() -> int:
             if ai_fresh and prev_ai_ran and _ranked_up_to_date():
                 telemetry["hashes"] = curr_hashes
                 telemetry["counts"] = {
-                    "raw": _safe_len(RAW_JOBS_JSON),
-                    "labeled": _safe_len(LABELED_JOBS_JSON),
-                    "enriched": _safe_len(ENRICHED_JOBS_JSON),
+                    "raw": _safe_len(_provider_raw_jobs_json("openai")),
+                    "labeled": _safe_len(_provider_labeled_jobs_json("openai")),
+                    "enriched": _safe_len(_provider_enriched_jobs_json("openai")),
                 }
                 telemetry["stages"] = {"short_circuit": {"duration_sec": 0.0}}
                 _update_ai_telemetry(False)
@@ -2894,11 +2937,11 @@ def main() -> int:
 
             # Ensure scoring runs if ranked outputs missing or stale vs AI file
             for profile in profiles:
-                ranked_json = ranked_jobs_json(profile)
-                ranked_csv = ranked_jobs_csv(profile)
-                ranked_families = ranked_families_json(profile)
-                shortlist_md = shortlist_md_path(profile)
-                top_md = DATA_DIR / f"openai_top.{profile}.md"
+                ranked_json = _provider_ranked_jobs_json("openai", profile)
+                ranked_csv = _provider_ranked_jobs_csv("openai", profile)
+                ranked_families = _provider_ranked_families_json("openai", profile)
+                shortlist_md = _provider_shortlist_md("openai", profile)
+                top_md = _provider_top_md("openai", profile)
 
                 scoring_input_selection_by_profile[profile] = _score_input_selection_detail(args)
                 score_in, score_err = _resolve_score_input_path(args)
@@ -2988,7 +3031,13 @@ def main() -> int:
 
         # 1) Run pipeline stages ONCE (scrape supports multi-provider).
         current_stage = _stage_label("scrape")
-        scrape_mode = "SNAPSHOT" if args.offline else "AUTO"
+        force_mode = (os.environ.get("JOBINTEL_SCRAPE_MODE") or os.environ.get("CAREERS_MODE") or "").strip()
+        if args.offline:
+            scrape_mode = "SNAPSHOT"
+        elif force_mode:
+            scrape_mode = force_mode.upper()
+        else:
+            scrape_mode = "AUTO"
         scrape_cmd = [
             sys.executable,
             str(REPO_ROOT / "scripts" / "run_scrape.py"),
@@ -2999,6 +3048,24 @@ def main() -> int:
             "--providers-config",
             args.providers_config,
         ]
+        if scrape_mode in {"LIVE", "AUTO"} and not args.snapshot_only:
+            env_snapshot_dir = os.environ.get("JOBINTEL_SNAPSHOT_WRITE_DIR")
+            default_snapshot_dir = env_snapshot_dir or "/tmp/jobintel_snapshots"
+            snapshot_write_dir = Path(default_snapshot_dir)
+            if env_snapshot_dir is None:
+                try:
+                    snapshot_write_dir.mkdir(parents=True, exist_ok=True)
+                except OSError as exc:
+                    fallback = Path(tempfile.mkdtemp(prefix="jobintel_snapshots_"))
+                    logger.warning(
+                        "snapshot_write_dir mkdir failed (%s); falling back to %s",
+                        exc,
+                        fallback,
+                    )
+                    snapshot_write_dir = fallback
+            else:
+                snapshot_write_dir.mkdir(parents=True, exist_ok=True)
+            scrape_cmd += ["--snapshot-write-dir", str(snapshot_write_dir)]
         if args.snapshot_only:
             scrape_cmd.append("--snapshot-only")
         record_stage(current_stage, lambda cmd=scrape_cmd: _run(cmd, stage=current_stage))
@@ -3118,7 +3185,7 @@ def main() -> int:
                 ranked_csv = _provider_ranked_jobs_csv(provider, profile)
                 ranked_families = _provider_ranked_families_json(provider, profile)
                 shortlist_md = _provider_shortlist_md(provider, profile)
-                top_md = DATA_DIR / f"{provider}_top.{profile}.md"
+                top_md = _provider_top_md(provider, profile)
 
                 if openai_only and provider == "openai":
                     selection = _score_input_selection_detail(args)

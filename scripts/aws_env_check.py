@@ -10,8 +10,10 @@ import argparse
 import json
 import os
 import sys
-from pathlib import Path
 from typing import Any, Dict, List, Tuple
+
+import boto3
+from botocore.exceptions import ClientError
 
 DEFAULT_PREFIX = "jobintel"
 
@@ -22,7 +24,12 @@ def _resolve_bucket(explicit: str | None) -> str | None:
 
 def _resolve_region(explicit: str | None) -> str | None:
     return (
-        explicit or os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or os.getenv("REGION") or ""
+        explicit
+        or os.getenv("JOBINTEL_AWS_REGION")
+        or os.getenv("AWS_REGION")
+        or os.getenv("AWS_DEFAULT_REGION")
+        or os.getenv("REGION")
+        or ""
     ).strip() or None
 
 
@@ -36,36 +43,30 @@ def _resolve_prefix(explicit: str | None) -> Tuple[str | None, List[str]]:
     return prefix, warnings
 
 
-def _credentials_from_env() -> bool:
-    return bool(os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"))
-
-
-def _credentials_from_profile() -> bool:
-    profile = os.getenv("AWS_PROFILE")
-    if not profile:
-        return False
-    shared_path = os.getenv("AWS_SHARED_CREDENTIALS_FILE")
-    if shared_path:
-        return Path(shared_path).expanduser().exists()
-    default_path = Path.home() / ".aws" / "credentials"
-    return default_path.exists()
-
-
-def _credentials_from_ecs() -> bool:
-    return bool(os.getenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI") or os.getenv("AWS_CONTAINER_CREDENTIALS_FULL_URI"))
-
-
-def _resolve_credentials() -> Tuple[Dict[str, Any], List[str]]:
+def _resolve_credentials(region: str | None) -> Tuple[Dict[str, Any], List[str], List[str]]:
     warnings: List[str] = []
-    if _credentials_from_env():
-        return {"present": True, "source": "env"}, warnings
-    if _credentials_from_ecs():
-        return {"present": True, "source": "ecs"}, warnings
-    if _credentials_from_profile():
-        return {"present": True, "source": "profile"}, warnings
-    if os.getenv("AWS_EC2_METADATA_DISABLED", "").lower() != "true":
-        warnings.append("credentials not detected; EC2 instance metadata may be available")
-    return {"present": False, "source": "none"}, warnings
+    errors: List[str] = []
+    session = boto3.session.Session()
+    creds = session.get_credentials()
+    if creds is None:
+        errors.append("credentials not detected (boto3 session)")
+        return {"present": False, "source": "none", "validated": False}, warnings, errors
+    source = getattr(creds, "method", None) or "boto3"
+    validated = False
+    if region:
+        try:
+            sts = session.client("sts", region_name=region)
+            sts.get_caller_identity()
+            validated = True
+        except ClientError as exc:
+            code = exc.response.get("Error", {}).get("Code", "Unknown")
+            msg = exc.response.get("Error", {}).get("Message", "Unknown")
+            errors.append(f"credentials validation failed ({code}): {msg}")
+        except Exception as exc:  # pragma: no cover - defensive
+            errors.append(f"credentials validation failed: {exc.__class__.__name__}: {exc}")
+    else:
+        warnings.append("region not resolved; skipping sts.get_caller_identity")
+    return {"present": True, "source": source, "validated": validated}, warnings, errors
 
 
 def _build_report(bucket: str | None, region: str | None, prefix: str | None) -> Dict[str, Any]:
@@ -77,10 +78,9 @@ def _build_report(bucket: str | None, region: str | None, prefix: str | None) ->
     if not region:
         errors.append("region is required (AWS_REGION/AWS_DEFAULT_REGION/REGION)")
 
-    credentials, cred_warnings = _resolve_credentials()
+    credentials, cred_warnings, cred_errors = _resolve_credentials(region)
     warnings.extend(cred_warnings)
-    if not credentials.get("present"):
-        errors.append("credentials not detected (env/profile/ecs)")
+    errors.extend(cred_errors)
 
     resolved = {
         "bucket": bucket,

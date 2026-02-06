@@ -16,7 +16,7 @@ HASHED_OUTPUT_FILES = [
     "openai_ranked_families.cs.json",
     "openai_shortlist.cs.md",
 ]
-REQUIRED_OUTPUT_FILES = HASHED_OUTPUT_FILES
+REQUIRED_OUTPUT_FILES = [str(Path("ashby_cache") / name) for name in HASHED_OUTPUT_FILES]
 
 _CANONICAL_JSON_KWARGS = {"ensure_ascii": False, "sort_keys": True, "separators": (",", ":")}
 
@@ -93,6 +93,7 @@ def test_pipeline_golden_master_e2e(tmp_path, monkeypatch, request):
     # Isolate all pipeline artifacts under tmp_path
     monkeypatch.setenv("JOBINTEL_DATA_DIR", str(data_dir))
     monkeypatch.setenv("JOBINTEL_STATE_DIR", str(state_dir))
+    monkeypatch.delenv("JOBINTEL_OUTPUT_DIR", raising=False)
     monkeypatch.setenv("CAREERS_MODE", "SNAPSHOT")
     monkeypatch.setenv("EMBED_PROVIDER", "stub")
     monkeypatch.setenv("ENRICH_MAX_WORKERS", "1")
@@ -171,7 +172,7 @@ def test_pipeline_golden_master_e2e(tmp_path, monkeypatch, request):
     rc = run_daily.main()
     assert rc == 0
 
-    ranked_path = data_dir / "openai_ranked_jobs.cs.json"
+    ranked_path = data_dir / "ashby_cache" / "openai_ranked_jobs.cs.json"
     assert ranked_path.exists()
 
     results = json.loads(ranked_path.read_text())
@@ -216,7 +217,7 @@ def test_pipeline_golden_master_e2e(tmp_path, monkeypatch, request):
         seen_urls.add(url)
 
     # Families output must be a stable grouping over ranked jobs.
-    families_path = data_dir / "openai_ranked_families.cs.json"
+    families_path = data_dir / "ashby_cache" / "openai_ranked_families.cs.json"
     families = json.loads(families_path.read_text(encoding="utf-8"))
     assert isinstance(families, list) and families
 
@@ -247,9 +248,10 @@ def test_pipeline_golden_master_e2e(tmp_path, monkeypatch, request):
         },
     }
 
-    for filename in REQUIRED_OUTPUT_FILES:
-        file_path = data_dir / filename
-        assert file_path.exists(), f"Missing required pipeline output {filename}"
+    for rel_path in REQUIRED_OUTPUT_FILES:
+        file_path = data_dir / rel_path
+        assert file_path.exists(), f"Missing required pipeline output {rel_path}"
+        filename = Path(rel_path).name
         if filename.endswith(".cs.json") and "ranked_jobs" in filename:
             ranked_jobs = json.loads(file_path.read_text(encoding="utf-8"))
             manifest["files"][filename] = {"normalized_sha256": _normalized_hash_jobs(ranked_jobs)}
@@ -263,7 +265,7 @@ def test_pipeline_golden_master_e2e(tmp_path, monkeypatch, request):
 
     # Golden fixtures assert deterministic transforms, not immutability of upstream job postings.
     fixture_path = repo_root / "tests" / "fixtures" / "golden" / "openai_snapshot_cs.manifest.json"
-    update_golden = bool(request.config.getoption("--update-golden"))
+    update_golden = bool(request.config.getoption("--update-golden", default=False))
 
     if update_golden:
         fixture_path.parent.mkdir(parents=True, exist_ok=True)

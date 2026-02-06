@@ -1,50 +1,46 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: jobintel-once
+  name: jobintel-liveproof
   namespace: jobintel
   labels:
     app.kubernetes.io/name: jobintel
     app.kubernetes.io/component: job
-  annotations:
-    app.kubernetes.io/managed-by: jobintel
+    jobintel.io/purpose: liveproof
 spec:
   backoffLimit: 0
+  activeDeadlineSeconds: 3600
   template:
     metadata:
       labels:
         app.kubernetes.io/name: jobintel
         app.kubernetes.io/component: job
+        jobintel.io/purpose: liveproof
     spec:
+      serviceAccountName: jobintel
+      restartPolicy: Never
       terminationGracePeriodSeconds: 30
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
         runAsGroup: 1000
-      restartPolicy: Never
-      serviceAccountName: jobintel-sa
       containers:
         - name: jobintel
-          image: ghcr.io/yourorg/jobintel:latest
+D8622080012.dkr.ecr.us-east-1.amazonaws.com/jobintel:irsa-fix-20260204-212335
           imagePullPolicy: IfNotPresent
-          securityContext:
-            readOnlyRootFilesystem: true
+          workingDir: /app
           command:
-            - bash
-            - -lc
+            - python
+            - scripts/run_daily.py
           args:
-            - |
-              set -euo pipefail
-              python scripts/run_daily.py --profiles cs --us_only --no_post --snapshot-only --offline
-              RUN_DIR="$(ls -1dt /app/state/runs/* | head -n1)"
-              python scripts/publish_s3.py --run-dir "$RUN_DIR" --plan --json > /app/state/publish_plan.json
-              python scripts/replay_run.py --run-dir "$RUN_DIR" --profile cs --strict --json > /app/state/replay_report.json
+            - --profiles
+            - cs
+            - --us_only
+            - --no_post
           env:
             - name: CAREERS_MODE
-              value: "SNAPSHOT"
-            - name: EMBED_PROVIDER
-              value: "stub"
-            - name: ENRICH_MAX_WORKERS
+              value: "LIVE"
+            - name: PUBLISH_S3_REQUIRE
               value: "1"
           envFrom:
             - configMapRef:
@@ -53,18 +49,28 @@ spec:
                 name: jobintel-secrets
           resources:
             requests:
-              cpu: "500m"
-              memory: "1Gi"
+              cpu: "250m"
+              memory: "512Mi"
             limits:
-              cpu: "2"
-              memory: "4Gi"
+              cpu: "1"
+              memory: "2Gi"
+          securityContext:
+            readOnlyRootFilesystem: true
           volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: work
+              mountPath: /work
+            # Mount /app/data for writable pipeline outputs.
             - name: jobintel-data
-              # Mount /app/data for writable pipeline outputs.
               mountPath: /app/data
             - name: jobintel-state
               mountPath: /app/state
       volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: work
+          emptyDir: {}
         - name: jobintel-data
           emptyDir: {}
         - name: jobintel-state

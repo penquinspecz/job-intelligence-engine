@@ -1,14 +1,14 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: jobintel-manual
+  name: jobintel-s3-preflight
   namespace: jobintel
   labels:
     app.kubernetes.io/name: jobintel
     app.kubernetes.io/component: job
 spec:
-  backoffLimit: 1
-  activeDeadlineSeconds: 3600
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
   template:
     metadata:
       labels:
@@ -17,29 +17,19 @@ spec:
     spec:
       serviceAccountName: jobintel
       restartPolicy: Never
-      terminationGracePeriodSeconds: 30
+      terminationGracePeriodSeconds: 10
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
         runAsGroup: 1000
       containers:
-        - name: jobintel
+        - name: jobintel-s3-preflight
           image: jobintel
           imagePullPolicy: IfNotPresent
           workingDir: /app
           command:
             - python
-            - scripts/run_daily.py
-          args:
-            - --profiles
-            - cs
-            - --us_only
-            - --no_post
-            - --snapshot-only
-            - --offline
-          env:
-            - name: PUBLISH_S3_REQUIRE
-              value: "1"
+            - scripts/s3_preflight.py
           envFrom:
             - configMapRef:
                 name: jobintel-config
@@ -47,11 +37,11 @@ spec:
                 name: jobintel-secrets
           resources:
             requests:
-              cpu: "250m"
-              memory: "512Mi"
+              cpu: "100m"
+              memory: "128Mi"
             limits:
-              cpu: "1"
-              memory: "2Gi"
+              cpu: "500m"
+              memory: "512Mi"
           securityContext:
             readOnlyRootFilesystem: true
           volumeMounts:
@@ -59,7 +49,6 @@ spec:
               mountPath: /tmp
             - name: work
               mountPath: /work
-            # Mount /app/data for writable pipeline outputs.
             - name: jobintel-data
               mountPath: /app/data
             - name: jobintel-state

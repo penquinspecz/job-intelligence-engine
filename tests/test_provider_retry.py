@@ -2,10 +2,13 @@ import types
 
 import requests
 
-from ji_engine.providers.retry import ProviderFetchError, fetch_text_with_retry
+from ji_engine.providers.retry import ProviderFetchError, fetch_text_with_retry, reset_politeness_state
 
 
 def test_fetch_text_with_retry_rate_limited(monkeypatch) -> None:
+    reset_politeness_state()
+    monkeypatch.setenv("JOBINTEL_PROVIDER_MIN_DELAY_S", "0")
+    monkeypatch.setenv("JOBINTEL_PROVIDER_BACKOFF_JITTER_S", "0")
     calls = {"count": 0}
 
     def fake_get(*args, **kwargs):
@@ -26,6 +29,10 @@ def test_fetch_text_with_retry_rate_limited(monkeypatch) -> None:
 
 
 def test_fetch_text_with_retry_timeout(monkeypatch) -> None:
+    reset_politeness_state()
+    monkeypatch.setenv("JOBINTEL_PROVIDER_MIN_DELAY_S", "0")
+    monkeypatch.setenv("JOBINTEL_PROVIDER_BACKOFF_JITTER_S", "0")
+
     def fake_get(*args, **kwargs):
         raise requests.Timeout("boom")
 

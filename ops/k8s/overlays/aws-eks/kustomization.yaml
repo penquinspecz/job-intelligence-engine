@@ -6,6 +6,6 @@ patchesStrategicMerge:
   - patch-serviceaccount.yaml
   - patch-configmap.yaml
 images:
-  - name: ghcr.io/yourorg/jobintel
+  - name: jobintel
     newName: ghcr.io/yourorg/jobintel
     newTag: latest

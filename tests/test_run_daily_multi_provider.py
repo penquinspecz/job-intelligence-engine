@@ -91,9 +91,10 @@ def test_run_daily_multi_provider_outputs(tmp_path: Path, monkeypatch: Any) -> N
     rc = run_daily.main()
     assert rc == 0
 
+    output_dir = data_dir / "ashby_cache"
     for provider in ("alpha", "beta"):
-        assert (data_dir / f"{provider}_raw_jobs.json").exists()
-        assert (data_dir / f"{provider}_labeled_jobs.json").exists()
-        assert (data_dir / f"{provider}_ranked_jobs.cs.json").exists()
-        assert (data_dir / f"{provider}_ranked_jobs.cs.csv").exists()
-        assert (data_dir / f"{provider}_shortlist.cs.md").exists()
+        assert (output_dir / f"{provider}_raw_jobs.json").exists()
+        assert (output_dir / f"{provider}_labeled_jobs.json").exists()
+        assert (output_dir / f"{provider}_ranked_jobs.cs.json").exists()
+        assert (output_dir / f"{provider}_ranked_jobs.cs.csv").exists()
+        assert (output_dir / f"{provider}_shortlist.cs.md").exists()

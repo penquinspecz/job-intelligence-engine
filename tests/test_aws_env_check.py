@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 
 import scripts.aws_env_check as aws_env_check
 
@@ -11,6 +10,7 @@ def _clear_aws_env(monkeypatch) -> None:
         "AWS_REGION",
         "AWS_DEFAULT_REGION",
         "REGION",
+        "JOBINTEL_AWS_REGION",
         "JOBINTEL_S3_PREFIX",
         "PREFIX",
         "AWS_ACCESS_KEY_ID",
@@ -31,8 +31,31 @@ def _load_json_output(capsys):
     return json.loads(out)
 
 
+class _StubCreds:
+    def __init__(self, method: str = "stub") -> None:
+        self.method = method
+
+
+class _StubSTS:
+    def get_caller_identity(self):
+        return {"Account": "123456789012"}
+
+
+class _StubSession:
+    def __init__(self, creds):
+        self._creds = creds
+
+    def get_credentials(self):
+        return self._creds
+
+    def client(self, _service, region_name=None):
+        assert region_name
+        return _StubSTS()
+
+
 def test_aws_env_check_missing_required(monkeypatch, capsys):
     _clear_aws_env(monkeypatch)
+    monkeypatch.setattr(aws_env_check.boto3.session, "Session", lambda: _StubSession(None))
     code = aws_env_check.main(["--json"])
     payload = _load_json_output(capsys)
     assert code == 2
@@ -45,52 +68,49 @@ def test_aws_env_check_missing_required(monkeypatch, capsys):
 def test_aws_env_check_env_creds_ok(monkeypatch, capsys):
     _clear_aws_env(monkeypatch)
     monkeypatch.setenv("JOBINTEL_S3_BUCKET", "bucket")
-    monkeypatch.setenv("AWS_REGION", "us-west-2")
-    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "AKIA_TEST_KEY")
-    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "SUPER_SECRET")
+    monkeypatch.setenv("JOBINTEL_AWS_REGION", "us-west-2")
+    monkeypatch.setattr(aws_env_check.boto3.session, "Session", lambda: _StubSession(_StubCreds("env")))
     code = aws_env_check.main(["--json"])
     payload = _load_json_output(capsys)
     assert code == 0
     assert payload["ok"] is True
-    assert payload["resolved"]["credentials"] == {"present": True, "source": "env"}
+    assert payload["resolved"]["credentials"]["present"] is True
+    assert payload["resolved"]["credentials"]["source"] == "env"
     serialized = json.dumps(payload)
     assert "AKIA_TEST_KEY" not in serialized
-    assert "SUPER_SECRET" not in serialized
 
 
-def test_aws_env_check_profile_creds_ok(monkeypatch, capsys, tmp_path: Path):
+def test_aws_env_check_profile_creds_ok(monkeypatch, capsys):
     _clear_aws_env(monkeypatch)
     monkeypatch.setenv("JOBINTEL_S3_BUCKET", "bucket")
     monkeypatch.setenv("AWS_REGION", "us-east-1")
-    cred_file = tmp_path / "credentials"
-    cred_file.write_text("[default]\naws_access_key_id=abc\naws_secret_access_key=def\n", encoding="utf-8")
-    monkeypatch.setenv("AWS_PROFILE", "default")
-    monkeypatch.setenv("AWS_SHARED_CREDENTIALS_FILE", str(cred_file))
+    monkeypatch.setattr(aws_env_check.boto3.session, "Session", lambda: _StubSession(_StubCreds("profile")))
     code = aws_env_check.main(["--json"])
     payload = _load_json_output(capsys)
     assert code == 0
     assert payload["ok"] is True
-    assert payload["resolved"]["credentials"] == {"present": True, "source": "profile"}
+    assert payload["resolved"]["credentials"]["present"] is True
+    assert payload["resolved"]["credentials"]["source"] == "profile"
 
 
 def test_aws_env_check_ecs_creds_ok(monkeypatch, capsys):
     _clear_aws_env(monkeypatch)
     monkeypatch.setenv("JOBINTEL_S3_BUCKET", "bucket")
     monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-2")
-    monkeypatch.setenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "/v2/credentials")
+    monkeypatch.setattr(aws_env_check.boto3.session, "Session", lambda: _StubSession(_StubCreds("ecs")))
     code = aws_env_check.main(["--json"])
     payload = _load_json_output(capsys)
     assert code == 0
     assert payload["ok"] is True
-    assert payload["resolved"]["credentials"] == {"present": True, "source": "ecs"}
+    assert payload["resolved"]["credentials"]["present"] is True
+    assert payload["resolved"]["credentials"]["source"] == "ecs"
 
 
 def test_aws_env_check_prefix_empty_warn(monkeypatch, capsys):
     _clear_aws_env(monkeypatch)
     monkeypatch.setenv("JOBINTEL_S3_BUCKET", "bucket")
     monkeypatch.setenv("AWS_REGION", "us-west-1")
-    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "AKIA_TEST_KEY")
-    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "SUPER_SECRET")
+    monkeypatch.setattr(aws_env_check.boto3.session, "Session", lambda: _StubSession(_StubCreds("env")))
     monkeypatch.setenv("JOBINTEL_S3_PREFIX", "///")
     code = aws_env_check.main(["--json"])
     payload = _load_json_output(capsys)

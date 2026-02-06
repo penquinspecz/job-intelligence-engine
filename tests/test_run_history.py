@@ -16,21 +16,20 @@ def _write(tmp_path: Path, name: str) -> Path:
 def test_history_paths_and_latest(tmp_path: Path, monkeypatch) -> None:
     history_base = tmp_path / "state" / "history"
     monkeypatch.setattr(run_daily, "HISTORY_DIR", history_base)
+    monkeypatch.setattr(run_daily, "DATA_DIR", tmp_path)
+    output_dir = tmp_path / "ashby_cache"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(run_daily, "OUTPUT_DIR", output_dir)
 
     run_id = "2026-01-01T00:00:00.000000+00:00"
     profile = "cs"
     dataset = {
-        "ranked_json": _write(tmp_path, "ranked.json"),
-        "ranked_csv": _write(tmp_path, "ranked.csv"),
-        "families": _write(tmp_path, "families.json"),
-        "shortlist": _write(tmp_path, "shortlist.md"),
+        "ranked_json": _write(output_dir, "openai_ranked_jobs.cs.json"),
+        "ranked_csv": _write(output_dir, "openai_ranked_jobs.cs.csv"),
+        "families": _write(output_dir, "openai_ranked_families.cs.json"),
+        "shortlist": _write(output_dir, "openai_shortlist.cs.md"),
         "metadata": _write(tmp_path, "run_meta.json"),
     }
-
-    monkeypatch.setattr(run_daily, "ranked_jobs_json", lambda p: dataset["ranked_json"])
-    monkeypatch.setattr(run_daily, "ranked_jobs_csv", lambda p: dataset["ranked_csv"])
-    monkeypatch.setattr(run_daily, "ranked_families_json", lambda p: dataset["families"])
-    monkeypatch.setattr(run_daily, "shortlist_md_path", lambda p: dataset["shortlist"])
 
     summary_payload = {
         "run_id": run_id,

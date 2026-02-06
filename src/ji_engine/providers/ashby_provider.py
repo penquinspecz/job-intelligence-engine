@@ -90,7 +90,12 @@ class AshbyProvider(BaseJobProvider):
             "Referer": self.board_url,
             "Cache-Control": "no-cache",
         }
-        return fetch_urlopen_with_retry(self.board_url, headers=headers, timeout_s=20)
+        return fetch_urlopen_with_retry(
+            self.board_url,
+            headers=headers,
+            timeout_s=20,
+            provider_id=self.provider_id,
+        )
 
     def _parse_html(self, html: str) -> List[RawJobPosting]:
         soup = BeautifulSoup(html, "html.parser")

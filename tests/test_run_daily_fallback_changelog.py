@@ -27,28 +27,30 @@ def test_us_only_fallback_suppresses_changelog_and_alerts(tmp_path, monkeypatch)
         alert_called["called"] = True
         raise AssertionError("Alerts should be suppressed when fallback_applied is True.")
 
+    output_dir = data_dir / "ashby_cache"
+
     def fake_run(cmd, *, stage):
         if stage == "scrape":
-            raw_path = data_dir / "openai_raw_jobs.json"
+            raw_path = output_dir / "openai_raw_jobs.json"
             raw_path.parent.mkdir(parents=True, exist_ok=True)
             raw_path.write_text("[]", encoding="utf-8")
             return
         if stage == "classify":
-            labeled_path = data_dir / "openai_labeled_jobs.json"
+            labeled_path = output_dir / "openai_labeled_jobs.json"
             labeled_path.parent.mkdir(parents=True, exist_ok=True)
             labeled_path.write_text("[]", encoding="utf-8")
             return
         if stage == "enrich":
-            enriched_path = data_dir / "openai_enriched_jobs.json"
+            enriched_path = output_dir / "openai_enriched_jobs.json"
             enriched_path.parent.mkdir(parents=True, exist_ok=True)
             enriched_path.write_text("[]", encoding="utf-8")
             return
         if stage.startswith("score:"):
             profile = stage.split(":", 1)[1]
-            ranked_json = run_daily.ranked_jobs_json(profile)
-            ranked_csv = run_daily.ranked_jobs_csv(profile)
-            ranked_families = run_daily.ranked_families_json(profile)
-            shortlist_md = run_daily.shortlist_md_path(profile)
+            ranked_json = run_daily._provider_ranked_jobs_json("openai", profile)
+            ranked_csv = run_daily._provider_ranked_jobs_csv("openai", profile)
+            ranked_families = run_daily._provider_ranked_families_json("openai", profile)
+            shortlist_md = run_daily._provider_shortlist_md("openai", profile)
             jobs = [
                 {"title": "A Role", "apply_url": "https://example.com/a", "score": 95},
                 {"title": "B Role", "apply_url": "https://example.com/b", "score": 90},

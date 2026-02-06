@@ -67,8 +67,9 @@ def test_run_scrape_multiple_providers_snapshot(tmp_path, monkeypatch) -> None:
     )
     assert rc == 0
 
-    alpha_out = data_dir / "alpha_raw_jobs.json"
-    beta_out = data_dir / "beta_raw_jobs.json"
+    output_dir = data_dir / "ashby_cache"
+    alpha_out = output_dir / "alpha_raw_jobs.json"
+    beta_out = output_dir / "beta_raw_jobs.json"
     assert alpha_out.exists()
     assert beta_out.exists()
 

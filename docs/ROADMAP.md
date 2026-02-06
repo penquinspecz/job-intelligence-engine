@@ -156,15 +156,22 @@ If a change doesn’t advance a milestone’s Definition of Done (DoD), it’s p
 S3-compatible object store, optional alerts.
 
 ### Definition of Done (DoD)
-- [ ] Kubernetes CronJob runs end-to-end with mounted/ephemeral state
+- [x] Kubernetes CronJob runs end-to-end with mounted/ephemeral state
 - [x] Publish plan + offline verification contract exists for object-store keys (verifiable allowlist)
-- [ ] End-to-end publish to a real object-store bucket verified (runs + latest keys)
+- [x] End-to-end publish to a real object-store bucket verified (runs + latest keys)
 - [x] Discord alerts sent only when diffs exist (or optionally always send summary; configurable)
 - [x] Minimal object-store IAM policy documented (least privilege; AWS example)
+- [ ] Live scraping verified in-cluster (EKS) with provenance showing live_attempted=true and live_result=success (not skipped/failed) — run + commit proof log
+- [ ] Scrape politeness, rate limiting, and anti-bot hardening implemented (required before adding more providers)
 - [ ] Domain-backed dashboard endpoint (API first; UI can come later)
 - [ ] Runbook: deploy, inspect last run, roll back, rotate secrets
  - [ ] Proof artifacts captured (for verification):
    - CloudWatch log line with `run_id`
+   - Provenance JSON line captured showing `live_attempted=true` and `live_result != skipped`
+   - `ops/proof/liveproof-<run_id>.log` captured (contains JOBINTEL_RUN_ID + [run_scrape][provenance])
+   - Provenance line shows `scrape_mode=live`, `snapshot_used=false`, `parsed_job_count` captured
+   - Logs show `s3_status=ok` and `PUBLISH_CONTRACT pointer_global=ok`
+   - Live proof manifest stored in repo: `ops/k8s/jobintel/jobs/jobintel-liveproof.job.yaml`
    - `s3://<bucket>/<prefix>/runs/<run_id>/<provider>/<profile>/...` populated
    - `python scripts/verify_published_s3.py --bucket <bucket> --run-id <run_id> --verify-latest` outputs OK
 
@@ -178,7 +185,17 @@ S3-compatible object store, optional alerts.
 - [x] Machine-parseable run_id log line + success pointer exists
 - [x] IRSA wiring is parameterized and documented (no manual YAML editing)
 - [x] Deterministic helper exists to discover subnet_ids for EKS bootstrap
-- [ ] Proof run executed (EKS one-off job + real S3 publish + proof JSON captured)
+- [x] Scrape Politeness, Rate Limiting & Anti-Bot Hardening (required before adding more providers)
+- [x] Per-provider politeness policy enforced (global QPS + per-host concurrency caps + jitter), recorded in provenance
+- [x] Deterministic exponential backoff for transient failures (max retries + max sleep), recorded in logs
+- [x] Circuit breaker: after N consecutive failures, pause LIVE attempts for cool-down window; degrade to snapshot-only per provider; surface in provenance
+- [ ] Robots/policy handling: log decision + allowlist (do not silently ignore)
+- [x] Bot/deny-page detection: detect CAPTCHA/Cloudflare/access denied/empty-success; feed availability + circuit breaker
+- [x] User-Agent discipline: explicit UA string + contact-ish metadata (if appropriate) and consistent across requests
+- [ ] Proof requirements: provenance shows rate_limit policy applied; logs show backoff/circuit-breaker events; test plan captured
+- [x] Unit test: backoff + circuit-breaker decisions are deterministic given failure sequence
+- [ ] In-cluster proof: live run logs include rate-limit/backoff/circuit-breaker events for at least one provider
+- [ ] Proof run executed (EKS one-off job + real S3 publish + proof JSON captured) — proof JSON not yet captured locally
 - [ ] EKS bootstrap path exists (Terraform) + IRSA wiring documented
 - [ ] EKS can pull image (ECR golden path documented + working)
 - Receipts rule: infra execution boxes are checked only with receipts in hand (proof JSON + verify output).
@@ -188,6 +205,10 @@ S3-compatible object store, optional alerts.
     - `state/proofs/<run_id>.json` exists locally
     - `verify_published_s3` outputs OK (runs + latest)
 - Note: check “EKS bootstrap path exists” only after a human-run `terraform init/plan/apply` completes and outputs are used to render the overlay.
+- Receipts — run_id: `2026-02-05T02:35:34.028118+00:00`
+- Receipts — s3 latest prefix: `s3://my-real-jobintel-bucket/jobintel/latest/openai/cs/`
+- Receipts — s3 run prefix: `s3://my-real-jobintel-bucket/jobintel/runs/2026-02-05T02:35:34.028118+00:00/openai/cs/`
+- Receipts — pointer path: `s3://my-real-jobintel-bucket/jobintel/state/last_success.json`
 - [x] Define object-store key structure + latest semantics + retention strategy:
   - `s3://<bucket>/runs/<run_id>/<provider>/<profile>/...`
   - `s3://<bucket>/latest/<provider>/<profile>/...`

@@ -22,26 +22,28 @@ def test_run_daily_archives_selected_inputs_and_replay(tmp_path, monkeypatch) ->
     importlib.reload(run_daily)
     importlib.reload(replay_run)
 
+    output_dir = data_dir / "ashby_cache"
+
     def fake_run(cmd, *, stage):
         if stage == "scrape":
-            raw_path = data_dir / "openai_raw_jobs.json"
+            raw_path = output_dir / "openai_raw_jobs.json"
             raw_path.parent.mkdir(parents=True, exist_ok=True)
             raw_path.write_text("[]", encoding="utf-8")
         elif stage == "classify":
-            labeled_path = data_dir / "openai_labeled_jobs.json"
+            labeled_path = output_dir / "openai_labeled_jobs.json"
             labeled_path.parent.mkdir(parents=True, exist_ok=True)
             labeled_path.write_text("[]", encoding="utf-8")
         elif stage == "enrich":
-            enriched_path = data_dir / "openai_enriched_jobs.json"
+            enriched_path = output_dir / "openai_enriched_jobs.json"
             enriched_path.parent.mkdir(parents=True, exist_ok=True)
             enriched_path.write_text("[]", encoding="utf-8")
         elif stage.startswith("score:"):
             profile = stage.split(":", 1)[1]
             for path in (
-                run_daily.ranked_jobs_json(profile),
-                run_daily.ranked_jobs_csv(profile),
-                run_daily.ranked_families_json(profile),
-                run_daily.shortlist_md_path(profile),
+                run_daily._provider_ranked_jobs_json("openai", profile),
+                run_daily._provider_ranked_jobs_csv("openai", profile),
+                run_daily._provider_ranked_families_json("openai", profile),
+                run_daily._provider_shortlist_md("openai", profile),
             ):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("[]", encoding="utf-8")

@@ -15,6 +15,9 @@ class _Resp:
 
 
 def test_fetch_text_with_retry_retries_on_5xx(monkeypatch) -> None:
+    provider_retry.reset_politeness_state()
+    monkeypatch.setenv("JOBINTEL_PROVIDER_MIN_DELAY_S", "0")
+    monkeypatch.setenv("JOBINTEL_PROVIDER_BACKOFF_JITTER_S", "0")
     calls = {"count": 0}
 
     def fake_get(url, headers=None, timeout=20):
@@ -36,6 +39,9 @@ def test_fetch_text_with_retry_retries_on_5xx(monkeypatch) -> None:
 
 
 def test_fetch_text_with_retry_no_retry_on_404(monkeypatch) -> None:
+    provider_retry.reset_politeness_state()
+    monkeypatch.setenv("JOBINTEL_PROVIDER_MIN_DELAY_S", "0")
+    monkeypatch.setenv("JOBINTEL_PROVIDER_BACKOFF_JITTER_S", "0")
     calls = {"count": 0}
 
     def fake_get(url, headers=None, timeout=20):

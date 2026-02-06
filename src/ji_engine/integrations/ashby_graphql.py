@@ -54,7 +54,13 @@ def fetch_job_posting(org: str, job_id: str, cache_dir: Path, *, force: bool = F
     }
 
     try:
-        data = fetch_json_with_retry(API_URL, headers=headers, payload=payload, timeout_s=30)
+        data = fetch_json_with_retry(
+            API_URL,
+            headers=headers,
+            payload=payload,
+            timeout_s=30,
+            provider_id=org,
+        )
     except ProviderFetchError as exc:
         if exc.reason == "unavailable":
             return None

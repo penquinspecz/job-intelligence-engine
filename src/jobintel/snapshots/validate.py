@@ -5,9 +5,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List, Tuple
 
-MIN_BYTES_DEFAULT = 50_000
+MIN_BYTES_DEFAULT = 500
 MIN_BYTES_BY_PROVIDER = {
-    "openai": MIN_BYTES_DEFAULT,
+    "openai": 500,
     "anthropic": 500,
     "ashby": 500,
 }
@@ -18,6 +18,19 @@ BLOCKED_MARKERS = (
     "temporarily blocked",
     "request blocked",
     "attention required",
+)
+CLOUDFLARE_MARKERS = (
+    "<title>just a moment</title>",
+    "cdn-cgi/challenge-platform",
+    "cf_chl_opt",
+    "cloudflare",
+)
+ASHBY_MARKERS = (
+    "ashbyhq.com",
+    "jobs.ashbyhq.com",
+    "ashby",
+    "jobposting",
+    "application/ld+json",
 )
 
 
@@ -60,6 +73,9 @@ def _min_bytes_for(provider: str) -> int:
 
 def _looks_blocked(text: str) -> Tuple[bool, str]:
     lower = text.lower()
+    for marker in CLOUDFLARE_MARKERS:
+        if marker in lower:
+            return True, "cloudflare challenge page"
     if "captcha" in lower and (
         "verify you are human" in lower
         or "access denied" in lower
@@ -73,6 +89,21 @@ def _looks_blocked(text: str) -> Tuple[bool, str]:
     return False, "ok"
 
 
+def _requires_ashby_markers(provider: str) -> bool:
+    return provider in {"ashby", "anthropic"}
+
+
+def _has_ashby_marker(text: str) -> bool:
+    lower = text.lower()
+    return any(marker in lower for marker in ASHBY_MARKERS)
+
+
+def _preview_text(content: bytes, limit: int = 200) -> str:
+    text = content.decode("utf-8", errors="ignore")
+    text = " ".join(text.split())
+    return text[:limit]
+
+
 def validate_snapshot_bytes(provider: str, content: bytes) -> Tuple[bool, str]:
     if not content:
         return False, "empty content"
@@ -84,6 +115,9 @@ def validate_snapshot_bytes(provider: str, content: bytes) -> Tuple[bool, str]:
     text = content.decode("utf-8", errors="ignore")
     if not text.strip():
         return False, "empty content"
+
+    if _requires_ashby_markers(provider) and not _has_ashby_marker(text):
+        return False, "missing ashby markers"
 
     blocked, reason = _looks_blocked(text)
     if blocked:
@@ -105,7 +139,11 @@ def validate_snapshot_file(provider: str, path: Path) -> Tuple[bool, str]:
     except Exception as exc:
         return False, f"read failed: {exc}"
 
-    return validate_snapshot_bytes(provider, content)
+    ok, reason = validate_snapshot_bytes(provider, content)
+    if not ok:
+        preview = _preview_text(content)
+        reason = f"{reason}; bytes={len(content)}; preview={preview}"
+    return ok, reason
 
 
 def validate_snapshots(

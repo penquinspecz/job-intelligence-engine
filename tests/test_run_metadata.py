@@ -9,10 +9,14 @@ from scripts.schema_validate import resolve_schema_path, validate_report
 
 def test_run_metadata_written_and_deterministic(tmp_path: Path, monkeypatch) -> None:
     ts = datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc).timestamp()
-    raw_path = tmp_path / "openai_raw_jobs.json"
-    labeled_path = tmp_path / "openai_labeled_jobs.json"
-    enriched_path = tmp_path / "openai_enriched_jobs.json"
-    ai_path = tmp_path / "openai_enriched_jobs_ai.json"
+    monkeypatch.setattr(run_daily, "DATA_DIR", tmp_path)
+    output_dir = tmp_path / "ashby_cache"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(run_daily, "OUTPUT_DIR", output_dir)
+    raw_path = output_dir / "openai_raw_jobs.json"
+    labeled_path = output_dir / "openai_labeled_jobs.json"
+    enriched_path = output_dir / "openai_enriched_jobs.json"
+    ai_path = output_dir / "openai_enriched_jobs_ai.json"
     raw_path.write_text('{"raw": true}', encoding="utf-8")
     labeled_path.write_text("[]", encoding="utf-8")
     enriched_path.write_text('{"enriched": true}', encoding="utf-8")
@@ -21,7 +25,6 @@ def test_run_metadata_written_and_deterministic(tmp_path: Path, monkeypatch) -> 
     os.utime(labeled_path, (ts, ts))
     os.utime(enriched_path, (ts, ts))
     os.utime(ai_path, (ts, ts))
-
     monkeypatch.setattr(run_daily, "RAW_JOBS_JSON", raw_path)
     monkeypatch.setattr(run_daily, "LABELED_JOBS_JSON", labeled_path)
     monkeypatch.setattr(run_daily, "ENRICHED_JOBS_JSON", enriched_path)
@@ -39,23 +42,19 @@ def test_run_metadata_written_and_deterministic(tmp_path: Path, monkeypatch) -> 
     monkeypatch.setattr(run_daily, "RUN_METADATA_DIR", tmp_path)
     monkeypatch.setenv("GIT_SHA", "deadbeef")
     monkeypatch.setenv("IMAGE_TAG", "jobintel:test")
+    monkeypatch.setenv("JOBINTEL_IMAGE", "unknown")
 
     def _ranked_json(profile: str) -> Path:
-        return tmp_path / f"ranked.{profile}.json"
+        return output_dir / f"openai_ranked_jobs.{profile}.json"
 
     def _ranked_csv(profile: str) -> Path:
-        return tmp_path / f"ranked.{profile}.csv"
+        return output_dir / f"openai_ranked_jobs.{profile}.csv"
 
     def _ranked_families(profile: str) -> Path:
-        return tmp_path / f"ranked_families.{profile}.json"
+        return output_dir / f"openai_ranked_families.{profile}.json"
 
     def _shortlist(profile: str) -> Path:
-        return tmp_path / f"shortlist.{profile}.md"
-
-    monkeypatch.setattr(run_daily, "ranked_jobs_json", _ranked_json)
-    monkeypatch.setattr(run_daily, "ranked_jobs_csv", _ranked_csv)
-    monkeypatch.setattr(run_daily, "ranked_families_json", _ranked_families)
-    monkeypatch.setattr(run_daily, "shortlist_md_path", _shortlist)
+        return output_dir / f"openai_shortlist.{profile}.md"
 
     for profile in profiles:
         _ranked_json(profile).write_text(f'{{"{profile}": "json"}}', encoding="utf-8")
@@ -249,7 +248,7 @@ def test_run_metadata_written_and_deterministic(tmp_path: Path, monkeypatch) -> 
             assert logical_key in verifiable
             expected_meta = data["outputs_by_provider"]["openai"][profile][key]
             expected_sha = expected_meta["sha256"]
-            expected_path = Path(expected_meta["path"]).name
+            expected_path = Path(expected_meta["path"]).relative_to(run_daily.DATA_DIR).as_posix()
             assert verifiable[logical_key]["sha256"] == expected_sha
             assert verifiable[logical_key]["hash_algo"] == "sha256"
             assert verifiable[logical_key]["path"] == expected_path

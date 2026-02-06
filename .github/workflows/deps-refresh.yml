@@ -17,14 +17,15 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.12.12"
           cache: "pip"
           cache-dependency-path: "requirements.txt"
       - name: Install deps
         run: |
-          python -m pip install -U "pip<24" "pip-tools>=7.4.1"
-          python -m pip install -r requirements.txt
-          python -m pip install -r requirements-dev.txt
+          python -m venv .venv
+          .venv/bin/python -m pip install -U pip==25.0.1 setuptools wheel pip-tools==7.4.1
+          .venv/bin/python -m pip install -r requirements.txt
+          .venv/bin/python -m pip install -r requirements-dev.txt
       - name: Refresh requirements
         env:
           PIP_TOOLS_CACHE_DIR: /tmp/pip-tools-cache

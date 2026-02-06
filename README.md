@@ -89,7 +89,9 @@ pip install ".[snapshots]"  # Playwright snapshots
 ```
 
 **Canonical dependency source:** `pyproject.toml`  
-**Docker / CI export:** `requirements.txt`
+**Docker / CI export:** `requirements.txt`  
+**Tooling contract (cp312):** `pip==25.0.1`, `pip-tools==7.4.1`, run via `.venv/bin/python`  
+**Bootstrap:** `make tooling-sync` (creates `.venv`, pins tooling, installs dev deps)
 
 ## Example run (no Discord post)
 

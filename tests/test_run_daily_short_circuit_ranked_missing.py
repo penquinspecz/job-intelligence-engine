@@ -21,9 +21,11 @@ def test_short_circuit_missing_ranked_triggers_scoring(tmp_path: Path, monkeypat
     (snapshot_dir / "index.html").write_text("<html>ok</html>")
 
     # Inputs unchanged (hashes match), but ranked outputs are absent
-    (data_dir / "openai_raw_jobs.json").write_text("[]")
-    (data_dir / "openai_labeled_jobs.json").write_text("[]")
-    (data_dir / "openai_enriched_jobs.json").write_text("[]")
+    output_dir = data_dir / "ashby_cache"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "openai_raw_jobs.json").write_text("[]")
+    (output_dir / "openai_labeled_jobs.json").write_text("[]")
+    (output_dir / "openai_enriched_jobs.json").write_text("[]")
     (data_dir / "candidate_profile.json").write_text('{"skills": [], "roles": []}')
 
     # Write last_run to simulate matching hashes (short-circuit condition)
@@ -45,16 +47,16 @@ def test_short_circuit_missing_ranked_triggers_scoring(tmp_path: Path, monkeypat
     def fake_run(cmd, *, stage):
         captured.append(stage)
         if stage == "scrape":
-            (data_dir / "openai_raw_jobs.json").write_text("[]")
+            (output_dir / "openai_raw_jobs.json").write_text("[]")
         if stage == "classify":
-            (data_dir / "openai_labeled_jobs.json").write_text("[]")
+            (output_dir / "openai_labeled_jobs.json").write_text("[]")
         if stage.startswith("score:"):
             profile = stage.split(":", 1)[1]
             for path in (
-                run_daily.ranked_jobs_json(profile),
-                run_daily.ranked_jobs_csv(profile),
-                run_daily.ranked_families_json(profile),
-                run_daily.shortlist_md_path(profile),
+                run_daily._provider_ranked_jobs_json("openai", profile),
+                run_daily._provider_ranked_jobs_csv("openai", profile),
+                run_daily._provider_ranked_families_json("openai", profile),
+                run_daily._provider_shortlist_md("openai", profile),
             ):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("[]", encoding="utf-8")

@@ -6,11 +6,14 @@ import difflib
 import importlib.metadata
 import os
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+REQUIRED_PYTHON = "3.12"
+REQUIRED_PIP = os.environ.get("JIE_PIP_VERSION", "25.0.1")
+REQUIRED_PIPTOOLS = os.environ.get("JIE_PIPTOOLS_VERSION", "7.4.1")
 
 
 def _load_pyproject(path: Path) -> dict:
@@ -46,7 +49,11 @@ def _collect_deps(pyproject: dict, extras: list[str]) -> list[str]:
 
 
 def _pip_compile_available() -> bool:
-    return shutil.which("pip-compile") is not None
+    try:
+        importlib.metadata.version("pip-tools")
+    except importlib.metadata.PackageNotFoundError:
+        return False
+    return True
 
 
 def _is_writable_dir(path: Path) -> bool:
@@ -83,6 +90,55 @@ def _ensure_ci_cache_dir() -> None:
     cache_dir = os.environ.get("PIP_TOOLS_CACHE_DIR")
     if cache_dir:
         Path(cache_dir).mkdir(parents=True, exist_ok=True)
+
+
+def _tooling_self_check(*, repo_root: Path, check_mode: bool) -> None:
+    verbose = os.environ.get("JIE_TOOLING_VERBOSE") == "1"
+    venv_path = repo_root / ".venv"
+
+    def _fail(detail: str) -> None:
+        if check_mode:
+            raise SystemExit("deps-check tooling mismatch; run make tooling-sync")
+        raise SystemExit(detail)
+
+    if venv_path.exists():
+        expected = venv_path / "bin" / "python"
+        if expected != Path(sys.executable):
+            msg = (
+                f"export_requirements must run under {expected} (got {sys.executable}). "
+                "Activate the repo venv or run: make tooling-sync"
+            )
+            if not check_mode and verbose:
+                print(msg, file=sys.stderr)
+            _fail(msg)
+
+    if not sys.version.startswith(REQUIRED_PYTHON):
+        msg = f"python {REQUIRED_PYTHON}.x required; found {sys.version.split()[0]}"
+        if not check_mode and verbose:
+            print(msg, file=sys.stderr)
+        _fail(msg)
+
+    pip_version = importlib.metadata.version("pip")
+    if not pip_version.startswith(REQUIRED_PIP):
+        msg = f"pip {REQUIRED_PIP} required; found {pip_version}"
+        if not check_mode and verbose:
+            print(msg, file=sys.stderr)
+        _fail(msg)
+
+    try:
+        piptools_version = importlib.metadata.version("pip-tools")
+    except importlib.metadata.PackageNotFoundError as exc:
+        msg = f"pip-tools {REQUIRED_PIPTOOLS} required; not installed (run: make tooling-sync)"
+        if not check_mode and verbose:
+            print(msg, file=sys.stderr)
+        _fail(msg)
+        raise SystemExit(msg) from exc
+
+    if not piptools_version.startswith(REQUIRED_PIPTOOLS):
+        msg = f"pip-tools {REQUIRED_PIPTOOLS} required; found {piptools_version}"
+        if not check_mode and verbose:
+            print(msg, file=sys.stderr)
+        _fail(msg)
 
 
 def _pip_args_for_ci() -> list[str]:
@@ -213,6 +269,8 @@ def main(argv: list[str] | None = None) -> int:
     output_path = Path(args.output)
     extras = args.extra or []
     repo_root = Path(__file__).resolve().parents[1]
+
+    _tooling_self_check(repo_root=repo_root, check_mode=args.check)
 
     pyproject = _load_pyproject(pyproject_path)
     deps = _collect_deps(pyproject, extras)

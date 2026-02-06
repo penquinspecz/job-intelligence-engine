@@ -15,7 +15,8 @@ def test_run_scrape_marks_provider_unavailable_on_live_failure(tmp_path, monkeyp
 
     snapshot_dir = data_dir / "openai_snapshots"
     snapshot_dir.mkdir(parents=True, exist_ok=True)
-    (snapshot_dir / "index.html").write_text("<html></html>", encoding="utf-8")
+    snapshot_html = "<html><body>" + ("x" * 600) + "</body></html>"
+    (snapshot_dir / "index.html").write_text(snapshot_html, encoding="utf-8")
 
     providers_path = data_dir / "providers.json"
     providers_path.write_text(
@@ -44,7 +45,7 @@ def test_run_scrape_marks_provider_unavailable_on_live_failure(tmp_path, monkeyp
     rc = run_scrape.main(["--providers", "openai", "--mode", "LIVE", "--providers-config", str(providers_path)])
     assert rc in (0, None)
 
-    meta_path = data_dir / "openai_scrape_meta.json"
+    meta_path = data_dir / "ashby_cache" / "openai_scrape_meta.json"
     payload = json.loads(meta_path.read_text(encoding="utf-8"))
     assert payload["availability"] == "unavailable"
     assert payload["unavailable_reason"] == "auth_error"

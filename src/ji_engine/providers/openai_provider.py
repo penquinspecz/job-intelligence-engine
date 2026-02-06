@@ -122,6 +122,7 @@ class OpenAICareersProvider(BaseJobProvider):
             CAREERS_SEARCH_URL,
             headers=headers,
             timeout_s=20,
+            provider_id="openai",
         )
 
     # ---------- Core HTML parsing ----------

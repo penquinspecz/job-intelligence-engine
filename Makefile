@@ -2,6 +2,9 @@
 
 # Prefer repo venv if present; fall back to system python3.
 PY ?= .venv/bin/python
+DEPS_PY ?= .venv/bin/python
+TOOLING_PIP_VERSION ?= 25.0.1
+TOOLING_PIPTOOLS_VERSION ?= 7.4.1
 JOBINTEL_IMAGE_TAG ?= jobintel:local
 SMOKE_PROVIDERS ?= openai
 SMOKE_PROFILES ?= cs
@@ -14,6 +17,13 @@ EKS_SUBNET_IDS ?=
 ifeq ($(wildcard $(PY)),)
 PY = python3
 endif
+
+define ensure_deps_venv
+	@if [ ! -x "$(DEPS_PY)" ]; then \
+		echo "Missing .venv. Create it with: PYENV_VERSION=3.12.12 python -m venv .venv"; \
+		exit 2; \
+	fi
+endef
 
 PROFILE ?= cs
 LIMIT ?= 15
@@ -51,14 +61,37 @@ format-check:
 	$(PY) -m ruff format --check .
 
 deps:
-	$(PY) -m pip install -r requirements.txt
+	$(call ensure_deps_venv)
+	$(DEPS_PY) -m pip install -r requirements.txt
+
+tooling-sync:
+	@if [ ! -x "$(DEPS_PY)" ]; then \
+		echo "Creating .venv with Python 3.12.12..."; \
+		PYENV_VERSION=3.12.12 python -m venv .venv; \
+	fi
+	$(DEPS_PY) -m pip install --upgrade "pip==$(TOOLING_PIP_VERSION)" setuptools wheel \
+		"pip-tools==$(TOOLING_PIPTOOLS_VERSION)"
+	$(DEPS_PY) -m pip install -r requirements-dev.txt
 
 deps-sync:
-	$(PY) scripts/export_requirements.py
-	$(PY) -m pip install -r requirements.txt
+	$(call ensure_deps_venv)
+	JIE_PIP_VERSION=$(TOOLING_PIP_VERSION) JIE_PIPTOOLS_VERSION=$(TOOLING_PIPTOOLS_VERSION) \
+		$(DEPS_PY) scripts/export_requirements.py
+	$(DEPS_PY) -m pip install -r requirements.txt
 
 deps-check:
-	$(PY) scripts/export_requirements.py --check
+	$(call ensure_deps_venv)
+	JIE_PIP_VERSION=$(TOOLING_PIP_VERSION) JIE_PIPTOOLS_VERSION=$(TOOLING_PIPTOOLS_VERSION) \
+		$(DEPS_PY) scripts/export_requirements.py --check
+
+deps-sync-commit:
+	$(MAKE) deps-sync
+	@git add requirements.txt requirements-dev.txt requirements.in 2>/dev/null || true
+	@if git diff --cached --quiet; then \
+		echo "No deps changes to commit."; \
+		exit 0; \
+	fi
+	@git commit -m "chore(deps): sync requirements"
 
 gates: format-check lint deps-check test snapshot-guard
 
