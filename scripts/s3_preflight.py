@@ -9,7 +9,7 @@ except ModuleNotFoundError:
 import json
 import os
 import sys
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 import boto3
 from botocore.exceptions import ClientError

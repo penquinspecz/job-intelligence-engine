@@ -21,7 +21,7 @@ from ji_engine.config import DATA_DIR, RAW_JOBS_JSON
 from ji_engine.providers.ashby_provider import AshbyProvider
 from ji_engine.providers.openai_provider import OpenAICareersProvider
 from ji_engine.providers.registry import load_providers_config
-from ji_engine.providers.retry import ProviderFetchError, classify_failure_type
+from ji_engine.providers.retry import ProviderFetchError, classify_failure_type, get_politeness_policy
 from ji_engine.providers.snapshot_json_provider import SnapshotJsonProvider
 from jobintel.snapshots.validate import validate_snapshot_file
 
@@ -190,7 +190,24 @@ def main(argv: List[str] | None = None) -> int:
             "attempts_made": 0,
             "parsed_job_count": 0,
             "snapshot_baseline_count": None,
+            "rate_limit_min_delay_s": None,
+            "rate_limit_jitter_s": None,
+            "max_attempts": None,
+            "backoff_base_s": None,
+            "backoff_max_s": None,
+            "backoff_jitter_s": None,
+            "circuit_breaker_threshold": None,
+            "circuit_breaker_cooldown_s": None,
         }
+        policy = get_politeness_policy(provider_id)
+        provenance["rate_limit_min_delay_s"] = policy.get("min_delay_s")
+        provenance["rate_limit_jitter_s"] = policy.get("rate_jitter_s")
+        provenance["max_attempts"] = policy.get("max_attempts")
+        provenance["backoff_base_s"] = policy.get("backoff_base_s")
+        provenance["backoff_max_s"] = policy.get("backoff_max_s")
+        provenance["backoff_jitter_s"] = policy.get("backoff_jitter_s")
+        provenance["circuit_breaker_threshold"] = policy.get("max_consecutive_failures")
+        provenance["circuit_breaker_cooldown_s"] = policy.get("cooldown_s")
 
         if provider_type == "openai":
             if mode == "AUTO":
@@ -219,13 +236,13 @@ def main(argv: List[str] | None = None) -> int:
                     provenance["live_error_reason"] = e.reason
                     provenance["live_unavailable_reason"] = e.reason
                     provenance["live_error_type"] = classify_failure_type(e.reason)
-                    if e.reason == "auth_error":
+                    if e.reason in {"auth_error", "blocked", "circuit_breaker"}:
                         provenance["availability"] = "unavailable"
                         provenance["unavailable_reason"] = e.reason
-                        provenance["live_result"] = "blocked"
+                        provenance["live_result"] = "skipped" if e.reason == "circuit_breaker" else "blocked"
                     else:
                         provenance["live_result"] = "failed"
-                    provenance["live_attempted"] = True
+                    provenance["live_attempted"] = e.reason != "circuit_breaker"
                     logger.warning(f"[run_scrape] LIVE failed ({e!r}) → falling back to SNAPSHOT")
                     provider = OpenAICareersProvider(mode="SNAPSHOT", data_dir=str(output_dir))
                     raw_jobs = provider.load_from_snapshot()
@@ -281,9 +298,7 @@ def main(argv: List[str] | None = None) -> int:
             _write_scrape_meta(provider_id, output_dir, provenance)
             _log_provenance(provider_id, provenance)
             # For backward compatibility, also write to canonical RAW_JOBS_JSON when writable.
-            if provider_id == "openai" and RAW_JOBS_JSON.parent.exists() and os.access(
-                RAW_JOBS_JSON.parent, os.W_OK
-            ):
+            if provider_id == "openai" and RAW_JOBS_JSON.parent.exists() and os.access(RAW_JOBS_JSON.parent, os.W_OK):
                 RAW_JOBS_JSON.write_text(json.dumps(jobs, indent=2, ensure_ascii=False), encoding="utf-8")
         else:
             if provider_type == "ashby":
@@ -322,13 +337,13 @@ def main(argv: List[str] | None = None) -> int:
                         provenance["live_error_reason"] = e.reason
                         provenance["live_unavailable_reason"] = e.reason
                         provenance["live_error_type"] = classify_failure_type(e.reason)
-                        if e.reason == "auth_error":
+                        if e.reason in {"auth_error", "blocked", "circuit_breaker"}:
                             provenance["availability"] = "unavailable"
                             provenance["unavailable_reason"] = e.reason
-                            provenance["live_result"] = "blocked"
+                            provenance["live_result"] = "skipped" if e.reason == "circuit_breaker" else "blocked"
                         else:
                             provenance["live_result"] = "failed"
-                        provenance["live_attempted"] = True
+                        provenance["live_attempted"] = e.reason != "circuit_breaker"
                         logger.warning(f"[run_scrape] LIVE failed ({e!r}) → falling back to SNAPSHOT")
                         if not snapshot_path.exists():
                             msg = (
@@ -395,8 +410,10 @@ def main(argv: List[str] | None = None) -> int:
                     provenance["snapshot_used"] = True
                 _write_scrape_meta(provider_id, output_dir, provenance)
                 _log_provenance(provider_id, provenance)
-                if provider_id == "openai" and RAW_JOBS_JSON.parent.exists() and os.access(
-                    RAW_JOBS_JSON.parent, os.W_OK
+                if (
+                    provider_id == "openai"
+                    and RAW_JOBS_JSON.parent.exists()
+                    and os.access(RAW_JOBS_JSON.parent, os.W_OK)
                 ):
                     RAW_JOBS_JSON.write_text(json.dumps(jobs, indent=2, ensure_ascii=False), encoding="utf-8")
             else:
