@@ -2199,6 +2199,39 @@ def _write_diff_summary(run_dir: Path, payload: Dict[str, Any]) -> None:
     md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _write_identity_diff_artifacts(run_dir: Path, payload: Dict[str, Any]) -> None:
+    run_dir.mkdir(parents=True, exist_ok=True)
+    json_path = run_dir / "diff.json"
+    md_path = run_dir / "diff.md"
+    _write_canonical_json(json_path, payload)
+
+    lines = ["# Identity Diff", f"run_id: {payload.get('run_id', '')}", ""]
+    provider_profile = payload.get("provider_profile") or {}
+    for provider in sorted(provider_profile):
+        profiles = provider_profile.get(provider) or {}
+        for profile in sorted(profiles):
+            entry = profiles.get(profile) or {}
+            counts = entry.get("counts") or {}
+            lines.append(f"## {provider}:{profile}")
+            new_count = counts.get("new", counts.get("added", 0))
+            changed_count = counts.get("changed", 0)
+            removed_count = counts.get("removed", 0)
+            lines.append(f"new={new_count} changed={changed_count} removed={removed_count}")
+            for key, entry_key in (("new", "added"), ("changed", "changed"), ("removed", "removed")):
+                items = entry.get(entry_key) or entry.get(key) or []
+                lines.append(f"### {key}")
+                if not items:
+                    lines.append("- _None_")
+                    continue
+                for item in items[:10]:
+                    title = item.get("title") or "Untitled"
+                    url = item.get("apply_url") or ""
+                    lines.append(f"- {title} — {url}" if url else f"- {title}")
+            lines.append("")
+
+    md_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+
+
 def _dispatch_alerts(
     profile: str,
     webhook: str,
@@ -2273,6 +2306,7 @@ def _maybe_post_run_summary(
     notify_mode: str,
     no_post: bool,
     extra_lines: Optional[List[str]] = None,
+    diff_items: Optional[Dict[str, List[Dict[str, Any]]]] = None,
 ) -> str:
     if not _should_notify(diff_counts, notify_mode):
         logger.info("Discord notify skipped (mode=%s, no diffs).", notify_mode)
@@ -2285,6 +2319,7 @@ def _maybe_post_run_summary(
         min_score,
         no_post=no_post,
         extra_lines=extra_lines,
+        diff_items=diff_items,
     )
 
 
@@ -2359,6 +2394,7 @@ def _post_run_summary(
     *,
     no_post: bool,
     extra_lines: Optional[List[str]] = None,
+    diff_items: Optional[Dict[str, List[Dict[str, Any]]]] = None,
 ) -> str:
     if no_post:
         return "disabled"
@@ -2376,6 +2412,8 @@ def _post_run_summary(
         diff_counts=diff_counts,
         min_score=min_score,
         extra_lines=extra_lines,
+        diff_items=diff_items,
+        diff_top_n=max(1, int(os.environ.get("JOBINTEL_DISCORD_DIFF_TOP_N", "5"))),
     )
     ok = post_discord(webhook, message)
     return "ok" if ok else "failed"
@@ -2554,6 +2592,7 @@ def main() -> int:
     scoring_input_selection_by_profile: Dict[str, Dict[str, Any]] = {}
     diff_counts_by_provider: Dict[str, Dict[str, Dict[str, Any]]] = {}
     diff_summary_by_provider_profile: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    diff_report_by_provider_profile: Dict[str, Dict[str, Dict[str, Any]]] = {}
     scoring_inputs_by_provider: Dict[str, Dict[str, Dict[str, Optional[str]]]] = {}
     scoring_input_selection_by_provider: Dict[str, Dict[str, Dict[str, Any]]] = {}
     archived_inputs_by_provider_profile: Dict[str, Dict[str, Dict[str, Any]]] = {}
@@ -2644,6 +2683,14 @@ def main() -> int:
                     "run_id": run_id,
                     "generated_at": _utcnow_iso(),
                     "provider_profile": diff_summary_by_provider_profile,
+                },
+            )
+            _write_identity_diff_artifacts(
+                run_dir,
+                {
+                    "run_id": run_id,
+                    "generated_at": _utcnow_iso(),
+                    "provider_profile": diff_report_by_provider_profile,
                 },
             )
         run_metadata_path = _persist_run_metadata(
@@ -3486,6 +3533,7 @@ def main() -> int:
                     profile=profile,
                     diff_report=diff_report,
                 )
+                diff_report_by_provider_profile.setdefault(provider, {})[profile] = diff_report
 
                 label = _profile_label(provider, profile)
                 logger.info(
@@ -3571,6 +3619,10 @@ def main() -> int:
                     notify_mode=notify_mode,
                     no_post=args.no_post or all_unavailable,
                     extra_lines=extra_lines or None,
+                    diff_items={
+                        "new": diff_report.get("added") or [],
+                        "changed": diff_report.get("changed") or [],
+                    },
                 )
                 discord_status_by_provider.setdefault(provider, {})[profile] = discord_status
 

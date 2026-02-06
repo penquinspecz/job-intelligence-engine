@@ -41,3 +41,39 @@ def test_post_discord_webhook_unset(caplog) -> None:
     ok = post_discord("", "hello")
     assert ok is False
     assert any("webhook unset" in record.message.lower() for record in caplog.records)
+
+
+def test_build_run_summary_message_includes_identity_diff_sections(tmp_path: Path) -> None:
+    ranked_path = tmp_path / "ranked.json"
+    ranked = [
+        {"title": "Role A", "score": 95, "apply_url": "https://example.com/a"},
+        {"title": "Role B", "score": 72, "apply_url": "https://example.com/b"},
+    ]
+    ranked_path.write_text(json.dumps(ranked), encoding="utf-8")
+
+    msg = build_run_summary_message(
+        provider="openai",
+        profile="cs",
+        ranked_json=ranked_path,
+        diff_counts={"new": 1, "changed": 1, "removed": 0},
+        min_score=70,
+        timestamp="2026-01-22T00:00:00+00:00",
+        diff_top_n=2,
+        diff_items={
+            "new": [{"title": "New Role", "score": 88, "apply_url": "https://example.com/new"}],
+            "changed": [
+                {
+                    "title": "Changed Role",
+                    "score": 83,
+                    "apply_url": "https://example.com/changed",
+                    "changed_fields": ["title", "score"],
+                }
+            ],
+        },
+    )
+
+    assert "Top new (identity diff, max 2):" in msg
+    assert "New Role" in msg
+    assert "Top changed (identity diff, max 2):" in msg
+    assert "Changed Role" in msg
+    assert "changed: title, score" in msg

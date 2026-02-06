@@ -53,6 +53,8 @@ def build_run_summary_message(
     timestamp: Optional[str] = None,
     top_n: int = 5,
     extra_lines: Optional[List[str]] = None,
+    diff_items: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+    diff_top_n: int = 5,
 ) -> str:
     ts = timestamp or _utcnow_iso()
     jobs = _load_ranked(ranked_json)
@@ -78,6 +80,36 @@ def build_run_summary_message(
             lines.append(f"- **{score}** {title} — {apply_url}")
         else:
             lines.append(f"- **{score}** {title}")
+
+    if diff_items:
+        new_items = list(diff_items.get("new") or [])
+        changed_items = list(diff_items.get("changed") or [])
+        if new_items:
+            lines.append("")
+            lines.append(f"Top new (identity diff, max {diff_top_n}):")
+            for item in new_items[:diff_top_n]:
+                title = str(item.get("title") or "Untitled").strip()
+                score = item.get("score")
+                url = str(item.get("apply_url") or "").strip()
+                score_prefix = f"**{int(score)}** " if isinstance(score, (int, float)) else ""
+                if url:
+                    lines.append(f"- {score_prefix}{title} — {url}")
+                else:
+                    lines.append(f"- {score_prefix}{title}")
+        if changed_items:
+            lines.append("")
+            lines.append(f"Top changed (identity diff, max {diff_top_n}):")
+            for item in changed_items[:diff_top_n]:
+                title = str(item.get("title") or "Untitled").strip()
+                score = item.get("score")
+                url = str(item.get("apply_url") or "").strip()
+                changed_fields = item.get("changed_fields") or []
+                changed_note = f" (changed: {', '.join(changed_fields)})" if changed_fields else ""
+                score_prefix = f"**{int(score)}** " if isinstance(score, (int, float)) else ""
+                if url:
+                    lines.append(f"- {score_prefix}{title} — {url}{changed_note}")
+                else:
+                    lines.append(f"- {score_prefix}{title}{changed_note}")
 
     if extra_lines:
         lines.append("")

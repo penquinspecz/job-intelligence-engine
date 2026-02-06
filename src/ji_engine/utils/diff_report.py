@@ -4,9 +4,9 @@ import hashlib
 import json
 from typing import Any, Dict, Iterable, List, Tuple
 
-from .job_identity import job_identity, normalize_job_text, normalize_job_url
+from .job_identity import job_identity, normalize_job_text
 
-_DIFF_FIELDS: Tuple[str, ...] = ("title", "location", "team", "apply_url", "score_bucket")
+_DIFF_FIELDS: Tuple[str, ...] = ("title", "location", "team", "level", "score", "jd_hash")
 
 
 def _normalize(value: Any) -> str:
@@ -26,17 +26,18 @@ def _job_description_text(job: Dict[str, Any]) -> str:
 def _field_value(job: Dict[str, Any], field: str) -> str:
     if field == "location":
         return _normalize(job.get("location") or job.get("locationName"))
-    if field == "apply_url":
-        url = job.get("apply_url") or job.get("detail_url") or ""
-        return normalize_job_url(str(url)) if url else ""
-    if field == "description_text":
-        return _normalize(_job_description_text(job))
-    if field == "score_bucket":
+    if field == "level":
+        return _normalize(job.get("level") or job.get("seniority"))
+    if field == "score":
         score = job.get("score")
         if isinstance(score, (int, float)):
-            bucket = int(score // 5) * 5
-            return str(bucket)
+            return str(int(score))
         return ""
+    if field == "jd_hash":
+        text = _normalize(_job_description_text(job))
+        if not text:
+            return ""
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
     return _normalize(job.get(field))
 
 
@@ -49,7 +50,15 @@ def _project(job: Dict[str, Any], identity: str) -> Dict[str, Any]:
         "location": job.get("location") or job.get("locationName"),
         "team": job.get("team") or job.get("department"),
         "apply_url": job.get("apply_url") or job.get("detail_url"),
+        "score": job.get("score"),
     }
+
+
+def _identity_key(job: Dict[str, Any]) -> str:
+    jid = normalize_job_text(str(job.get("job_id") or ""), casefold=False)
+    if jid:
+        return jid
+    return job_identity(job, mode="provider")
 
 
 def _changed_fields(prev_job: Dict[str, Any], curr_job: Dict[str, Any]) -> List[str]:
@@ -78,8 +87,8 @@ def build_diff_report(
     profile: str,
     baseline_exists: bool,
 ) -> Dict[str, Any]:
-    prev_map = {job_identity(job, mode="provider"): (job, _stable_fingerprint(job)) for job in prev_jobs}
-    curr_map = {job_identity(job, mode="provider"): (job, _stable_fingerprint(job)) for job in curr_jobs}
+    prev_map = {_identity_key(job): (job, _stable_fingerprint(job)) for job in prev_jobs}
+    curr_map = {_identity_key(job): (job, _stable_fingerprint(job)) for job in curr_jobs}
 
     prev_ids = set(prev_map)
     curr_ids = set(curr_map)

@@ -89,6 +89,21 @@ Discord run summaries are diff-gated by default:
 - Post only when diffs exist (new/changed/removed) or the run fails.
 - Override with `JOBINTEL_DISCORD_ALWAYS_POST=1` to always post a summary.
 - `--no_post` still suppresses posting entirely.
+- Summaries use identity-based deltas (`job_id` first, provider identity fallback) and include top new/changed items.
+- Tune summary detail with `JOBINTEL_DISCORD_DIFF_TOP_N` (default `5`).
+
+## Identity diff artifacts
+
+Each run writes deterministic identity delta artifacts under `state/runs/<run_id>/`:
+
+- `diff.json`: provider/profile diff payload with `added`, `changed`, `removed` buckets.
+- `diff.md`: human-readable summary from the same payload.
+
+Identity semantics:
+- `new`: `job_id` not present in the prior run.
+- `changed`: same identity, but one or more tracked fields changed:
+  `title`, `location`, `team`, `level`, `score`, `jd_hash`.
+- `removed`: identity present in prior run but not current run.
 
 ## Input selection rules
 

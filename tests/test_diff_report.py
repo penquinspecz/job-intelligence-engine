@@ -66,3 +66,37 @@ def test_diff_markdown_includes_sections() -> None:
     assert "## Added" in md
     assert "## Changed" in md
     assert "## Removed" in md
+
+
+def test_diff_report_uses_job_id_as_identity_key() -> None:
+    prev = [
+        {
+            "provider": "openai",
+            "job_id": "stable-id-1",
+            "title": "Role A",
+            "location": "Remote",
+            "team": "CS",
+            "level": "L4",
+            "score": 80,
+            "description_text": "same description",
+        }
+    ]
+    curr = [
+        {
+            "provider": "openai",
+            "job_id": "stable-id-1",
+            "title": "Role A updated",
+            "location": "Remote",
+            "team": "CS",
+            "level": "L4",
+            "score": 82,
+            "description_text": "same description",
+        }
+    ]
+    report = build_diff_report(prev, curr, provider="openai", profile="cs", baseline_exists=True)
+    assert report["counts"]["added"] == 0
+    assert report["counts"]["removed"] == 0
+    assert report["counts"]["changed"] == 1
+    assert report["changed"][0]["id"] == "stable-id-1"
+    assert "title" in report["changed"][0]["changed_fields"]
+    assert "score" in report["changed"][0]["changed_fields"]
