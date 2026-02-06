@@ -100,3 +100,22 @@ def test_diff_report_uses_job_id_as_identity_key() -> None:
     assert report["changed"][0]["id"] == "stable-id-1"
     assert "title" in report["changed"][0]["changed_fields"]
     assert "score" in report["changed"][0]["changed_fields"]
+
+
+def test_diff_report_suppresses_ignored_ids() -> None:
+    prev = [
+        {"provider": "openai", "job_id": "job-a", "title": "Role A", "apply_url": "https://example.com/a"},
+        {"provider": "openai", "job_id": "job-b", "title": "Role B", "apply_url": "https://example.com/b"},
+    ]
+    curr = [
+        {"provider": "openai", "job_id": "job-a", "title": "Role A+", "apply_url": "https://example.com/a"},
+        {"provider": "openai", "job_id": "job-c", "title": "Role C", "apply_url": "https://example.com/c"},
+    ]
+    report = build_diff_report(prev, curr, provider="openai", profile="cs", baseline_exists=True, ignored_ids={"job-a"})
+
+    assert report["counts"] == {"added": 1, "changed": 0, "removed": 1}
+    assert report["suppressed"]["ignored"] == 1
+    assert [item["id"] for item in report["added"]] == ["job-c"]
+    assert [item["id"] for item in report["removed"]] == ["job-b"]
+    md = build_diff_markdown(report)
+    assert "Suppressed by user_state(ignore): 1" in md

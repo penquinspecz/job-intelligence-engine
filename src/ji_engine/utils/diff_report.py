@@ -86,6 +86,7 @@ def build_diff_report(
     provider: str,
     profile: str,
     baseline_exists: bool,
+    ignored_ids: set[str] | None = None,
 ) -> Dict[str, Any]:
     prev_map = {_identity_key(job): (job, _stable_fingerprint(job)) for job in prev_jobs}
     curr_map = {_identity_key(job): (job, _stable_fingerprint(job)) for job in curr_jobs}
@@ -93,14 +94,17 @@ def build_diff_report(
     prev_ids = set(prev_map)
     curr_ids = set(curr_map)
 
-    added_ids = curr_ids - prev_ids
-    removed_ids = prev_ids - curr_ids
+    blocked = set(ignored_ids or set())
+    added_ids = {identity for identity in (curr_ids - prev_ids) if identity not in blocked}
+    removed_ids = {identity for identity in (prev_ids - curr_ids) if identity not in blocked}
     shared_ids = prev_ids & curr_ids
 
     changed_ids: List[str] = []
     changed_items: List[Dict[str, Any]] = []
 
     for identity in sorted(shared_ids):
+        if identity in blocked:
+            continue
         prev_job, prev_hash = prev_map[identity]
         curr_job, curr_hash = curr_map[identity]
         if prev_hash != curr_hash:
@@ -124,6 +128,9 @@ def build_diff_report(
         "added": _sorted_items(added_items),
         "changed": _sorted_items(changed_items),
         "removed": _sorted_items(removed_items),
+        "suppressed": {
+            "ignored": len(blocked & (prev_ids | curr_ids)),
+        },
     }
     report["summary_hash"] = diff_report_digest(report)
     return report
@@ -139,6 +146,9 @@ def build_diff_markdown(report: Dict[str, Any], *, limit: int = 10) -> str:
     lines.append(
         f"Added: {counts.get('added', 0)} | Changed: {counts.get('changed', 0)} | Removed: {counts.get('removed', 0)}"
     )
+    suppressed_ignored = int(((report.get("suppressed") or {}).get("ignored", 0)) or 0)
+    if suppressed_ignored > 0:
+        lines.append(f"Suppressed by user_state(ignore): {suppressed_ignored}")
     lines.append("")
 
     def _section(title: str, items: List[Dict[str, Any]]) -> None:

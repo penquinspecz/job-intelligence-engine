@@ -57,7 +57,7 @@ from ji_engine.utils.atomic_write import atomic_write_text, atomic_write_with
 from ji_engine.utils.content_fingerprint import content_fingerprint
 from ji_engine.utils.job_identity import job_identity
 from ji_engine.utils.location_normalize import normalize_location_guess
-from ji_engine.utils.user_state import load_user_state
+from ji_engine.utils.user_state import load_user_state_checked, normalize_user_status
 
 logger = logging.getLogger(__name__)
 JSON_DUMP_SETTINGS = {"ensure_ascii": False, "separators": (",", ":"), "sort_keys": True}
@@ -1028,21 +1028,11 @@ def write_shortlist_md(scored: List[Dict[str, Any]], out_path: Path, min_score: 
         if not profile:
             return {}
         path = USER_STATE_DIR / f"{profile}.json"
-        try:
-            data = load_user_state(path)
-        except Exception:
+        data, warning = load_user_state_checked(path)
+        if warning:
+            logger.warning("%s", warning)
             return {}
-        if isinstance(data, dict):
-            if all(isinstance(v, dict) for v in data.values()):
-                return {str(k): v for k, v in data.items()}
-            jobs = data.get("jobs")
-            if isinstance(jobs, list):
-                mapping: Dict[str, Dict[str, Any]] = {}
-                for item in jobs:
-                    if isinstance(item, dict) and item.get("id"):
-                        mapping[str(item["id"])] = item
-                return mapping
-        return {}
+        return data
 
     shortlist = [
         _strip_ephemeral_fields(j)
@@ -1065,8 +1055,10 @@ def write_shortlist_md(scored: List[Dict[str, Any]], out_path: Path, min_score: 
         if identity and identity in user_state:
             record = user_state.get(identity) or {}
             if isinstance(record, dict):
-                status = _norm(record.get("status") or "")
+                status = normalize_user_status(record.get("status") or "")
                 note = _norm(record.get("notes") or "")
+        if status == "ignore":
+            continue
 
         status_tag = f" [{status}]" if status else ""
         lines.append(f"## {title} — {score} [{role_band}]{status_tag}")

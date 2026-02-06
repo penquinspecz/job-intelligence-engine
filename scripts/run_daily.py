@@ -48,6 +48,7 @@ from ji_engine.config import (
     RUN_METADATA_DIR,
     SNAPSHOT_DIR,
     STATE_DIR,
+    USER_STATE_DIR,
     ensure_dirs,
     ranked_families_json,
     ranked_jobs_csv,
@@ -62,6 +63,7 @@ from ji_engine.utils.content_fingerprint import content_fingerprint
 from ji_engine.utils.diff_report import build_diff_markdown, build_diff_report
 from ji_engine.utils.dotenv import load_dotenv
 from ji_engine.utils.job_identity import job_identity
+from ji_engine.utils.user_state import load_user_state_checked, normalize_user_status
 from ji_engine.utils.verification import (
     build_verifiable_artifacts,
     compute_sha256_bytes,
@@ -1073,6 +1075,7 @@ def _persist_run_metadata(
     scoring_input_selection_by_provider: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None,
     outputs_by_provider: Optional[Dict[str, Dict[str, Dict[str, Dict[str, Optional[str]]]]]] = None,
     delta_summary: Optional[Dict[str, Any]] = None,
+    user_state_counts_by_provider_profile: Optional[Dict[str, Dict[str, Dict[str, int]]]] = None,
     config_fingerprint: Optional[str] = None,
     environment_fingerprint: Optional[Dict[str, Optional[str]]] = None,
 ) -> Path:
@@ -1167,6 +1170,8 @@ def _persist_run_metadata(
         payload["archived_inputs_by_provider_profile"] = archived_inputs_by_provider_profile
     if delta_summary is not None:
         payload["delta_summary"] = delta_summary
+    if user_state_counts_by_provider_profile is not None:
+        payload["user_state_counts_by_provider_profile"] = user_state_counts_by_provider_profile
     payload["success"] = telemetry.get("success", False)
     if telemetry.get("failed_stage"):
         payload["failed_stage"] = telemetry["failed_stage"]
@@ -1968,6 +1973,72 @@ def _hash_job(job: Dict[str, Any]) -> str:
     return str(job.get("content_fingerprint") or content_fingerprint(job))
 
 
+def _load_profile_user_state(profile: str) -> Dict[str, Dict[str, Any]]:
+    path = USER_STATE_DIR / f"{profile}.json"
+    data, warning = load_user_state_checked(path)
+    if warning:
+        logger.warning("%s", warning)
+        return {}
+    return data
+
+
+def _user_state_sets(
+    profile: str,
+    jobs: List[Dict[str, Any]],
+) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, int], set[str], set[str]]:
+    state_map = _load_profile_user_state(profile)
+    counts: Dict[str, int] = dict.fromkeys(("ignore", "saved", "applied", "interviewing"), 0)
+    ignored_ids: set[str] = set()
+    suppress_new_ids: set[str] = set()
+    for job in jobs:
+        key = _job_key(job)
+        record = state_map.get(key)
+        if not isinstance(record, dict):
+            continue
+        status = normalize_user_status(record.get("status") or "")
+        if status not in counts:
+            continue
+        counts[status] += 1
+        if status == "ignore":
+            ignored_ids.add(key)
+            suppress_new_ids.add(key)
+        elif status in {"applied", "interviewing"}:
+            suppress_new_ids.add(key)
+    return state_map, counts, ignored_ids, suppress_new_ids
+
+
+def _filter_by_ids(items: List[Dict[str, Any]], blocked_ids: set[str]) -> List[Dict[str, Any]]:
+    if not blocked_ids:
+        return list(items)
+    return [item for item in items if _job_key(item) not in blocked_ids]
+
+
+def _apply_user_state_to_alerts(
+    alerts: Dict[str, Any],
+    *,
+    suppress_new_ids: set[str],
+    ignored_ids: set[str],
+) -> Dict[str, Any]:
+    adjusted = dict(alerts)
+    new_items = [item for item in list(adjusted.get("new_jobs") or []) if item.get("job_id") not in suppress_new_ids]
+    score_items = [item for item in list(adjusted.get("score_changes") or []) if item.get("job_id") not in ignored_ids]
+    title_items = [
+        item for item in list(adjusted.get("title_or_location_changes") or []) if item.get("job_id") not in ignored_ids
+    ]
+    removed_items = [jid for jid in list(adjusted.get("removed_jobs") or []) if jid not in ignored_ids]
+    adjusted["new_jobs"] = new_items
+    adjusted["score_changes"] = score_items
+    adjusted["title_or_location_changes"] = title_items
+    adjusted["removed_jobs"] = removed_items
+    adjusted["counts"] = {
+        "new": len(new_items),
+        "removed": len(removed_items),
+        "score_changes": len(score_items),
+        "title_or_location_changes": len(title_items),
+    }
+    return adjusted
+
+
 def _diff(
     prev: List[Dict[str, Any]],
     curr: List[Dict[str, Any]],
@@ -2593,6 +2664,7 @@ def main() -> int:
     diff_counts_by_provider: Dict[str, Dict[str, Dict[str, Any]]] = {}
     diff_summary_by_provider_profile: Dict[str, Dict[str, Dict[str, Any]]] = {}
     diff_report_by_provider_profile: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    user_state_counts_by_provider_profile: Dict[str, Dict[str, Dict[str, int]]] = {}
     scoring_inputs_by_provider: Dict[str, Dict[str, Dict[str, Optional[str]]]] = {}
     scoring_input_selection_by_provider: Dict[str, Dict[str, Dict[str, Any]]] = {}
     archived_inputs_by_provider_profile: Dict[str, Dict[str, Dict[str, Any]]] = {}
@@ -2709,6 +2781,7 @@ def main() -> int:
             scoring_input_selection_by_provider=scoring_input_selection_by_provider,
             outputs_by_provider=provider_outputs,
             delta_summary=delta_summary,
+            user_state_counts_by_provider_profile=user_state_counts_by_provider_profile,
             config_fingerprint=config_fingerprint,
             environment_fingerprint=environment_fingerprint,
         )
@@ -3426,10 +3499,17 @@ def main() -> int:
                 state_path = _state_last_ranked(provider, profile)
                 state_exists = state_path.exists()
                 curr = _read_json(ranked_json)
+                _, user_state_counts, ignored_ids, suppress_new_ids = _user_state_sets(profile, curr)
+                user_state_counts_by_provider_profile.setdefault(provider, {})[profile] = user_state_counts
                 alerts_json, alerts_md = _alerts_paths(provider, profile)
                 last_seen_path = _last_seen_path(provider, profile)
                 prev_last_seen = load_last_seen(last_seen_path)
                 alerts = compute_alerts(curr, prev_last_seen, score_delta=resolve_score_delta())
+                alerts = _apply_user_state_to_alerts(
+                    alerts,
+                    suppress_new_ids=suppress_new_ids,
+                    ignored_ids=ignored_ids,
+                )
                 write_alerts(alerts_json, alerts_md, alerts, provider, profile)
                 write_last_seen(last_seen_path, build_last_seen(curr))
                 fallback_applied = selection.get("us_only_fallback", {}).get("fallback_applied") is True
@@ -3503,14 +3583,18 @@ def main() -> int:
                             prev = _read_json(s3_info.ranked_path)
                             baseline_exists = True
                 new_jobs, changed_jobs, removed_jobs, changed_fields = _diff(prev, curr)
+                visible_new_jobs = _filter_by_ids(new_jobs, ignored_ids)
+                visible_changed_jobs = _filter_by_ids(changed_jobs, ignored_ids)
+                visible_removed_jobs = _filter_by_ids(removed_jobs, ignored_ids)
+                visible_new_jobs_for_notifications = _filter_by_ids(visible_new_jobs, suppress_new_ids)
 
                 # Append "Changes since last run" section to shortlist (filtered by min_alert_score)
                 _append_shortlist_changes_section(
                     shortlist_md,
                     profile,
-                    new_jobs,
-                    changed_jobs,
-                    removed_jobs,
+                    visible_new_jobs,
+                    visible_changed_jobs,
+                    visible_removed_jobs,
                     state_exists,
                     changed_fields,
                     prev_jobs=prev,
@@ -3524,6 +3608,7 @@ def main() -> int:
                     provider=provider,
                     profile=profile,
                     baseline_exists=baseline_exists,
+                    ignored_ids=ignored_ids,
                 )
                 _write_canonical_json(diff_json_path, diff_report)
                 diff_md_path.write_text(build_diff_markdown(diff_report), encoding="utf-8")
@@ -3539,17 +3624,20 @@ def main() -> int:
                 logger.info(
                     "Changelog (%s): new=%d changed=%d removed=%d",
                     label,
-                    len(new_jobs),
-                    len(changed_jobs),
-                    len(removed_jobs),
+                    diff_report.get("counts", {}).get("added", 0),
+                    diff_report.get("counts", {}).get("changed", 0),
+                    diff_report.get("counts", {}).get("removed", 0),
                 )
                 diff_counts = {
-                    "new": len(new_jobs),
-                    "changed": len(changed_jobs),
-                    "removed": len(removed_jobs),
+                    "new": diff_report.get("counts", {}).get("added", 0),
+                    "changed": diff_report.get("counts", {}).get("changed", 0),
+                    "removed": diff_report.get("counts", {}).get("removed", 0),
                 }
                 if not baseline_exists:
                     diff_counts["first_run"] = True
+                suppressed = int(((diff_report.get("suppressed") or {}).get("ignored", 0)) or 0)
+                if suppressed > 0:
+                    diff_counts["suppressed_ignored"] = suppressed
                 diff_counts_by_provider.setdefault(provider, {})[profile] = diff_counts
                 if provider == "openai":
                     diff_counts_by_profile[profile] = diff_counts
@@ -3620,21 +3708,25 @@ def main() -> int:
                     no_post=args.no_post or all_unavailable,
                     extra_lines=extra_lines or None,
                     diff_items={
-                        "new": diff_report.get("added") or [],
+                        "new": [
+                            item for item in (diff_report.get("added") or []) if item.get("id") not in suppress_new_ids
+                        ],
                         "changed": diff_report.get("changed") or [],
                     },
                 )
                 discord_status_by_provider.setdefault(provider, {})[profile] = discord_status
 
-                interesting_new = [j for j in new_jobs if j.get("score", 0) >= args.min_alert_score]
-                interesting_changed = [j for j in changed_jobs if j.get("score", 0) >= args.min_alert_score]
+                interesting_new = [
+                    j for j in visible_new_jobs_for_notifications if j.get("score", 0) >= args.min_alert_score
+                ]
+                interesting_changed = [j for j in visible_changed_jobs if j.get("score", 0) >= args.min_alert_score]
 
                 if not webhook:
                     logger.info(
                         "ℹ️ No alerts (%s) (new=%d, changed=%d; webhook=unset).",
                         label,
-                        len(new_jobs),
-                        len(changed_jobs),
+                        len(visible_new_jobs_for_notifications),
+                        len(visible_changed_jobs),
                     )
                     if unavailable_summary:
                         logger.info("Unavailable reasons: %s", unavailable_summary)
@@ -3651,8 +3743,8 @@ def main() -> int:
                     logger.info(
                         "ℹ️ No alerts (%s) (new=%d, changed=%d; webhook=set).",
                         label,
-                        len(new_jobs),
-                        len(changed_jobs),
+                        len(visible_new_jobs_for_notifications),
+                        len(visible_changed_jobs),
                     )
                     if unavailable_summary:
                         logger.info("Unavailable reasons: %s", unavailable_summary)

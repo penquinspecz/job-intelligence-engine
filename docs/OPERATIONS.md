@@ -217,13 +217,35 @@ If Docker commands fail with daemon `_ping` errors (e.g., HTTP 500), the daemon 
 
 ## User state
 
-User state lives under `state/user_state/<profile>.json` and is used to annotate shortlist entries.
+User state lives under `state/user_state/<profile>.json` and uses schema:
+
+```json
+{
+  "schema_version": 1,
+  "jobs": {
+    "<job_id>": {
+      "status": "ignore|saved|applied|interviewing",
+      "date": "YYYY-MM-DD",
+      "notes": "optional"
+    }
+  }
+}
+```
+
+Semantics:
+- `ignore`: suppress from shortlist and suppress from diff/Discord notifications.
+- `applied` / `interviewing`: keep in shortlist with annotation, suppress from `new` notifications.
+- `saved`: keep in shortlist with annotation; notifications allowed.
+
+Invalid user-state JSON/schema is fail-closed for overlays (pipeline continues, warning is logged).
 
 Examples:
 
 ```bash
-python scripts/set_job_status.py --profile cs --job-id job_123 --status applied --note "Reached out."
-python scripts/set_job_status.py --profile cs --url https://example.com/jobs/123 --status ignore
+python scripts/user_state.py add-status --profile cs --job-id job_123 --status applied --notes "Reached out."
+python scripts/user_state.py add-status --profile cs --url https://example.com/jobs/123 --status ignore
+python scripts/user_state.py list --profile cs
+python scripts/user_state.py export --profile cs --out /tmp/user_state.cs.json
 ```
 
 A “Quality Gates” section:

@@ -17,19 +17,20 @@ def test_set_job_status_create_update_remove(tmp_path: Path, monkeypatch) -> Non
     path = user_state_dir / "cs.json"
     assert path.exists()
     data = json.loads(_read(path))
-    assert data["job-1"]["status"] == "APPLIED"
-    assert data["job-1"]["notes"] == "first note"
+    assert data["schema_version"] == 1
+    assert data["jobs"]["job-1"]["status"] == "applied"
+    assert data["jobs"]["job-1"]["notes"] == "first note"
 
     rc = set_job_status.main(["--profile", "cs", "--job-id", "job-1", "--status", "interviewing", "--note", "updated"])
     assert rc == 0
     data = json.loads(_read(path))
-    assert data["job-1"]["status"] == "INTERVIEWING"
-    assert data["job-1"]["notes"] == "updated"
+    assert data["jobs"]["job-1"]["status"] == "interviewing"
+    assert data["jobs"]["job-1"]["notes"] == "updated"
 
     rc = set_job_status.main(["--profile", "cs", "--job-id", "job-1", "--status", "none"])
     assert rc == 0
     data = json.loads(_read(path))
-    assert data == {}
+    assert data == {"jobs": {}, "schema_version": 1}
 
 
 def test_set_job_status_deterministic_format(tmp_path: Path, monkeypatch) -> None:
