@@ -47,8 +47,41 @@ kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" \
 
 ## 4) Capture receipts (live proof)
 
-Single command driver (recommended). This writes local proof artifacts and fails closed
-if any required receipt is missing.
+Single canonical command (recommended). It fails closed if required receipts are missing,
+builds a deterministic local bundle, and can emit a commit-safe excerpt log.
+
+```bash
+python scripts/prove_it_m3.py \
+  --cluster-name "$CLUSTER_NAME" \
+  --context "$KUBE_CONTEXT" \
+  --namespace "$NAMESPACE" \
+  --bucket "$BUCKET" \
+  --prefix "$PREFIX" \
+  --write-excerpt
+```
+
+Optional plan mode (prints expected outputs only):
+
+```bash
+python scripts/prove_it_m3.py \
+  --cluster-name "$CLUSTER_NAME" \
+  --context "$KUBE_CONTEXT" \
+  --namespace "$NAMESPACE" \
+  --bucket "$BUCKET" \
+  --prefix "$PREFIX" \
+  --plan
+```
+
+Bundle output path:
+- `ops/proof/bundles/m3-<run_id>/`
+  - `liveproof-<run_id>.log`
+  - `verify_published_s3-<run_id>.log`
+  - `proofs/<run_id>.json`
+  - `bundle_manifest.json` (sha256 + size for each file)
+  - `README.md` (run_id, timestamp, context, bucket/prefix, git sha)
+  - `liveproof-<run_id>.excerpt.log` (when `--write-excerpt` is used)
+
+Legacy direct driver (still available):
 
 ```bash
 python scripts/prove_eks_live_run.py \
@@ -58,11 +91,6 @@ python scripts/prove_eks_live_run.py \
   --bucket "$BUCKET" \
   --prefix "$PREFIX"
 ```
-
-The command prints `JOBINTEL_RUN_ID=<run_id>` and writes:
-- `ops/proof/liveproof-<run_id>.log`
-- `state/proofs/<run_id>.json`
-- `ops/proof/verify_published_s3-<run_id>.log`
 
 Legacy helper (still available):
 
@@ -78,13 +106,18 @@ python scripts/verify_published_s3.py --bucket "$BUCKET" --run-id "<run_id>" --p
 
 ## Expected outputs (proof artifacts)
 - A log line containing `JOBINTEL_RUN_ID=<run_id>`.
-- A proof JSON file at `state/proofs/<run_id>.json`.
-- A proof log file at `ops/proof/liveproof-<run_id>.log` containing `JOBINTEL_RUN_ID` and `[run_scrape][provenance]`.
-- A verifier log file at `ops/proof/verify_published_s3-<run_id>.log`.
+- A proof bundle at `ops/proof/bundles/m3-<run_id>/`.
+- A proof JSON file at `ops/proof/bundles/m3-<run_id>/proofs/<run_id>.json`.
+- A proof log file at `ops/proof/bundles/m3-<run_id>/liveproof-<run_id>.log` containing `JOBINTEL_RUN_ID` and `[run_scrape][provenance]`.
+- A verifier log file at `ops/proof/bundles/m3-<run_id>/verify_published_s3-<run_id>.log`.
 - `verify_published_s3` output with `"ok": true`.
 - S3 keys under:
   - `runs/<run_id>/<provider>/<profile>/...`
   - `latest/<provider>/<profile>/...`
+
+Commit guidance:
+- Prefer committing the bundle directory and the redacted excerpt log.
+- Do not commit unredacted logs if `prove_it_m3` reports secret-like matches (unless intentionally using `--allow-secrets` for local debugging only).
 
 Proof JSON (`state/proofs/<run_id>.json`) includes:
 - Existing run proof receipt from `run_daily.py`

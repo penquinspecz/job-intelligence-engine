@@ -122,18 +122,21 @@ cat ops/proof/liveproof-<run_id>.log
 Single-command receipts driver (recommended):
 
 ```bash
-python scripts/prove_eks_live_run.py \
+python scripts/prove_it_m3.py \
   --cluster-name "<cluster_name>" \
   --context "$KUBE_CONTEXT" \
   --namespace "$NAMESPACE" \
   --bucket "$BUCKET" \
-  --prefix "$PREFIX"
+  --prefix "$PREFIX" \
+  --write-excerpt
 ```
 
-Expected files:
-- `ops/proof/liveproof-<run_id>.log`
-- `state/proofs/<run_id>.json`
-- `ops/proof/verify_published_s3-<run_id>.log`
+Expected bundle:
+- `ops/proof/bundles/m3-<run_id>/liveproof-<run_id>.log`
+- `ops/proof/bundles/m3-<run_id>/verify_published_s3-<run_id>.log`
+- `ops/proof/bundles/m3-<run_id>/proofs/<run_id>.json`
+- `ops/proof/bundles/m3-<run_id>/bundle_manifest.json`
+- Optional: `ops/proof/bundles/m3-<run_id>/liveproof-<run_id>.excerpt.log`
 
 ## Rollback
 
