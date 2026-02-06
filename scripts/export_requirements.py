@@ -95,6 +95,7 @@ def _ensure_ci_cache_dir() -> None:
 def _tooling_self_check(*, repo_root: Path, check_mode: bool) -> None:
     verbose = os.environ.get("JIE_TOOLING_VERBOSE") == "1"
     venv_path = repo_root / ".venv"
+
     def _fail(detail: str) -> None:
         if check_mode:
             raise SystemExit("deps-check tooling mismatch; run make tooling-sync")
