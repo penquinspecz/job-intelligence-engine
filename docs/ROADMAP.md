@@ -478,32 +478,7 @@ Milestone 4 is DONE when the above is rehearsed once end-to-end and you can repe
 
 ---
 
-## Milestone 7 — History & intelligence (identity, dedupe, trends + user state)
-
-**Goal:** track jobs across time, reduce noise, and make changes meaningful.
-
-### Definition of Done (DoD)
-- [ ] `job_identity()` produces stable IDs across runs for the same posting
-- [x] URL normalization reduces false deltas
-- [ ] Dedupe collapse: same job across multiple listings/URLs → one canonical record
-- [ ] “Changes since last run” uses identity-based diffing (not just row diffs)
-- [ ] History directory grows predictably (retention rules)
-- [ ] **User State overlay** exists and affects outputs:
-  - applied / ignore / interviewing / saved, etc.
-  - shortlist + alerts respect this state (filter or annotate)
-
-### Work Items
-- [ ] Implement/validate identity strategy (title/location/team + URL + JD hash fallback)
-- [ ] Store per-run identity map + provenance in `state/history/<profile>/...`
-- [ ] Identity-based diffs for new/changed/removed
-- [ ] Implement `state/user_state/<profile>.json` overlay:
-  - schema: `{ "<job_id>": { "status": "...", "date": "...", "notes": "..." } }`
-  - integrate into shortlist writer and alerting (filtering semantics defined)
-- [ ] Retention policy (keep last N runs + daily snapshots) documented and enforced
-
----
-
-## Milestone 8 — Semantic Safety Net (Deterministic Discovery)
+## Milestone 7 — Semantic Safety Net (Deterministic Discovery)
 
 **Goal:** Catch “good fits with weird wording” without losing explainability.
 
@@ -521,7 +496,7 @@ Milestone 4 is DONE when the above is rehearsed once end-to-end and you can repe
 
 ---
 
-## Milestone 9 — Hardening & scaling (providers, cost controls, observability)
+## Milestone 8 — Hardening & scaling (providers, cost controls, observability)
 
 **Goal:** resilient providers, predictable cost, better monitoring.
 
@@ -539,7 +514,7 @@ Milestone 4 is DONE when the above is rehearsed once end-to-end and you can repe
 
 ---
 
-## Milestone 10 — Multi-user (Phase 2/3) — Profiles, uploads, and per-user experiences
+## Milestone 9 — Multi-user (Phase 2/3) — Profiles, uploads, and per-user experiences
 
 **Goal:** other people can use the engine safely, with isolation and a clean UX.
 
