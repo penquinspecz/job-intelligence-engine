@@ -337,8 +337,12 @@ def evaluate_robots_policy(
 
     if not allowlist_allowed:
         decision["reason"] = "allowlist_denied"
+        log_tpl = (
+            "[provider_retry][robots] provider=%s host=%s allowlist_allowed=%s "
+            "robots_fetched=%s robots_allowed=%s final_allowed=%s reason=%s url=%s"
+        )
         logger.warning(
-            "[provider_retry][robots] provider=%s host=%s allowlist_allowed=%s robots_fetched=%s robots_allowed=%s final_allowed=%s reason=%s url=%s",
+            log_tpl,
             provider_id,
             host,
             allowlist_allowed,
@@ -361,8 +365,12 @@ def evaluate_robots_policy(
         decision["robots_status"] = status
         if status != 200:
             decision["reason"] = f"robots_status_{status}"
+            log_tpl = (
+                "[provider_retry][robots] provider=%s host=%s allowlist_allowed=%s "
+                "robots_fetched=%s robots_allowed=%s final_allowed=%s reason=%s url=%s"
+            )
             logger.warning(
-                "[provider_retry][robots] provider=%s host=%s allowlist_allowed=%s robots_fetched=%s robots_allowed=%s final_allowed=%s reason=%s url=%s",
+                log_tpl,
                 provider_id,
                 host,
                 allowlist_allowed,
@@ -382,8 +390,12 @@ def evaluate_robots_policy(
     except Exception:
         decision["reason"] = "robots_fetch_failed"
 
+    log_tpl = (
+        "[provider_retry][robots] provider=%s host=%s allowlist_allowed=%s "
+        "robots_fetched=%s robots_allowed=%s final_allowed=%s reason=%s url=%s"
+    )
     logger.info(
-        "[provider_retry][robots] provider=%s host=%s allowlist_allowed=%s robots_fetched=%s robots_allowed=%s final_allowed=%s reason=%s url=%s",
+        log_tpl,
         provider_id,
         host,
         decision["allowlist_allowed"],

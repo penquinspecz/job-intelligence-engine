@@ -27,7 +27,7 @@ spec:
             - python
             - -m
             - uvicorn
-            - jobintel.dashboard.app:app
+            - ji_engine.dashboard.app:app
             - --host
             - 0.0.0.0
             - --port

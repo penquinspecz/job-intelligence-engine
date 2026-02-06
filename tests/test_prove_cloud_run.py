@@ -26,7 +26,7 @@ def test_prove_cloud_run_extracts_and_writes(tmp_path, monkeypatch):
                     [
                         "JOBINTEL_RUN_ID=2026-01-02T03:04:05Z",
                         "===== jobintel start 2026-01-01T00:00:00Z =====",
-                        "[run_scrape][provenance] {\"openai\": {\"scrape_mode\": \"live\"}}",
+                        '[run_scrape][provenance] {"openai": {"scrape_mode": "live"}}',
                         "s3_status=ok",
                         "PUBLISH_CONTRACT enabled=True required=True bucket=b prefix=p pointer_global=ok pointer_profiles={} error=None",
                     ]

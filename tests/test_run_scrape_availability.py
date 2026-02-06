@@ -40,6 +40,23 @@ def test_run_scrape_marks_provider_unavailable_on_live_failure(tmp_path, monkeyp
         raise ProviderFetchError("auth_error", attempts=2, status_code=403)
 
     monkeypatch.setattr(run_scrape.AshbyProvider, "scrape_live", fake_scrape_live)
+    monkeypatch.setattr(
+        run_scrape,
+        "evaluate_robots_policy",
+        lambda _url, provider_id=None: {
+            "provider_id": provider_id,
+            "host": "jobs.ashbyhq.com",
+            "robots_url": "https://jobs.ashbyhq.com/robots.txt",
+            "robots_fetched": True,
+            "robots_status": 200,
+            "robots_allowed": True,
+            "allowlist_allowed": True,
+            "final_allowed": True,
+            "reason": "ok",
+            "user_agent": "jobintel-bot/1.0",
+            "allowlist_entries": ["*"],
+        },
+    )
 
     caplog.set_level(logging.INFO)
     rc = run_scrape.main(["--providers", "openai", "--mode", "LIVE", "--providers-config", str(providers_path)])

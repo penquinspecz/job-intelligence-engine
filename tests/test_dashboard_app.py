@@ -19,7 +19,7 @@ def test_dashboard_runs_empty(tmp_path: Path, monkeypatch) -> None:
     import importlib
 
     import ji_engine.config as config
-    import jobintel.dashboard.app as dashboard
+    import ji_engine.dashboard.app as dashboard
 
     importlib.reload(config)
     dashboard = importlib.reload(dashboard)
@@ -36,7 +36,7 @@ def test_dashboard_runs_populated(tmp_path: Path, monkeypatch) -> None:
     import importlib
 
     import ji_engine.config as config
-    import jobintel.dashboard.app as dashboard
+    import ji_engine.dashboard.app as dashboard
 
     importlib.reload(config)
     dashboard = importlib.reload(dashboard)
@@ -74,7 +74,7 @@ def test_dashboard_latest_local(tmp_path: Path, monkeypatch) -> None:
     import importlib
 
     import ji_engine.config as config
-    import jobintel.dashboard.app as dashboard
+    import ji_engine.dashboard.app as dashboard
 
     importlib.reload(config)
     dashboard = importlib.reload(dashboard)
@@ -87,9 +87,7 @@ def test_dashboard_latest_local(tmp_path: Path, monkeypatch) -> None:
         "providers": ["openai"],
         "profiles": ["cs"],
     }
-    (config.STATE_DIR / "last_success.json").write_text(
-        json.dumps(last_success), encoding="utf-8"
-    )
+    (config.STATE_DIR / "last_success.json").write_text(json.dumps(last_success), encoding="utf-8")
     report = {
         "outputs_by_provider": {
             "openai": {
@@ -121,7 +119,7 @@ def test_dashboard_latest_s3(monkeypatch) -> None:
     import importlib
 
     import ji_engine.config as config
-    import jobintel.dashboard.app as dashboard
+    import ji_engine.dashboard.app as dashboard
 
     importlib.reload(config)
     dashboard = importlib.reload(dashboard)

@@ -378,9 +378,7 @@ def _build_proof_receipt(
     proof_provenance: Dict[str, Dict[str, Any]] = {}
     for provider in providers or list(provenance.keys()):
         meta = provenance.get(provider) or {}
-        proof_provenance[provider] = {
-            key: meta.get(key) for key in _PROOF_PROVENANCE_FIELDS if key in meta
-        }
+        proof_provenance[provider] = {key: meta.get(key) for key in _PROOF_PROVENANCE_FIELDS if key in meta}
     pointer_write = publish_section.get("pointer_write") or {}
     return {
         "proof_receipt_schema_version": PROOF_RECEIPT_SCHEMA_VERSION,

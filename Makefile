@@ -351,7 +351,7 @@ dashboard:
 	if importlib.util.find_spec("uvicorn") is None:
 	    print('Warning: dashboard deps missing. Run: pip install ".[dashboard]"')
 	PY
-	$(PY) -m uvicorn jobintel.dashboard.app:app --reload --port 8000
+	$(PY) -m uvicorn ji_engine.dashboard.app:app --reload --port 8000
 
 weekly:
 	AI_ENABLED=1 AI_JOB_BRIEFS_ENABLED=1 $(PY) scripts/run_daily.py --profiles $(SMOKE_PROFILES) --providers $(SMOKE_PROVIDERS)
