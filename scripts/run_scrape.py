@@ -121,6 +121,75 @@ def _log_provenance(provider_id: str, payload: Dict[str, Any]) -> None:
     logger.info("[run_scrape][provenance] %s", json.dumps({provider_id: payload}, sort_keys=True))
 
 
+def _log_policy_summary(provider_id: str, payload: Dict[str, Any]) -> None:
+    logger.info("[run_scrape][POLICY_SUMMARY] %s", json.dumps({provider_id: payload}, sort_keys=True))
+
+
+def _truthy_env(name: str) -> bool:
+    value = os.environ.get(name, "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _provider_env(base: str, provider_id: str, default: str = "") -> str:
+    suffix = "".join(ch if ch.isalnum() else "_" for ch in provider_id.upper())
+    value = os.environ.get(f"{base}_{suffix}")
+    if value is not None:
+        return value
+    return os.environ.get(base, default)
+
+
+def _parse_allowlist(value: str) -> List[str]:
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _build_policy_snapshot(provider_id: str, policy: Dict[str, Any]) -> Dict[str, Any]:
+    min_delay = float(policy.get("min_delay_s") or 0.0)
+    rate_jitter = float(policy.get("rate_jitter_s") or 0.0)
+    backoff_max = float(policy.get("backoff_max_s") or 0.0)
+    allowlist = _parse_allowlist(_provider_env("JOBINTEL_LIVE_ALLOWLIST_DOMAINS", provider_id, ""))
+    user_agent = os.environ.get(
+        "JOBINTEL_USER_AGENT",
+        "jobintel-bot/1.0 (+https://github.com/penquinspecz/job-intelligence-engine)",
+    )
+    try:
+        per_host_concurrency = int(_provider_env("JOBINTEL_PROVIDER_MAX_INFLIGHT_PER_HOST", provider_id, "2"))
+    except ValueError:
+        per_host_concurrency = 2
+    return {
+        "rate_limit_config": {
+            "min_delay_s": min_delay,
+            "qps": round(1.0 / min_delay, 6) if min_delay > 0 else None,
+            "per_host_concurrency": per_host_concurrency,
+            "jitter_range_s": [0.0, max(0.0, rate_jitter)],
+        },
+        "backoff_config": {
+            "max_retries": max(0, int(policy.get("max_attempts") or 1) - 1),
+            "base_s": float(policy.get("backoff_base_s") or 0.0),
+            "max_sleep_s": max(0.0, backoff_max),
+            "jitter_range_s": [0.0, max(0.0, float(policy.get("backoff_jitter_s") or 0.0))],
+        },
+        "circuit_breaker_config": {
+            "threshold": int(policy.get("max_consecutive_failures") or 0),
+            "cooldown_s": float(policy.get("cooldown_s") or 0.0),
+        },
+        "robots_policy_config": {
+            "allowlist_entries": allowlist,
+            "default_action": "deny",
+        },
+        "user_agent": user_agent,
+        "chaos_mode_enabled": _truthy_env("JOBINTEL_CHAOS_MODE"),
+    }
+
+
+def _chaos_enabled(provider_id: str) -> bool:
+    if not _truthy_env("JOBINTEL_CHAOS_MODE"):
+        return False
+    if os.environ.get("CI") and not _truthy_env("JOBINTEL_ALLOW_CHAOS_IN_CI"):
+        raise SystemExit("JOBINTEL_CHAOS_MODE is blocked in CI unless JOBINTEL_ALLOW_CHAOS_IN_CI=1")
+    provider_target = os.environ.get("JOBINTEL_CHAOS_PROVIDER", "").strip().lower()
+    return not provider_target or provider_target == provider_id.lower()
+
+
 def main(argv: List[str] | None = None) -> int:
     if not logging.getLogger().hasHandlers():
         logging.basicConfig(
@@ -212,6 +281,9 @@ def main(argv: List[str] | None = None) -> int:
             "backoff_jitter_s": None,
             "circuit_breaker_threshold": None,
             "circuit_breaker_cooldown_s": None,
+            "policy_snapshot": None,
+            "chaos_mode_enabled": False,
+            "chaos_triggered": False,
         }
         policy = get_politeness_policy(provider_id)
         provenance["rate_limit_min_delay_s"] = policy.get("min_delay_s")
@@ -222,6 +294,9 @@ def main(argv: List[str] | None = None) -> int:
         provenance["backoff_jitter_s"] = policy.get("backoff_jitter_s")
         provenance["circuit_breaker_threshold"] = policy.get("max_consecutive_failures")
         provenance["circuit_breaker_cooldown_s"] = policy.get("cooldown_s")
+        policy_snapshot = _build_policy_snapshot(provider_id, policy)
+        provenance["policy_snapshot"] = policy_snapshot
+        provenance["chaos_mode_enabled"] = bool(policy_snapshot.get("chaos_mode_enabled"))
 
         if provider_type == "openai":
             if mode == "AUTO":
@@ -234,6 +309,7 @@ def main(argv: List[str] | None = None) -> int:
             snapshot_path = provider._snapshot_file()
             snapshot_meta = _load_snapshot_meta(snapshot_path)
             if mode == "LIVE":
+                _log_policy_summary(provider_id, policy_snapshot)
                 robots = evaluate_robots_policy(CAREERS_SEARCH_URL, provider_id=provider_id)
                 provenance["robots_url"] = robots.get("robots_url")
                 provenance["robots_fetched"] = robots.get("robots_fetched")
@@ -265,6 +341,10 @@ def main(argv: List[str] | None = None) -> int:
                     raw_jobs = None
                 try:
                     if raw_jobs is None:
+                        if _chaos_enabled(provider_id):
+                            provenance["chaos_triggered"] = True
+                            logger.warning("[run_scrape][chaos] forcing deterministic live failure for %s", provider_id)
+                            raise ProviderFetchError("chaos_forced_error", attempts=1, status_code=599)
                         raw_jobs = provider.scrape_live()
                     provenance["scrape_mode"] = "live"
                     provenance["attempts_made"] = 1
@@ -365,6 +445,7 @@ def main(argv: List[str] | None = None) -> int:
                     snapshot_write_dir=snapshot_write_dir,
                 )
                 if mode == "LIVE":
+                    _log_policy_summary(provider_id, policy_snapshot)
                     robots = evaluate_robots_policy(provider_cfg["board_url"], provider_id=provider_id)
                     provenance["robots_url"] = robots.get("robots_url")
                     provenance["robots_fetched"] = robots.get("robots_fetched")
@@ -402,6 +483,12 @@ def main(argv: List[str] | None = None) -> int:
                         raw_jobs = None
                     try:
                         if raw_jobs is None:
+                            if _chaos_enabled(provider_id):
+                                provenance["chaos_triggered"] = True
+                                logger.warning(
+                                    "[run_scrape][chaos] forcing deterministic live failure for %s", provider_id
+                                )
+                                raise ProviderFetchError("chaos_forced_error", attempts=1, status_code=599)
                             raw_jobs = provider.scrape_live()
                         provenance["scrape_mode"] = "live"
                         provenance["attempts_made"] = 1

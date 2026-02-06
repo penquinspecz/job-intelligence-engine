@@ -68,6 +68,31 @@ python scripts/verify_published_s3.py --bucket "$BUCKET" --run-id "<run_id>" --p
   - `runs/<run_id>/<provider>/<profile>/...`
   - `latest/<provider>/<profile>/...`
 
+## Policy Evidence Plan
+
+Normal proof run (no forced failures):
+- Confirm a `POLICY_SUMMARY` JSON line exists in logs:
+  - `kubectl ... logs ... | rg "POLICY_SUMMARY"`
+- Confirm the summary includes:
+  - `rate_limit_config`
+  - `backoff_config`
+  - `circuit_breaker_config`
+  - `robots_policy_config`
+  - `user_agent`
+- Confirm provenance includes robots/policy fields and live result fields.
+
+Deterministic failure-path proof (dev-only, opt-in):
+- Set `JOBINTEL_CHAOS_MODE=1` (and optionally `JOBINTEL_CHAOS_PROVIDER=<provider>`).
+- Run the one-off proof job.
+- Expected:
+  - logs contain `[run_scrape][chaos]`
+  - provenance shows `chaos_mode_enabled=true` and `chaos_triggered=true`
+  - live failure path is exercised with snapshot fallback.
+
+Safety guard:
+- Chaos mode is blocked in CI by default.
+- To allow it in CI for explicit experiments only, set `JOBINTEL_ALLOW_CHAOS_IN_CI=1`.
+
 ## Common failure modes
 
 - `AccessDenied` from S3: IRSA role missing or bucket policy denies prefix.
