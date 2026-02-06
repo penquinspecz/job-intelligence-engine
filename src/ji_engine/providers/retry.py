@@ -6,6 +6,7 @@ import threading
 import time
 from dataclasses import dataclass
 from typing import Optional
+from urllib import robotparser
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -95,7 +96,18 @@ def _classify_status(status: int) -> str:
 
 
 def _should_retry(reason: str, status: Optional[int]) -> bool:
-    if reason in {"auth_error", "unavailable", "blocked", "parse_error", "invalid_response", "circuit_breaker"}:
+    if reason in {
+        "auth_error",
+        "unavailable",
+        "blocked",
+        "parse_error",
+        "invalid_response",
+        "circuit_breaker",
+        "allowlist_denied",
+        "policy_denied",
+        "robots_disallow",
+        "robots_fetch_failed",
+    }:
         return False
     if reason in {"network_error", "timeout", "rate_limited"}:
         return True
@@ -110,6 +122,8 @@ def classify_failure_type(reason: Optional[str]) -> Optional[str]:
     if reason in {"network_error", "timeout", "rate_limited"}:
         return "transient_error"
     if reason in {"auth_error", "unavailable", "blocked", "circuit_breaker"}:
+        return "unavailable"
+    if reason.startswith("robots_") or reason.startswith("allowlist_") or reason == "policy_denied":
         return "unavailable"
     if reason in {"parse_error", "invalid_response"}:
         return "invalid_response"
@@ -259,6 +273,127 @@ def _record_success(provider_id: Optional[str]) -> None:
     with _STATE_LOCK:
         _FAILURES_BY_PROVIDER.pop(provider_id, None)
         _CIRCUIT_OPEN_UNTIL.pop(provider_id, None)
+
+
+def _parse_allowlist(value: Optional[str]) -> list[str]:
+    if not value:
+        return []
+    return [item.strip().lower() for item in value.split(",") if item.strip()]
+
+
+def _allowlist_allows(host: str, entries: list[str]) -> bool:
+    if not entries:
+        return True
+    if "*" in entries:
+        return True
+    for entry in entries:
+        if entry.startswith(".") and host.endswith(entry.lstrip(".")):
+            return True
+        if host == entry:
+            return True
+    return False
+
+
+def record_policy_block(provider_id: Optional[str], reason: str) -> None:
+    _record_failure(provider_id, "blocked")
+    logger.warning("[provider_retry][policy] provider=%s reason=%s", provider_id, reason)
+
+
+def evaluate_robots_policy(
+    url: str,
+    *,
+    provider_id: Optional[str] = None,
+    user_agent: Optional[str] = None,
+    fetcher: Optional[callable] = None,
+) -> dict[str, object]:
+    parsed = urlparse(url)
+    host = parsed.netloc
+    scheme = parsed.scheme or "https"
+    robots_url = f"{scheme}://{host}/robots.txt"
+
+    allowlist = _parse_allowlist(os.environ.get(_provider_env_name("JOBINTEL_LIVE_ALLOWLIST_DOMAINS", provider_id)))
+    if not allowlist:
+        allowlist = _parse_allowlist(os.environ.get("JOBINTEL_LIVE_ALLOWLIST_DOMAINS"))
+    allowlist_allowed = _allowlist_allows(host, allowlist)
+
+    ua = user_agent or os.environ.get(
+        "JOBINTEL_USER_AGENT",
+        "jobintel-bot/1.0 (+https://github.com/penquinspecz/job-intelligence-engine)",
+    )
+
+    decision: dict[str, object] = {
+        "provider": provider_id,
+        "host": host,
+        "robots_url": robots_url,
+        "robots_fetched": False,
+        "robots_status": None,
+        "robots_allowed": None,
+        "allowlist_allowed": allowlist_allowed,
+        "final_allowed": False,
+        "reason": None,
+        "user_agent": ua,
+        "allowlist_entries": allowlist,
+    }
+
+    if not allowlist_allowed:
+        decision["reason"] = "allowlist_denied"
+        logger.warning(
+            "[provider_retry][robots] provider=%s host=%s allowlist_allowed=%s robots_fetched=%s robots_allowed=%s final_allowed=%s reason=%s url=%s",
+            provider_id,
+            host,
+            allowlist_allowed,
+            decision["robots_fetched"],
+            decision["robots_allowed"],
+            decision["final_allowed"],
+            decision["reason"],
+            url,
+        )
+        return decision
+
+    try:
+        if fetcher is None:
+            resp = requests.get(robots_url, timeout=5)
+            status = resp.status_code
+            text = resp.text
+        else:
+            status, text = fetcher(robots_url)
+        decision["robots_fetched"] = True
+        decision["robots_status"] = status
+        if status != 200:
+            decision["reason"] = f"robots_status_{status}"
+            logger.warning(
+                "[provider_retry][robots] provider=%s host=%s allowlist_allowed=%s robots_fetched=%s robots_allowed=%s final_allowed=%s reason=%s url=%s",
+                provider_id,
+                host,
+                allowlist_allowed,
+                decision["robots_fetched"],
+                decision["robots_allowed"],
+                decision["final_allowed"],
+                decision["reason"],
+                url,
+            )
+            return decision
+        rp = robotparser.RobotFileParser()
+        rp.parse(text.splitlines())
+        allowed = rp.can_fetch(ua, url)
+        decision["robots_allowed"] = allowed
+        decision["final_allowed"] = bool(allowed)
+        decision["reason"] = "ok" if allowed else "robots_disallow"
+    except Exception:
+        decision["reason"] = "robots_fetch_failed"
+
+    logger.info(
+        "[provider_retry][robots] provider=%s host=%s allowlist_allowed=%s robots_fetched=%s robots_allowed=%s final_allowed=%s reason=%s url=%s",
+        provider_id,
+        host,
+        decision["allowlist_allowed"],
+        decision["robots_fetched"],
+        decision["robots_allowed"],
+        decision["final_allowed"],
+        decision["reason"],
+        url,
+    )
+    return decision
 
 
 def get_politeness_policy(provider_id: Optional[str]) -> dict[str, float | int | None]:
@@ -516,9 +651,11 @@ def fetch_json_with_retry(
 __all__ = [
     "ProviderFetchError",
     "classify_failure_type",
+    "evaluate_robots_policy",
     "fetch_json_with_retry",
     "fetch_text_with_retry",
     "fetch_urlopen_with_retry",
     "get_politeness_policy",
+    "record_policy_block",
     "reset_politeness_state",
 ]

@@ -56,6 +56,26 @@ Live scraping is guarded by deterministic, fail-closed thresholds:
 These outcomes are recorded under `provenance_by_provider[*].failure_policy` in the run report and surfaced in Discord
 run summaries (when enabled).
 
+## Robots / policy handling
+
+Live scraping enforces a robots/policy decision before any network fetch:
+
+- Allowlist: `JOBINTEL_LIVE_ALLOWLIST_DOMAINS` (comma-separated) or provider-specific
+  `JOBINTEL_LIVE_ALLOWLIST_DOMAINS_<PROVIDER>` controls which hosts are permitted for live fetches.
+  If the allowlist is set and a host is not listed, live scraping is skipped and the run falls back to snapshots.
+- Robots: the runner fetches `https://<host>/robots.txt` and evaluates `User-agent` rules using a consistent
+  `JOBINTEL_USER_AGENT` (default: `jobintel-bot/1.0 (+https://github.com/penquinspecz/job-intelligence-engine)`).
+  Disallow or fetch failures are treated conservatively (live skipped → snapshot fallback).
+
+Every decision is logged as `[provider_retry][robots] ...` and recorded in provenance:
+`robots_fetched`, `robots_allowed`, `allowlist_allowed`, `robots_final_allowed`, `robots_reason`, `robots_url`.
+
+To override for dev/test, set:
+
+```bash
+export JOBINTEL_LIVE_ALLOWLIST_DOMAINS="jobs.ashbyhq.com"
+```
+
 ## Discord diff gating
 
 Discord run summaries are diff-gated by default:

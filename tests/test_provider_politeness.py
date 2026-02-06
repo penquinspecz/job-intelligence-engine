@@ -148,3 +148,70 @@ def test_block_page_detection(monkeypatch) -> None:
     assert exc.value.reason == "blocked"
     assert exc.value.attempts == 1
     assert calls["count"] == 1
+
+
+def test_robots_allowlist_denied(monkeypatch) -> None:
+    def fetcher(_url):
+        raise AssertionError("robots fetcher should not be called when allowlist denies")
+
+    monkeypatch.setenv("JOBINTEL_LIVE_ALLOWLIST_DOMAINS", "example.com")
+    decision = provider_retry.evaluate_robots_policy(
+        "https://jobs.ashbyhq.com/openai",
+        provider_id="openai",
+        fetcher=fetcher,
+    )
+
+    assert decision["allowlist_allowed"] is False
+    assert decision["final_allowed"] is False
+    assert decision["reason"] == "allowlist_denied"
+
+
+def test_robots_disallow(monkeypatch) -> None:
+    monkeypatch.delenv("JOBINTEL_LIVE_ALLOWLIST_DOMAINS", raising=False)
+
+    def fetcher(_url):
+        return 200, "User-agent: *\nDisallow: /openai\n"
+
+    decision = provider_retry.evaluate_robots_policy(
+        "https://jobs.ashbyhq.com/openai",
+        provider_id="openai",
+        fetcher=fetcher,
+    )
+
+    assert decision["robots_allowed"] is False
+    assert decision["final_allowed"] is False
+    assert decision["reason"] == "robots_disallow"
+
+
+def test_robots_allow(monkeypatch) -> None:
+    monkeypatch.delenv("JOBINTEL_LIVE_ALLOWLIST_DOMAINS", raising=False)
+
+    def fetcher(_url):
+        return 200, "User-agent: *\nDisallow:\n"
+
+    decision = provider_retry.evaluate_robots_policy(
+        "https://jobs.ashbyhq.com/openai",
+        provider_id="openai",
+        fetcher=fetcher,
+    )
+
+    assert decision["robots_allowed"] is True
+    assert decision["final_allowed"] is True
+    assert decision["reason"] == "ok"
+
+
+def test_robots_fetch_failure(monkeypatch) -> None:
+    monkeypatch.delenv("JOBINTEL_LIVE_ALLOWLIST_DOMAINS", raising=False)
+
+    def fetcher(_url):
+        raise RuntimeError("timeout")
+
+    decision = provider_retry.evaluate_robots_policy(
+        "https://jobs.ashbyhq.com/openai",
+        provider_id="openai",
+        fetcher=fetcher,
+    )
+
+    assert decision["robots_fetched"] is False
+    assert decision["final_allowed"] is False
+    assert decision["reason"] == "robots_fetch_failed"

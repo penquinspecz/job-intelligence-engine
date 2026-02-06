@@ -19,9 +19,15 @@ from typing import Any, Dict, List, Optional
 
 from ji_engine.config import DATA_DIR, RAW_JOBS_JSON
 from ji_engine.providers.ashby_provider import AshbyProvider
-from ji_engine.providers.openai_provider import OpenAICareersProvider
+from ji_engine.providers.openai_provider import CAREERS_SEARCH_URL, OpenAICareersProvider
 from ji_engine.providers.registry import load_providers_config
-from ji_engine.providers.retry import ProviderFetchError, classify_failure_type, get_politeness_policy
+from ji_engine.providers.retry import (
+    ProviderFetchError,
+    classify_failure_type,
+    evaluate_robots_policy,
+    get_politeness_policy,
+    record_policy_block,
+)
 from ji_engine.providers.snapshot_json_provider import SnapshotJsonProvider
 from jobintel.snapshots.validate import validate_snapshot_file
 
@@ -190,6 +196,14 @@ def main(argv: List[str] | None = None) -> int:
             "attempts_made": 0,
             "parsed_job_count": 0,
             "snapshot_baseline_count": None,
+            "robots_url": None,
+            "robots_fetched": None,
+            "robots_status": None,
+            "robots_allowed": None,
+            "allowlist_allowed": None,
+            "robots_final_allowed": None,
+            "robots_reason": None,
+            "robots_user_agent": None,
             "rate_limit_min_delay_s": None,
             "rate_limit_jitter_s": None,
             "max_attempts": None,
@@ -220,8 +234,38 @@ def main(argv: List[str] | None = None) -> int:
             snapshot_path = provider._snapshot_file()
             snapshot_meta = _load_snapshot_meta(snapshot_path)
             if mode == "LIVE":
+                robots = evaluate_robots_policy(CAREERS_SEARCH_URL, provider_id=provider_id)
+                provenance["robots_url"] = robots.get("robots_url")
+                provenance["robots_fetched"] = robots.get("robots_fetched")
+                provenance["robots_status"] = robots.get("robots_status")
+                provenance["robots_allowed"] = robots.get("robots_allowed")
+                provenance["allowlist_allowed"] = robots.get("allowlist_allowed")
+                provenance["robots_final_allowed"] = robots.get("final_allowed")
+                provenance["robots_reason"] = robots.get("reason")
+                provenance["robots_user_agent"] = robots.get("user_agent")
+                if not robots.get("final_allowed"):
+                    reason = robots.get("reason") or "policy_denied"
+                    provenance["live_attempted"] = True
+                    provenance["live_result"] = "skipped"
+                    provenance["live_error_reason"] = reason
+                    provenance["live_unavailable_reason"] = reason
+                    provenance["live_error_type"] = classify_failure_type(str(reason))
+                    provenance["availability"] = "unavailable"
+                    provenance["unavailable_reason"] = reason
+                    record_policy_block(provider_id, str(reason))
+                    logger.warning(
+                        "[run_scrape] LIVE blocked by robots/policy (%s) → falling back to SNAPSHOT",
+                        reason,
+                    )
+                    provider = OpenAICareersProvider(mode="SNAPSHOT", data_dir=str(output_dir))
+                    raw_jobs = provider.load_from_snapshot()
+                    provenance["scrape_mode"] = "snapshot"
+                    provenance["snapshot_used"] = True
+                else:
+                    raw_jobs = None
                 try:
-                    raw_jobs = provider.scrape_live()
+                    if raw_jobs is None:
+                        raw_jobs = provider.scrape_live()
                     provenance["scrape_mode"] = "live"
                     provenance["attempts_made"] = 1
                     provenance["live_attempted"] = True
@@ -321,8 +365,44 @@ def main(argv: List[str] | None = None) -> int:
                     snapshot_write_dir=snapshot_write_dir,
                 )
                 if mode == "LIVE":
+                    robots = evaluate_robots_policy(provider_cfg["board_url"], provider_id=provider_id)
+                    provenance["robots_url"] = robots.get("robots_url")
+                    provenance["robots_fetched"] = robots.get("robots_fetched")
+                    provenance["robots_status"] = robots.get("robots_status")
+                    provenance["robots_allowed"] = robots.get("robots_allowed")
+                    provenance["allowlist_allowed"] = robots.get("allowlist_allowed")
+                    provenance["robots_final_allowed"] = robots.get("final_allowed")
+                    provenance["robots_reason"] = robots.get("reason")
+                    provenance["robots_user_agent"] = robots.get("user_agent")
+                    if not robots.get("final_allowed"):
+                        reason = robots.get("reason") or "policy_denied"
+                        provenance["live_attempted"] = True
+                        provenance["live_result"] = "skipped"
+                        provenance["live_error_reason"] = reason
+                        provenance["live_unavailable_reason"] = reason
+                        provenance["live_error_type"] = classify_failure_type(str(reason))
+                        provenance["availability"] = "unavailable"
+                        provenance["unavailable_reason"] = reason
+                        record_policy_block(provider_id, str(reason))
+                        logger.warning(
+                            "[run_scrape] LIVE blocked by robots/policy (%s) → falling back to SNAPSHOT",
+                            reason,
+                        )
+                        if not snapshot_path.exists():
+                            msg = (
+                                f"Snapshot not found at {snapshot_path} for provider {provider_id}. "
+                                "Add a snapshot file or update providers config."
+                            )
+                            logger.error(msg)
+                            raise SystemExit(2)
+                        raw_jobs = provider.load_from_snapshot()
+                        provenance["scrape_mode"] = "snapshot"
+                        provenance["snapshot_used"] = True
+                    else:
+                        raw_jobs = None
                     try:
-                        raw_jobs = provider.scrape_live()
+                        if raw_jobs is None:
+                            raw_jobs = provider.scrape_live()
                         provenance["scrape_mode"] = "live"
                         provenance["attempts_made"] = 1
                         provenance["live_attempted"] = True

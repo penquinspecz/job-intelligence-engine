@@ -189,10 +189,10 @@ S3-compatible object store, optional alerts.
 - [x] Per-provider politeness policy enforced (global QPS + per-host concurrency caps + jitter), recorded in provenance
 - [x] Deterministic exponential backoff for transient failures (max retries + max sleep), recorded in logs
 - [x] Circuit breaker: after N consecutive failures, pause LIVE attempts for cool-down window; degrade to snapshot-only per provider; surface in provenance
-- [ ] Robots/policy handling: log decision + allowlist (do not silently ignore)
+- [x] Robots/policy handling: log decision + allowlist (do not silently ignore)
 - [x] Bot/deny-page detection: detect CAPTCHA/Cloudflare/access denied/empty-success; feed availability + circuit breaker
 - [x] User-Agent discipline: explicit UA string + contact-ish metadata (if appropriate) and consistent across requests
-- [ ] Proof requirements: provenance shows rate_limit policy applied; logs show backoff/circuit-breaker events; test plan captured
+- [ ] Proof requirements: provenance shows rate_limit policy applied; logs show backoff/circuit-breaker events; robots/allowlist decision recorded; test plan captured
 - [x] Unit test: backoff + circuit-breaker decisions are deterministic given failure sequence
 - [ ] In-cluster proof: live run logs include rate-limit/backoff/circuit-breaker events for at least one provider
 - [ ] Proof run executed (EKS one-off job + real S3 publish + proof JSON captured) — proof JSON not yet captured locally
