@@ -57,7 +57,7 @@ def test_verify_ok(monkeypatch, capsys) -> None:
     pointer = {"run_id": run_id}
     keys = set()
     for base in (
-        f"jobintel/latest/openai/cs",
+        "jobintel/latest/openai/cs",
         f"jobintel/runs/{run_id}/openai/cs",
     ):
         for name in verify.REQUIRED_KEYS:
