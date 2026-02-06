@@ -127,6 +127,8 @@ USE_SUBPROCESS = True
 LAST_RUN_JSON = STATE_DIR / "last_run.json"
 LAST_SUCCESS_JSON = STATE_DIR / "last_success.json"
 RUN_REPORT_SCHEMA_VERSION = 1
+PROOFS_DIR = STATE_DIR / "proofs"
+PROOF_RECEIPT_SCHEMA_VERSION = 1
 
 
 def _flush_logging() -> None:
@@ -325,6 +327,103 @@ def _write_canonical_json(path: Path, obj: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(obj, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
     path.write_text(payload, encoding="utf-8")
+
+
+_PROOF_PROVENANCE_FIELDS = [
+    "provider_id",
+    "mode",
+    "scrape_mode",
+    "live_attempted",
+    "live_result",
+    "snapshot_used",
+    "parsed_job_count",
+    "snapshot_baseline_count",
+    "live_http_status",
+    "live_status_code",
+    "live_error_type",
+    "live_error_reason",
+    "live_unavailable_reason",
+    "availability",
+    "unavailable_reason",
+    "attempts_made",
+    "rate_limit_min_delay_s",
+    "rate_limit_jitter_s",
+    "max_attempts",
+    "backoff_base_s",
+    "backoff_max_s",
+    "backoff_jitter_s",
+    "circuit_breaker_threshold",
+    "circuit_breaker_cooldown_s",
+    "robots_url",
+    "robots_fetched",
+    "robots_status",
+    "robots_allowed",
+    "allowlist_allowed",
+    "robots_final_allowed",
+    "robots_reason",
+    "robots_user_agent",
+]
+
+
+def _build_proof_receipt(
+    run_report: Dict[str, Any],
+    *,
+    run_report_path: Path,
+    s3_meta: Dict[str, Any],
+    publish_section: Dict[str, Any],
+) -> Dict[str, Any]:
+    providers = run_report.get("providers") or []
+    profiles = run_report.get("profiles") or []
+    provenance = run_report.get("provenance_by_provider") or {}
+    proof_provenance: Dict[str, Dict[str, Any]] = {}
+    for provider in providers or list(provenance.keys()):
+        meta = provenance.get(provider) or {}
+        proof_provenance[provider] = {
+            key: meta.get(key) for key in _PROOF_PROVENANCE_FIELDS if key in meta
+        }
+    pointer_write = publish_section.get("pointer_write") or {}
+    return {
+        "proof_receipt_schema_version": PROOF_RECEIPT_SCHEMA_VERSION,
+        "run_id": run_report.get("run_id"),
+        "timestamp": run_report.get("timestamp"),
+        "status": run_report.get("status"),
+        "providers": providers,
+        "profiles": profiles,
+        "run_report_path": str(run_report_path),
+        "publish": {
+            "enabled": publish_section.get("enabled"),
+            "required": publish_section.get("required"),
+            "bucket": publish_section.get("bucket"),
+            "prefix": publish_section.get("prefix"),
+            "s3_status": s3_meta.get("status") if isinstance(s3_meta, dict) else None,
+            "s3_reason": s3_meta.get("reason") if isinstance(s3_meta, dict) else None,
+            "pointer_global": pointer_write.get("global"),
+            "pointer_profiles": pointer_write.get("provider_profile"),
+            "pointer_error": pointer_write.get("error"),
+        },
+        "provenance": proof_provenance,
+    }
+
+
+def _write_proof_receipt(
+    run_report_path: Path,
+    run_report: Dict[str, Any],
+    *,
+    s3_meta: Dict[str, Any],
+    publish_section: Dict[str, Any],
+) -> Optional[Path]:
+    run_id = run_report.get("run_id")
+    if not run_id:
+        return None
+    proof = _build_proof_receipt(
+        run_report,
+        run_report_path=run_report_path,
+        s3_meta=s3_meta,
+        publish_section=publish_section,
+    )
+    proof_path = PROOFS_DIR / f"{run_id}.json"
+    _write_canonical_json(proof_path, proof)
+    return proof_path
 
 
 def _update_run_metadata_s3(path: Path, s3_meta: Dict[str, Any]) -> None:
@@ -2734,6 +2833,21 @@ def main() -> int:
             json.dumps((publish_section.get("pointer_write") or {}).get("provider_profile", {}), sort_keys=True),
             (publish_section.get("pointer_write") or {}).get("error"),
         )
+
+        if os.environ.get("JOBINTEL_WRITE_PROOF", "0").strip() == "1":
+            try:
+                run_report_payload = json.loads(run_metadata_path.read_text(encoding="utf-8"))
+                if isinstance(run_report_payload, dict):
+                    proof_path = _write_proof_receipt(
+                        run_metadata_path,
+                        run_report_payload,
+                        s3_meta=s3_meta if isinstance(s3_meta, dict) else {},
+                        publish_section=publish_section,
+                    )
+                    if proof_path:
+                        logger.info("Proof receipt written: %s", proof_path)
+            except Exception as exc:
+                logger.warning("Failed to write proof receipt: %r", exc)
 
         if os.environ.get("JOBINTEL_PRUNE") == "1":
             try:

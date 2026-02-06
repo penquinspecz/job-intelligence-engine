@@ -9,7 +9,12 @@ echo "Creating job ${JOB_NAME} from cronjob jobintel-daily in namespace ${NS}...
 kubectl -n "${NS}" create job --from=cronjob/jobintel-daily "${JOB_NAME}"
 
 echo "Setting LIVE args and required env..."
-kubectl -n "${NS}" set env "job/${JOB_NAME}" CAREERS_MODE=LIVE PUBLISH_S3_REQUIRE=1
+kubectl -n "${NS}" set env "job/${JOB_NAME}" \
+  CAREERS_MODE=LIVE \
+  PUBLISH_S3=1 \
+  PUBLISH_S3_DRY_RUN=0 \
+  PUBLISH_S3_REQUIRE=1 \
+  JOBINTEL_WRITE_PROOF=1
 kubectl -n "${NS}" set args "job/${JOB_NAME}" -- \
   python scripts/run_daily.py \
   --profiles cs \
@@ -37,6 +42,14 @@ if [[ -z "${PROV_LINE}" ]]; then
   echo "missing provenance line" >&2
   exit 3
 fi
+
+mkdir -p ops/proof
+PROOF_LOG="ops/proof/liveproof-${RUN_ID}.log"
+{
+  echo "JOBINTEL_RUN_ID=${RUN_ID}"
+  echo "${PROV_LINE}"
+} > "${PROOF_LOG}"
+echo "proof_log=${PROOF_LOG}"
 
 PROV_JSON="$(echo "${PROV_LINE}" | sed 's/^.*\\[run_scrape\\]\\[provenance\\] //')"
 extract_field() {
@@ -67,5 +80,24 @@ if echo "${PROV_LINE}" | grep -q '"live_result": "skipped"'; then
   echo "live_result=skipped in provenance" >&2
   exit 3
 fi
+
+if ! echo "${LOGS}" | grep -q "s3_status=ok"; then
+  echo "missing s3_status=ok in logs" >&2
+  exit 3
+fi
+
+if ! echo "${LOGS}" | grep -q "PUBLISH_CONTRACT .*pointer_global=ok"; then
+  echo "missing PUBLISH_CONTRACT pointer_global=ok in logs" >&2
+  exit 3
+fi
+
+PROOF_JSON_LOCAL="state/proofs/${RUN_ID}.json"
+PROOF_JSON_REMOTE="/app/state/proofs/${RUN_ID}.json"
+mkdir -p "$(dirname "${PROOF_JSON_LOCAL}")"
+if ! kubectl -n "${NS}" cp "${POD_NAME}:${PROOF_JSON_REMOTE}" "${PROOF_JSON_LOCAL}"; then
+  echo "failed to copy proof json from pod (${PROOF_JSON_REMOTE})" >&2
+  exit 3
+fi
+echo "proof_json=${PROOF_JSON_LOCAL}"
 
 echo "live proof: ok"

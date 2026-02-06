@@ -13,6 +13,9 @@ from typing import Optional
 
 RUN_ID_REGEX = re.compile(r"jobintel start\s+([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z)")
 RUN_ID_KV_REGEX = re.compile(r"^JOBINTEL_RUN_ID=([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z)$", re.MULTILINE)
+PROVENANCE_LINE_REGEX = re.compile(r"\[run_scrape\]\[provenance\]\s+(.*)$", re.MULTILINE)
+S3_STATUS_REGEX = re.compile(r"s3_status=([a-z_]+)")
+PUBLISH_POINTER_REGEX = re.compile(r"PUBLISH_CONTRACT .*pointer_global=([a-z_]+)")
 
 
 def _utc_now_iso() -> str:
@@ -39,6 +42,35 @@ def _extract_run_id(logs: str) -> Optional[str]:
     if not match:
         return None
     return match.group(1)
+
+
+def _extract_provenance_line(logs: str) -> Optional[str]:
+    matches = PROVENANCE_LINE_REGEX.findall(logs)
+    if not matches:
+        return None
+    return matches[-1]
+
+
+def _extract_provenance_payload(logs: str) -> Optional[dict]:
+    line = _extract_provenance_line(logs)
+    if not line:
+        return None
+    try:
+        return json.loads(line)
+    except json.JSONDecodeError:
+        return None
+
+
+def _extract_publish_markers(logs: str) -> dict:
+    s3_status = None
+    pointer_global = None
+    s3_match = S3_STATUS_REGEX.search(logs)
+    if s3_match:
+        s3_status = s3_match.group(1)
+    pointer_match = PUBLISH_POINTER_REGEX.search(logs)
+    if pointer_match:
+        pointer_global = pointer_match.group(1)
+    return {"s3_status": s3_status, "pointer_global": pointer_global}
 
 
 def _kubectl_logs(namespace: str, job_name: str, kube_context: Optional[str]) -> str:
@@ -84,6 +116,18 @@ def _print_next_commands(run_id: str, bucket: str, prefix: str, namespace: str, 
     print("\n".join(lines))
 
 
+def _write_liveproof_log(run_id: str, logs: str) -> Optional[Path]:
+    line = _extract_provenance_line(logs)
+    if not line:
+        return None
+    proof_dir = _repo_root() / "ops" / "proof"
+    proof_dir.mkdir(parents=True, exist_ok=True)
+    proof_path = proof_dir / f"liveproof-{run_id}.log"
+    payload = f"JOBINTEL_RUN_ID={run_id}\n{line}\n"
+    proof_path.write_text(payload, encoding="utf-8")
+    return proof_path
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Capture proof artifacts for a real cloud run.")
     parser.add_argument("--bucket", required=True)
@@ -95,16 +139,17 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        run_id = args.run_id
-        if not run_id:
-            logs = _kubectl_logs(args.namespace, args.job_name, args.kube_context)
-            run_id = _extract_run_id(logs)
+        logs = _kubectl_logs(args.namespace, args.job_name, args.kube_context)
+        run_id = args.run_id or _extract_run_id(logs)
         if not run_id:
             print("ERROR: run_id not provided and could not be extracted from logs", file=sys.stderr)
             return 3
 
         verify_code = _verify(args.bucket, args.prefix, run_id)
         verified_ok = verify_code == 0
+        provenance = _extract_provenance_payload(logs)
+        publish_markers = _extract_publish_markers(logs)
+        liveproof_log = _write_liveproof_log(run_id, logs)
         proof = {
             "run_id": run_id,
             "cluster_context": args.kube_context,
@@ -115,6 +160,9 @@ def main(argv: list[str] | None = None) -> int:
             "verified_ok": verified_ok,
             "timestamp_utc": _utc_now_iso(),
             "commit_sha": _commit_sha(),
+            "provenance": provenance,
+            "publish_markers": publish_markers,
+            "liveproof_log_path": str(liveproof_log) if liveproof_log else None,
         }
 
         proof_dir = _state_dir() / "proofs"

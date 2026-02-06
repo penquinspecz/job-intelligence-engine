@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "JobIntel Proof Receipt",
+  "type": "object",
+  "required": [
+    "proof_receipt_schema_version",
+    "run_id",
+    "timestamp",
+    "status",
+    "providers",
+    "profiles",
+    "publish",
+    "provenance"
+  ],
+  "properties": {
+    "proof_receipt_schema_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "run_id": {"type": "string"},
+    "timestamp": {"type": "string"},
+    "status": {"type": "string"},
+    "providers": {"type": "array", "items": {"type": "string"}},
+    "profiles": {"type": "array", "items": {"type": "string"}},
+    "run_report_path": {"type": "string"},
+    "publish": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "required": {"type": "boolean"},
+        "bucket": {"type": ["string", "null"]},
+        "prefix": {"type": ["string", "null"]},
+        "s3_status": {"type": ["string", "null"]},
+        "s3_reason": {"type": ["string", "null"]},
+        "pointer_global": {"type": ["string", "null"]},
+        "pointer_profiles": {"type": ["object", "null"]},
+        "pointer_error": {"type": ["string", "null"]}
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": {"type": "object"}
+    }
+  }
+}

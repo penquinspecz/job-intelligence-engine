@@ -45,9 +45,24 @@ kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" \
   logs -f job/jobintel-manual-$(date +%Y%m%d)
 ```
 
+## 4) Capture receipts (live proof)
+
+This writes local proof artifacts and enforces live provenance checks.
+
+```bash
+NS="$NAMESPACE" bash scripts/prove_live_scrape_eks.sh
+```
+
+Verify S3 publish for the captured run_id (from the script output):
+
+```bash
+python scripts/verify_published_s3.py --bucket "$BUCKET" --run-id "<run_id>" --prefix "$PREFIX" --verify-latest
+```
+
 ## Expected outputs (proof artifacts)
 - A log line containing `JOBINTEL_RUN_ID=<run_id>`.
 - A proof JSON file at `state/proofs/<run_id>.json`.
+- A proof log file at `ops/proof/liveproof-<run_id>.log` containing `JOBINTEL_RUN_ID` and `[run_scrape][provenance]`.
 - `verify_published_s3` output with `"ok": true`.
 - S3 keys under:
   - `runs/<run_id>/<provider>/<profile>/...`
