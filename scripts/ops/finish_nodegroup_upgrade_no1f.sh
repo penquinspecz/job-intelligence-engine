@@ -158,12 +158,12 @@ echo "$NG_JSON" | jq '.nodegroup | {
 }'
 
 log "Latest nodegroup update status"
-UPDATES_JSON="$(aws eks list-updates --region "$REGION" --cluster-name "$CLUSTER_NAME" --nodegroup-name "$NODEGROUP_NAME" --output json)"
+UPDATES_JSON="$(aws eks list-updates --region "$REGION" --name "$CLUSTER_NAME" --nodegroup-name "$NODEGROUP_NAME" --output json)"
 LATEST_UPDATE_ID="$(echo "$UPDATES_JSON" | jq -r '.updateIds | last // empty')"
 if [[ -n "$LATEST_UPDATE_ID" ]]; then
   aws eks describe-update \
     --region "$REGION" \
-    --cluster-name "$CLUSTER_NAME" \
+    --name "$CLUSTER_NAME" \
     --nodegroup-name "$NODEGROUP_NAME" \
     --update-id "$LATEST_UPDATE_ID" \
     --output json | jq '.update | {id,status,type,createdAt,errors,params}'
@@ -181,8 +181,8 @@ aws autoscaling describe-scaling-activities \
 NG_STATUS="$(echo "$NG_JSON" | jq -r '.nodegroup.status')"
 if [[ "$NG_STATUS" != "ACTIVE" ]]; then
   log "Nodegroup is not ACTIVE (status=$NG_STATUS). Next commands to inspect/rerun upgrade:"
-  echo "aws eks list-updates --region $REGION --cluster-name $CLUSTER_NAME --nodegroup-name $NODEGROUP_NAME --output json"
-  echo "aws eks describe-update --region $REGION --cluster-name $CLUSTER_NAME --nodegroup-name $NODEGROUP_NAME --update-id <LATEST_UPDATE_ID> --output json"
+  echo "aws eks list-updates --region $REGION --name $CLUSTER_NAME --nodegroup-name $NODEGROUP_NAME --output json"
+  echo "aws eks describe-update --region $REGION --name $CLUSTER_NAME --nodegroup-name $NODEGROUP_NAME --update-id <LATEST_UPDATE_ID> --output json"
   echo "# Re-run the same upgrade explicitly (replace values with your last known target):"
   echo "aws eks update-nodegroup-version --region $REGION --cluster-name $CLUSTER_NAME --nodegroup-name $NODEGROUP_NAME --kubernetes-version <target> --release-version <release>"
 fi
