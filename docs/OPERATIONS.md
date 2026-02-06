@@ -25,6 +25,13 @@ CI:
 make gate-ci
 ```
 
+Dependency lock workflow (source of truth):
+
+- `requirements.txt` is generated, not hand-edited.
+- Update lockfiles with `make deps-sync`.
+- Enforce parity with `make deps-check` (used in CI).
+- If runtime dependencies change, update `pyproject.toml` first, then re-run `make deps-sync`.
+
 Kubernetes CronJob (portable, K8s-first):
 
 Use the kustomize base at `ops/k8s/jobintel` or the AWS EKS overlay at
