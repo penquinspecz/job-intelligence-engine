@@ -119,6 +119,22 @@ NS="$NAMESPACE" bash scripts/prove_live_scrape_eks.sh
 cat ops/proof/liveproof-<run_id>.log
 ```
 
+Single-command receipts driver (recommended):
+
+```bash
+python scripts/prove_eks_live_run.py \
+  --cluster-name "<cluster_name>" \
+  --context "$KUBE_CONTEXT" \
+  --namespace "$NAMESPACE" \
+  --bucket "$BUCKET" \
+  --prefix "$PREFIX"
+```
+
+Expected files:
+- `ops/proof/liveproof-<run_id>.log`
+- `state/proofs/<run_id>.json`
+- `ops/proof/verify_published_s3-<run_id>.log`
+
 ## Rollback
 
 Suspend CronJob:

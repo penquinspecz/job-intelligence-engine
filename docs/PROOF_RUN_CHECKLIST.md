@@ -47,7 +47,24 @@ kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" \
 
 ## 4) Capture receipts (live proof)
 
-This writes local proof artifacts and enforces live provenance checks.
+Single command driver (recommended). This writes local proof artifacts and fails closed
+if any required receipt is missing.
+
+```bash
+python scripts/prove_eks_live_run.py \
+  --cluster-name "$CLUSTER_NAME" \
+  --context "$KUBE_CONTEXT" \
+  --namespace "$NAMESPACE" \
+  --bucket "$BUCKET" \
+  --prefix "$PREFIX"
+```
+
+The command prints `JOBINTEL_RUN_ID=<run_id>` and writes:
+- `ops/proof/liveproof-<run_id>.log`
+- `state/proofs/<run_id>.json`
+- `ops/proof/verify_published_s3-<run_id>.log`
+
+Legacy helper (still available):
 
 ```bash
 NS="$NAMESPACE" bash scripts/prove_live_scrape_eks.sh
@@ -63,10 +80,19 @@ python scripts/verify_published_s3.py --bucket "$BUCKET" --run-id "<run_id>" --p
 - A log line containing `JOBINTEL_RUN_ID=<run_id>`.
 - A proof JSON file at `state/proofs/<run_id>.json`.
 - A proof log file at `ops/proof/liveproof-<run_id>.log` containing `JOBINTEL_RUN_ID` and `[run_scrape][provenance]`.
+- A verifier log file at `ops/proof/verify_published_s3-<run_id>.log`.
 - `verify_published_s3` output with `"ok": true`.
 - S3 keys under:
   - `runs/<run_id>/<provider>/<profile>/...`
   - `latest/<provider>/<profile>/...`
+
+Proof JSON (`state/proofs/<run_id>.json`) includes:
+- Existing run proof receipt from `run_daily.py`
+- `liveproof_capture` object with:
+  - `cluster_name`, `namespace`, `job_name`, `pod_name`, `image`
+  - `bucket`, `prefix`, `verify_exit_code`
+  - `publish_markers` (`s3_status`, `pointer_global`)
+  - key provenance flags (`live_attempted`, `live_result`, `scrape_mode`, `snapshot_used`, `parsed_job_count`, `policy_snapshot`, `robots_final_allowed`)
 
 ## Policy Evidence Plan
 
