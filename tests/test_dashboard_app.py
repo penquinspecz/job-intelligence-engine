@@ -87,9 +87,7 @@ def test_dashboard_latest_local(tmp_path: Path, monkeypatch) -> None:
         "providers": ["openai"],
         "profiles": ["cs"],
     }
-    (config.STATE_DIR / "last_success.json").write_text(
-        json.dumps(last_success), encoding="utf-8"
-    )
+    (config.STATE_DIR / "last_success.json").write_text(json.dumps(last_success), encoding="utf-8")
     report = {
         "outputs_by_provider": {
             "openai": {

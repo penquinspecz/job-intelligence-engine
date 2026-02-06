@@ -5,11 +5,10 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import Response
-
 import boto3
 from botocore.exceptions import ClientError
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import Response
 
 from ji_engine.config import RUN_METADATA_DIR, STATE_DIR
 from jobintel import aws_runs
@@ -248,11 +247,7 @@ def latest_artifacts(provider: str, profile: str) -> Dict[str, Any]:
     if not report_path.exists():
         raise HTTPException(status_code=404, detail="Local run_report not found")
     report = _read_local_json(report_path)
-    outputs = (
-        report.get("outputs_by_provider", {})
-        .get(provider, {})
-        .get(profile, {})
-    )
+    outputs = report.get("outputs_by_provider", {}).get(provider, {}).get(profile, {})
     if not isinstance(outputs, dict) or not outputs:
         raise HTTPException(status_code=404, detail="No artifacts for provider/profile")
     files = [item.get("path") for item in outputs.values() if isinstance(item, dict) and item.get("path")]
