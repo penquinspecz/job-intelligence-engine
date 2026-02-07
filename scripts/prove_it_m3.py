@@ -76,8 +76,13 @@ def _plan(args: argparse.Namespace) -> int:
                 args.bucket,
                 "--prefix",
                 args.prefix,
+                "--providers",
+                args.providers,
                 "--timeout",
                 args.timeout,
+                "--hold-seconds",
+                str(args.hold_seconds),
+                *([] if not args.image else ["--image", args.image]),
             ]
         )
     )
@@ -98,8 +103,13 @@ def _run_live(args: argparse.Namespace) -> int:
         args.bucket,
         "--prefix",
         args.prefix,
+        "--providers",
+        args.providers,
         "--timeout",
         args.timeout,
+        "--hold-seconds",
+        str(args.hold_seconds),
+        *([] if not args.image else ["--image", args.image]),
     ]
 
     result = _run(cmd)
@@ -186,7 +196,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--namespace", default="jobintel")
     parser.add_argument("--bucket", required=True)
     parser.add_argument("--prefix", default="jobintel")
+    parser.add_argument("--providers", default="openai", help="Comma-separated providers for run_daily.")
     parser.add_argument("--timeout", default="20m")
+    parser.add_argument("--hold-seconds", type=int, default=45)
+    parser.add_argument("--image", default=None, help="Optional image override for the one-off proof job.")
     parser.add_argument("--plan", action="store_true", help="Print deterministic outputs and underlying command.")
     parser.add_argument("--allow-secrets", action="store_true", help="Allow secret-like strings in logs/json.")
     parser.add_argument(

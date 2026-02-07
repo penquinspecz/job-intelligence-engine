@@ -41,7 +41,7 @@ If a change doesn’t advance a milestone’s Definition of Done (DoD), it’s p
 
 ## Current State (as of this commit)
 
-Last verified: `2026-02-06T23:56:49Z` @ `ffa7c7a`
+Last verified: `2026-02-07T01:57:19Z` @ `189cd29`
 
 ### Completed foundation (verified in repo/tests)
 - [x] Deterministic ranking + tie-breakers
@@ -163,11 +163,11 @@ S3-compatible object store, optional alerts.
 - [x] End-to-end publish to a real object-store bucket verified (runs + latest keys)
 - [x] Discord alerts sent only when diffs exist (or optionally always send summary; configurable)
 - [x] Minimal object-store IAM policy documented (least privilege; AWS example)
-- [ ] Live scraping verified in-cluster (EKS) with provenance showing live_attempted=true and live_result=success (not skipped/failed) — run + commit proof log. Receipt missing: committed `ops/proof/liveproof-<run_id>.log` with non-empty run_id.
+- [x] Live scraping verified in-cluster (EKS) with provenance showing live_attempted=true and live_result=success (not skipped/failed) — run + commit proof log. Receipt: `ops/proof/bundles/m3-2026-02-07T01:55:39.183131+00:00/liveproof-2026-02-07T01:55:39.183131+00:00.log`.
 - [x] Scrape politeness, rate limiting, and anti-bot hardening implemented (required before adding more providers)
 - [x] Domain-backed dashboard endpoint (API first; UI can come later)
 - [x] Runbook: deploy, inspect last run, roll back, rotate secrets
- - [ ] Proof artifacts captured (for verification). Receipt missing: committed local proof bundle (`ops/proof/liveproof-<run_id>.log` + `state/proofs/<run_id>.json` + verify output transcript).
+ - [x] Proof artifacts captured (for verification). Receipt: `ops/proof/bundles/m3-2026-02-07T01:55:39.183131+00:00/` (includes liveproof log, proof JSON, verify transcript, manifest, README, excerpt).
    - CloudWatch log line with `run_id`
    - Provenance JSON line captured showing `live_attempted=true` and `live_result != skipped`
    - `ops/proof/liveproof-<run_id>.log` captured (contains JOBINTEL_RUN_ID + [run_scrape][provenance])
@@ -178,7 +178,7 @@ S3-compatible object store, optional alerts.
    - `python scripts/verify_published_s3.py --bucket <bucket> --run-id <run_id> --verify-latest` outputs OK
 
 Current Status:
-- Remaining Milestone 3 blockers are receipt-driven: in-cluster live proof, proof artifacts capture (`state/proofs/<run_id>.json` + verify output), and evidence that politeness signals (rate-limit/backoff/circuit-breaker + robots/allowlist) are present in real run logs/provenance.
+- Remaining Milestone 3 blockers are receipt-driven: evidence that politeness signals include backoff/circuit-breaker events in real run logs, plus infra receipts (`terraform apply` outputs and ECR image pull event evidence).
 - Deployment surfaces are in place (`ops/k8s/jobintel/dashboard.yaml`, `ops/k8s/RUNBOOK.md`, `src/ji_engine/dashboard/app.py`); remaining work is operational proof completion.
 
 Receipts (repo evidence):
@@ -186,7 +186,7 @@ Receipts (repo evidence):
 - Dashboard API + deploy surface: `src/ji_engine/dashboard/app.py`, `ops/k8s/jobintel/dashboard.yaml`
 - Runbook and proof procedures: `ops/k8s/RUNBOOK.md`, `docs/PROOF_RUN_CHECKLIST.md`
 - Terraform + EKS scaffolding present (but not counted as human-run receipt): `ops/aws/infra/eks/README.md`, `ops/aws/infra/eks/main.tf`
-- Missing operational receipts: `ops/proof/liveproof-<run_id>.log` with populated run_id, local `state/proofs/<run_id>.json` committed, and successful `verify_published_s3 --verify-latest` output tied to the same run_id.
+- Operational receipts captured for run_id `2026-02-07T01:55:39.183131+00:00`: `ops/proof/bundles/m3-2026-02-07T01:55:39.183131+00:00/liveproof-2026-02-07T01:55:39.183131+00:00.log`, `ops/proof/bundles/m3-2026-02-07T01:55:39.183131+00:00/proofs/2026-02-07T01:55:39.183131+00:00.json`, `ops/proof/bundles/m3-2026-02-07T01:55:39.183131+00:00/verify_published_s3-2026-02-07T01:55:39.183131+00:00.log`.
 
 ### Work Items
 - [x] Implement `scripts/publish_s3.py` and wire it into end-of-run (after artifacts persisted)
@@ -208,7 +208,7 @@ Receipts (repo evidence):
 - [ ] Proof requirements: provenance shows rate_limit policy applied; logs show backoff/circuit-breaker events; robots/allowlist decision recorded; test plan captured. Receipt missing: one committed run log/proof showing these fields for a real in-cluster run.
 - [x] Unit test: backoff + circuit-breaker decisions are deterministic given failure sequence
 - [ ] In-cluster proof: live run logs include rate-limit/backoff/circuit-breaker events for at least one provider. Receipt missing: committed log excerpt for the same run_id as proof JSON.
-- [ ] Proof run executed (EKS one-off job + real S3 publish + proof JSON captured) — proof JSON not yet captured locally. Receipt missing: `state/proofs/<run_id>.json` for a recent live run.
+- [x] Proof run executed (EKS one-off job + real S3 publish + proof JSON captured). Receipt: `ops/proof/bundles/m3-2026-02-07T01:55:39.183131+00:00/proofs/2026-02-07T01:55:39.183131+00:00.json`.
 - [ ] EKS bootstrap path exists (Terraform) + IRSA wiring documented. Receipt missing: human-run `terraform apply` outputs captured and referenced by the proof run.
 - [ ] EKS can pull image (ECR golden path documented + working). Receipt missing: pod/event evidence showing successful image pull from ECR for the proof job.
 - Receipts rule: infra execution boxes are checked only with receipts in hand (proof JSON + verify output).

@@ -1,0 +1,120 @@
+JOBINTEL_RUN_ID=2026-02-07T01:55:39.183131+00:00
+[run_scrape][provenance] {"openai": {"allowlist_allowed": true, "attempts_made": 1, "availability": "available", "backoff_base_s": 0.5, "backoff_jitter_s": 0.0, "backoff_max_s": 3.0, "chaos_mode_enabled": false, "chaos_triggered": false, "circuit_breaker_cooldown_s": 300.0, "circuit_breaker_threshold": 3, "error": null, "live_attempted": true, "live_error_type": "success", "live_http_status": null, "live_result": "success", "live_status_code": null, "max_attempts": 3, "mode": "LIVE", "parsed_job_count": 528, "policy_snapshot": {"backoff_config": {"base_s": 0.5, "jitter_range_s": [0.0, 0.0], "max_retries": 2, "max_sleep_s": 3.0}, "chaos_mode_enabled": false, "circuit_breaker_config": {"cooldown_s": 300.0, "threshold": 3}, "rate_limit_config": {"jitter_range_s": [0.0, 0.0], "min_delay_s": 1.0, "per_host_concurrency": 2, "qps": 1.0}, "robots_policy_config": {"allowlist_entries": [], "default_action": "deny"}, "user_agent": "jobintel-bot/1.0 (+https://github.com/penquinspecz/job-intelligence-engine)"}, "provider_id": "openai", "rate_limit_jitter_s": 0.0, "rate_limit_min_delay_s": 1.0, "robots_allowed": true, "robots_fetched": true, "robots_final_allowed": true, "robots_reason": "ok", "robots_status": 200, "robots_url": "https://jobs.ashbyhq.com/robots.txt", "robots_user_agent": "jobintel-bot/1.0 (+https://github.com/penquinspecz/job-intelligence-engine)", "scrape_mode": "live", "snapshot_baseline_count": 493, "snapshot_mtime_iso": "2026-02-04T20:54:57+00:00", "snapshot_path": "data/openai_snapshots/index.html", "snapshot_reason": null, "snapshot_sha256": "db859f209b7e1eeeaa385d9dab87d02f9ee72217e5afa57edebc21932b586ffc", "snapshot_used": false, "snapshot_validated": true, "unavailable_reason": null}}
+2026-02-07 01:55:42 INFO PUBLISH_CONTRACT enabled=True required=True bucket=my-real-jobintel-bucket prefix=jobintel pointer_global=ok pointer_profiles={"openai:cs": "ok"} error=None
+
+--- LOG TAIL ---
+JOBINTEL_RUN_ID=2026-02-07T01:55:39.183131+00:00
+2026-02-07 01:55:39 INFO ===== jobintel start 2026-02-07T01:55:39.183406+00:00 pid=10 =====
+2026-02-07 01:55:39 INFO 
+$ /usr/local/bin/python /app/scripts/run_scrape.py --mode LIVE --providers openai --providers-config config/providers.json --snapshot-write-dir /work/jobintel_snapshots
+2026-02-07 01:55:39 INFO Scraped 528 jobs.
+Wrote JSON to /app/data/ashby_cache/openai_raw_jobs.json
+2026-02-07 01:55:39 INFO 2026-02-07 01:55:39 INFO [run_scrape][POLICY_SUMMARY] {"openai": {"backoff_config": {"base_s": 0.5, "jitter_range_s": [0.0, 0.0], "max_retries": 2, "max_sleep_s": 3.0}, "chaos_mode_enabled": false, "circuit_breaker_config": {"cooldown_s": 300.0, "threshold": 3}, "rate_limit_config": {"jitter_range_s": [0.0, 0.0], "min_delay_s": 1.0, "per_host_concurrency": 2, "qps": 1.0}, "robots_policy_config": {"allowlist_entries": [], "default_action": "deny"}, "user_agent": "jobintel-bot/1.0 (+https://github.com/penquinspecz/job-intelligence-engine)"}}
+2026-02-07 01:55:39 INFO [provider_retry][robots] provider=openai host=jobs.ashbyhq.com allowlist_allowed=True robots_fetched=True robots_allowed=True final_allowed=True reason=ok url=https://jobs.ashbyhq.com/openai
+2026-02-07 01:55:39 INFO [run_scrape][provenance] {"openai": {"allowlist_allowed": true, "attempts_made": 1, "availability": "available", "backoff_base_s": 0.5, "backoff_jitter_s": 0.0, "backoff_max_s": 3.0, "chaos_mode_enabled": false, "chaos_triggered": false, "circuit_breaker_cooldown_s": 300.0, "circuit_breaker_threshold": 3, "error": null, "live_attempted": true, "live_error_type": "success", "live_http_status": null, "live_result": "success", "live_status_code": null, "max_attempts": 3, "mode": "LIVE", "parsed_job_count": 528, "policy_snapshot": {"backoff_config": {"base_s": 0.5, "jitter_range_s": [0.0, 0.0], "max_retries": 2, "max_sleep_s": 3.0}, "chaos_mode_enabled": false, "circuit_breaker_config": {"cooldown_s": 300.0, "threshold": 3}, "rate_limit_config": {"jitter_range_s": [0.0, 0.0], "min_delay_s": 1.0, "per_host_concurrency": 2, "qps": 1.0}, "robots_policy_config": {"allowlist_entries": [], "default_action": "deny"}, "user_agent": "jobintel-bot/1.0 (+https://github.com/penquinspecz/job-intelligence-engine)"}, "provider_id": "openai", "rate_limit_jitter_s": 0.0, "rate_limit_min_delay_s": 1.0, "robots_allowed": true, "robots_fetched": true, "robots_final_allowed": true, "robots_reason": "ok", "robots_status": 200, "robots_url": "https://jobs.ashbyhq.com/robots.txt", "robots_user_agent": "jobintel-bot/1.0 (+https://github.com/penquinspecz/job-intelligence-engine)", "scrape_mode": "live", "snapshot_baseline_count": 493, "snapshot_mtime_iso": "2026-02-04T20:54:57+00:00", "snapshot_path": "data/openai_snapshots/index.html", "snapshot_reason": null, "snapshot_sha256": "db859f209b7e1eeeaa385d9dab87d02f9ee72217e5afa57edebc21932b586ffc", "snapshot_used": false, "snapshot_validated": true, "unavailable_reason": null}}
+2026-02-07 01:55:39 INFO 
+$ /usr/local/bin/python /app/scripts/run_classify.py --in_path /app/data/ashby_cache/openai_raw_jobs.json --out_path /app/data/ashby_cache/openai_labeled_jobs.json
+2026-02-07 01:55:40 INFO 2026-02-07 01:55:40 INFO 
+Classification Summary:
+2026-02-07 01:55:40 INFO   RELEVANT:   18
+2026-02-07 01:55:40 INFO   MAYBE:      20
+2026-02-07 01:55:40 INFO   IRRELEVANT: 490
+2026-02-07 01:55:40 INFO   Total:      528
+2026-02-07 01:55:40 INFO 
+First 10 RELEVANT jobs:
+2026-02-07 01:55:40 INFO 
+1. AI Deployment Manager - San Francisco
+2026-02-07 01:55:40 INFO    https://jobs.ashbyhq.com/openai/17c00d62-b7a0-44fc-83d7-441ed455341c/application
+2026-02-07 01:55:40 INFO 
+2. Solutions Engineer, Private Equity
+2026-02-07 01:55:40 INFO    https://jobs.ashbyhq.com/openai/1dcaf6f4-db4d-4e63-afd6-f1004a14513e/application
+2026-02-07 01:55:40 INFO 
+3. Solutions Engineer, Retail
+2026-02-07 01:55:40 INFO    https://jobs.ashbyhq.com/openai/1fc3d7c9-efe3-4c2b-b67e-708f788478e3/application
+2026-02-07 01:55:40 INFO 
+4. Manager, AI Deployment Engineering
+2026-02-07 01:55:40 INFO    https://jobs.ashbyhq.com/openai/335fb635-e985-42a2-bf81-b810a496cc26/application
+2026-02-07 01:55:40 INFO 
+5. Forward Deployed Software Engineer - NYC
+2026-02-07 01:55:40 INFO    https://jobs.ashbyhq.com/openai/33ccc5a9-b703-41ae-925a-affcaaad5809/application
+2026-02-07 01:55:40 INFO 
+6. Solutions Engineer, Core Enterprise
+2026-02-07 01:55:40 INFO    https://jobs.ashbyhq.com/openai/44261266-1aed-4bf3-90e3-c780f0a1b80e/application
+2026-02-07 01:55:40 INFO 
+7. Solutions Engineer, Core Digital Native
+2026-02-07 01:55:40 INFO    https://jobs.ashbyhq.com/openai/5f0787fc-3b1e-402b-8298-acc66eddb0e0/application
+2026-02-07 01:55:40 INFO 
+8. AI Deployment Manager - NYC
+2026-02-07 01:55:40 INFO    https://jobs.ashbyhq.com/openai/5f32268d-f696-4fd7-8980-e692b7d250e9/application
+2026-02-07 01:55:40 INFO 
+9. AI Deployment Manager - US Remote
+2026-02-07 01:55:40 INFO    https://jobs.ashbyhq.com/openai/5ff04cd6-dca2-4901-acc2-1e0c46fa5bdc/application
+2026-02-07 01:55:40 INFO 
+10. AI Deployment Engineer- Media Partnerships
+2026-02-07 01:55:40 INFO    https://jobs.ashbyhq.com/openai/64d91220-82f2-4d67-9cf0-4e0ba4458177/application
+2026-02-07 01:55:40 INFO 
+Wrote labeled jobs to /app/data/ashby_cache/openai_labeled_jobs.json
+2026-02-07 01:55:40 INFO 
+$ /usr/local/bin/python /app/scripts/run_enrich.py --in_path /app/data/ashby_cache/openai_labeled_jobs.json --out_path /app/data/ashby_cache/openai_enriched_jobs.json
+2026-02-07 01:55:40 INFO Enriched 528 jobs -> /app/data/ashby_cache/openai_enriched_jobs.json
+/app/scripts/run_daily.py:1643: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  decision_timestamp = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+2026-02-07 01:55:40 INFO 
+$ /usr/local/bin/python /app/scripts/score_jobs.py --profile cs --in_path /app/data/ashby_cache/openai_enriched_jobs.json --out_json /app/data/ashby_cache/openai_ranked_jobs.cs.json --out_csv /app/data/ashby_cache/openai_ranked_jobs.cs.csv --out_families /app/data/ashby_cache/openai_ranked_families.cs.json --out_md /app/data/ashby_cache/openai_shortlist.cs.md --min_score 40 --out_md_top_n /app/data/ashby_cache/openai_top.cs.md --us_only
+2026-02-07 01:55:41 INFO 2026-02-07 01:55:41 INFO US-only filter: 528 -> 26 jobs
+2026-02-07 01:55:41 INFO US-only kept jobs by reason: city_state=14, remote_us=11, explicit_us=1
+2026-02-07 01:55:41 INFO Scoring summary: total=26
+2026-02-07 01:55:41 INFO Scores: min=0 p50=0 p90=19 max=35
+2026-02-07 01:55:41 INFO Buckets: >=90=0 >=80=0 >=70=0 >=60=0
+2026-02-07 01:55:41 INFO Shortlist threshold: 40
+2026-02-07 01:55:41 INFO Top 10 jobs:
+2026-02-07 01:55:41 INFO  - 35 | AI Deployment Manager - US Remote | https://jobs.ashbyhq.com/openai/5ff04cd6-dca2-4901-acc2-1e0c46fa5bdc/application
+2026-02-07 01:55:41 INFO  - 29 | AI Deployment Engineer, Gov | https://jobs.ashbyhq.com/openai/22a33c16-1a6b-40a0-b115-9c7e6d24f162/application
+2026-02-07 01:55:41 INFO  - 29 | AI Adoption, Content & Community Manager, OpenAI for Government | https://jobs.ashbyhq.com/openai/d37480b6-f78a-4d1a-aacd-c1c2054fbade/application
+2026-02-07 01:55:41 INFO  - 19 | Forward Deployed Engineer, Gov | https://jobs.ashbyhq.com/openai/aff90ce9-91d4-4a0d-ab2c-fd9899621f35/application
+2026-02-07 01:55:41 INFO  - 16 | Solutions Engineer, Public Sector | https://jobs.ashbyhq.com/openai/e1b8ce8b-1a30-4b24-9e67-de3f2a406876/application
+2026-02-07 01:55:41 INFO  - 7 | Program Manager, Industrial Security | https://jobs.ashbyhq.com/openai/21b15d26-ac51-43ac-a6e0-cc9eca82c9bb/application
+2026-02-07 01:55:41 INFO  - 4 | Sales Strategy & Operations - Government and Education | https://jobs.ashbyhq.com/openai/27ec5eee-3ead-4c7f-9cce-b7a1e8605db1/application
+2026-02-07 01:55:41 INFO  - 4 | Account Director, Federal Civilian | https://jobs.ashbyhq.com/openai/2cb6897d-a9da-4f21-9fb3-20027f61d63e/application
+2026-02-07 01:55:41 INFO  - 4 | Datacenter Hardware Operations Technician, AI Compute Infrastructure - Stargate | https://jobs.ashbyhq.com/openai/a1d1b590-e8cd-4233-8321-af58e8ee3ee4/application
+2026-02-07 01:55:41 INFO  - 4 | Account Director, Federal Partnerships | https://jobs.ashbyhq.com/openai/a960ff00-20f0-40a4-aa8d-1d9b98874327/application
+2026-02-07 01:55:41 INFO Wrote ranked JSON     : /app/data/ashby_cache/openai_ranked_jobs.cs.json
+2026-02-07 01:55:41 INFO Wrote ranked CSV      : /app/data/ashby_cache/openai_ranked_jobs.cs.csv
+2026-02-07 01:55:41 INFO Wrote ranked families : /app/data/ashby_cache/openai_ranked_families.cs.json
+2026-02-07 01:55:41 INFO Wrote shortlist MD    : /app/data/ashby_cache/openai_shortlist.cs.md (score >= 40)
+2026-02-07 01:55:41 INFO Changelog (cs): new=26 changed=0 removed=0
+2026-02-07 01:55:41 INFO ℹ️ No alerts (cs) (new=26, changed=0; webhook=set).
+2026-02-07 01:55:41 INFO Done (cs). Ranked outputs:
+ - /app/data/ashby_cache/openai_ranked_jobs.cs.json
+ - /app/data/ashby_cache/openai_ranked_jobs.cs.csv
+ - /app/data/ashby_cache/openai_shortlist.cs.md
+2026-02-07 01:55:41 INFO S3 publish enabled: s3://my-real-jobintel-bucket/jobintel (dry_run=False require=True)
+2026-02-07 01:55:41 INFO S3 publish target: s3://my-real-jobintel-bucket/jobintel
+2026-02-07 01:55:41 INFO uploaded /app/data/ashby_cache/openai_ranked_families.cs.json -> s3://my-real-jobintel-bucket/jobintel/runs/2026-02-07T01:55:39.183131+00:00/openai/cs/openai_ranked_families.cs.json
+2026-02-07 01:55:41 INFO uploaded /app/data/ashby_cache/openai_ranked_jobs.cs.csv -> s3://my-real-jobintel-bucket/jobintel/runs/2026-02-07T01:55:39.183131+00:00/openai/cs/openai_ranked_jobs.cs.csv
+2026-02-07 01:55:41 INFO uploaded /app/data/ashby_cache/openai_ranked_jobs.cs.json -> s3://my-real-jobintel-bucket/jobintel/runs/2026-02-07T01:55:39.183131+00:00/openai/cs/openai_ranked_jobs.cs.json
+2026-02-07 01:55:41 INFO uploaded /app/data/ashby_cache/openai_shortlist.cs.md -> s3://my-real-jobintel-bucket/jobintel/runs/2026-02-07T01:55:39.183131+00:00/openai/cs/openai_shortlist.cs.md
+2026-02-07 01:55:41 INFO uploaded /app/data/ashby_cache/openai_top.cs.md -> s3://my-real-jobintel-bucket/jobintel/runs/2026-02-07T01:55:39.183131+00:00/openai/cs/openai_top.cs.md
+2026-02-07 01:55:42 INFO uploaded /app/data/ashby_cache/openai_ranked_families.cs.json -> s3://my-real-jobintel-bucket/jobintel/latest/openai/cs/openai_ranked_families.cs.json
+2026-02-07 01:55:42 INFO uploaded /app/data/ashby_cache/openai_ranked_jobs.cs.csv -> s3://my-real-jobintel-bucket/jobintel/latest/openai/cs/openai_ranked_jobs.cs.csv
+2026-02-07 01:55:42 INFO uploaded /app/data/ashby_cache/openai_ranked_jobs.cs.json -> s3://my-real-jobintel-bucket/jobintel/latest/openai/cs/openai_ranked_jobs.cs.json
+2026-02-07 01:55:42 INFO uploaded /app/data/ashby_cache/openai_shortlist.cs.md -> s3://my-real-jobintel-bucket/jobintel/latest/openai/cs/openai_shortlist.cs.md
+2026-02-07 01:55:42 INFO uploaded /app/data/ashby_cache/openai_top.cs.md -> s3://my-real-jobintel-bucket/jobintel/latest/openai/cs/openai_top.cs.md
+2026-02-07 01:55:42 INFO writing baseline pointer: s3://my-real-jobintel-bucket/jobintel/state/last_success.json
+2026-02-07 01:55:42 INFO baseline pointer write ok: s3://my-real-jobintel-bucket/jobintel/state/last_success.json
+2026-02-07 01:55:42 INFO writing baseline pointer: s3://my-real-jobintel-bucket/jobintel/state/openai/cs/last_success.json
+2026-02-07 01:55:42 INFO baseline pointer write ok: s3://my-real-jobintel-bucket/jobintel/state/openai/cs/last_success.json
+2026-02-07 01:55:42 INFO PUBLISH_CONTRACT enabled=True required=True bucket=my-real-jobintel-bucket prefix=jobintel pointer_global=ok pointer_profiles={"openai:cs": "ok"} error=None
+2026-02-07 01:55:42 INFO Proof receipt written: /app/state/proofs/2026-02-07T01:55:39.183131+00:00.json
+2026-02-07 01:55:42 INFO RUN SUMMARY
+run_id=2026-02-07T01:55:39.183131+00:00
+providers=openai
+profiles=cs
+s3_status=ok
+s3_reason=None
+s3_bucket=my-real-jobintel-bucket
+s3_prefixes={"latest": {"openai": {"cs": "jobintel/latest/openai/cs"}}, "runs": "jobintel/runs/2026-02-07T01:55:39.183131+00:00"}
+dashboard_url=None
+discord_status={"openai": {"cs": "disabled"}}
+provider_availability={"openai": {"attempts_made": 1, "status": "available", "unavailable_reason": null}}
+2026-02-07 01:55:42 INFO ===== jobintel end 2026-02-07T01:55:42.257258+00:00 =====

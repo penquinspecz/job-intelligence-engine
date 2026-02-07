@@ -27,7 +27,6 @@ _BLOCK_PATTERNS = (
     "access denied",
     "cf-chl",
     "cdn-cgi/challenge-platform",
-    "captcha",
     "cloudflare",
     "attention required",
 )
@@ -174,7 +173,13 @@ def _retry_config(
 
 def _detect_blocked_content(text: str) -> bool:
     lowered = text.lower()
-    return any(pattern in lowered for pattern in _BLOCK_PATTERNS)
+    if any(pattern in lowered for pattern in _BLOCK_PATTERNS):
+        return True
+    if "captcha" in lowered and any(
+        marker in lowered for marker in ("verify you are human", "attention required", "access denied", "blocked")
+    ):
+        return True
+    return False
 
 
 def _rate_limit(provider_id: Optional[str], url: str) -> None:
