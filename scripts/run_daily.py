@@ -58,6 +58,7 @@ from ji_engine.config import (
 from ji_engine.config import (
     shortlist_md as shortlist_md_path,
 )
+from ji_engine.history_retention import update_history_retention, write_history_run_artifacts
 from ji_engine.utils.atomic_write import atomic_write_text
 from ji_engine.utils.content_fingerprint import content_fingerprint
 from ji_engine.utils.diff_report import build_diff_markdown, build_diff_report
@@ -2605,6 +2606,32 @@ def _resolve_profiles(args: argparse.Namespace) -> List[str]:
     return out
 
 
+def _resolve_history_settings(args: argparse.Namespace) -> Tuple[bool, int, int]:
+    env_enabled = os.environ.get("HISTORY_ENABLED", "").strip() == "1"
+    enabled = bool(args.history_enabled) or env_enabled
+
+    keep_runs_raw = (
+        str(args.history_keep_runs)
+        if args.history_keep_runs is not None
+        else os.environ.get("HISTORY_KEEP_RUNS", "30").strip()
+    )
+    keep_days_raw = (
+        str(args.history_keep_days)
+        if args.history_keep_days is not None
+        else os.environ.get("HISTORY_KEEP_DAYS", "90").strip()
+    )
+    try:
+        keep_runs = int(keep_runs_raw)
+        keep_days = int(keep_days_raw)
+    except ValueError as exc:
+        raise SystemExit(f"HISTORY_KEEP_RUNS/HISTORY_KEEP_DAYS must be integers: {exc}") from exc
+    if keep_runs < 1:
+        raise SystemExit("HISTORY_KEEP_RUNS must be >= 1")
+    if keep_days < 1:
+        raise SystemExit("HISTORY_KEEP_DAYS must be >= 1")
+    return enabled, keep_runs, keep_days
+
+
 def main() -> int:
     ensure_dirs()
     ap = argparse.ArgumentParser()
@@ -2653,8 +2680,26 @@ def main() -> int:
         action="store_true",
         help="Plan S3 publish without uploading (requires --publish-s3 or implies it).",
     )
+    ap.add_argument(
+        "--history-enabled",
+        action="store_true",
+        help="Enable canonical history pointers + deterministic retention under state/history/<profile>/.",
+    )
+    ap.add_argument(
+        "--history-keep-runs",
+        type=int,
+        default=None,
+        help="Retention: keep this many recent run pointers per profile (env fallback: HISTORY_KEEP_RUNS=30).",
+    )
+    ap.add_argument(
+        "--history-keep-days",
+        type=int,
+        default=None,
+        help="Retention: keep this many recent daily pointers per profile (env fallback: HISTORY_KEEP_DAYS=90).",
+    )
 
     args = ap.parse_args()
+    history_enabled, history_keep_runs, history_keep_days = _resolve_history_settings(args)
     if args.snapshot_only and not args.offline:
         args.offline = True
     global OUTPUT_DIR, RAW_JOBS_JSON, LABELED_JOBS_JSON, ENRICHED_JOBS_JSON
@@ -2740,6 +2785,9 @@ def main() -> int:
         "snapshot_only": args.snapshot_only,
         "publish_s3": args.publish_s3,
         "publish_dry_run": args.publish_dry_run,
+        "history_enabled": history_enabled,
+        "history_keep_runs": history_keep_runs,
+        "history_keep_days": history_keep_days,
     }
 
     def _finalize(status: str, extra: Optional[Dict[str, Any]] = None) -> None:
@@ -3011,6 +3059,78 @@ def main() -> int:
             (publish_section.get("pointer_write") or {}).get("error"),
         )
 
+        history_summary: Dict[str, Any] = {
+            "enabled": history_enabled,
+            "keep_runs": history_keep_runs,
+            "keep_days": history_keep_days,
+            "profiles": {},
+        }
+        if status == "success" and history_enabled:
+            unique_profiles = sorted(set(profiles_list))
+            for profile in unique_profiles:
+                artifact_result = None
+                try:
+                    artifact_result = write_history_run_artifacts(
+                        history_dir=HISTORY_DIR,
+                        run_id=run_id,
+                        profile=profile,
+                        run_report_path=run_metadata_path,
+                        written_at=str(telemetry.get("ended_at") or _utcnow_iso()),
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to write history artifacts for profile=%s run_id=%s: %r", profile, run_id, exc
+                    )
+                result = update_history_retention(
+                    history_dir=HISTORY_DIR,
+                    runs_dir=RUN_METADATA_DIR,
+                    profile=profile,
+                    run_id=run_id,
+                    run_timestamp=str(telemetry.get("ended_at") or ""),
+                    keep_runs=history_keep_runs,
+                    keep_days=history_keep_days,
+                    written_at=str(telemetry.get("ended_at") or _utcnow_iso()),
+                )
+                history_summary["profiles"][profile] = {
+                    "identity_map_path": artifact_result.identity_map_path if artifact_result else None,
+                    "provenance_path": artifact_result.provenance_path if artifact_result else None,
+                    "identity_count": artifact_result.identity_count if artifact_result else 0,
+                    "run_pointer_path": result.run_pointer_path,
+                    "daily_pointer_path": result.daily_pointer_path,
+                    "runs_kept": result.runs_kept,
+                    "runs_pruned": result.runs_pruned,
+                    "daily_kept": result.daily_kept,
+                    "daily_pruned": result.daily_pruned,
+                }
+                logger.info(
+                    "HISTORY_RETENTION profile=%s run_id=%s enabled=1 keep_runs=%d keep_days=%d runs_kept=%d runs_pruned=%d daily_kept=%d daily_pruned=%d identity_count=%d identity_map=%s provenance=%s run_pointer=%s daily_pointer=%s",
+                    profile,
+                    run_id,
+                    history_keep_runs,
+                    history_keep_days,
+                    result.runs_kept,
+                    result.runs_pruned,
+                    result.daily_kept,
+                    result.daily_pruned,
+                    artifact_result.identity_count if artifact_result else 0,
+                    artifact_result.identity_map_path if artifact_result else "n/a",
+                    artifact_result.provenance_path if artifact_result else "n/a",
+                    result.run_pointer_path,
+                    result.daily_pointer_path,
+                )
+        else:
+            reason = "disabled"
+            if status != "success":
+                reason = f"status_{status}"
+            logger.info(
+                "HISTORY_RETENTION enabled=%d reason=%s keep_runs=%d keep_days=%d run_id=%s",
+                1 if history_enabled else 0,
+                reason,
+                history_keep_runs,
+                history_keep_days,
+                run_id,
+            )
+
         if os.environ.get("JOBINTEL_WRITE_PROOF", "0").strip() == "1":
             try:
                 run_report_payload = json.loads(run_metadata_path.read_text(encoding="utf-8"))
@@ -3025,6 +3145,16 @@ def main() -> int:
                         logger.info("Proof receipt written: %s", proof_path)
             except Exception as exc:
                 logger.warning("Failed to write proof receipt: %r", exc)
+
+        try:
+            run_report_payload = json.loads(run_metadata_path.read_text(encoding="utf-8"))
+        except Exception:
+            run_report_payload = None
+        if isinstance(run_report_payload, dict):
+            run_report_payload["history_retention"] = history_summary
+            run_metadata_path.write_text(
+                json.dumps(run_report_payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8"
+            )
 
         if os.environ.get("JOBINTEL_PRUNE") == "1":
             try:
