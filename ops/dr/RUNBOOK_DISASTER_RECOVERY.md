@@ -1,8 +1,24 @@
 # Runbook: Disaster Recovery (Cold Standby)
 
-This runbook executes a deterministic bringup/restore/validate/teardown contract.
+This runbook executes deterministic bringup -> restore -> validate -> teardown.
 
-## One-Command Plan Bundle
+## Preflight checks
+
+```bash
+aws sts get-caller-identity
+terraform -chdir=ops/dr/terraform version
+scripts/ops/dr_contract.py --backup-uri s3://<bucket>/<prefix>/backups/<backup_id>
+```
+
+Success criteria:
+- AWS identity resolves to operator account.
+- Terraform available.
+- Backup URI passes contract check.
+
+If it fails:
+- stop before `APPLY=1`; fix IAM/backup inputs first.
+
+## 1) One-command plan bundle (safe default)
 
 ```bash
 python scripts/ops/prove_it_m4.py \
@@ -16,13 +32,12 @@ python scripts/ops/prove_it_m4.py \
 ```
 
 Expected receipts:
-
 - `ops/proof/bundles/m4-m4-dr-plan/onprem_plan.txt`
 - `ops/proof/bundles/m4-m4-dr-plan/backup_plan.json`
 - `ops/proof/bundles/m4-m4-dr-plan/dr_plan.txt`
 - `ops/proof/bundles/m4-m4-dr-plan/manifest.json`
 
-## Step-by-Step Execute Commands
+## 2) Execute DR rehearsal
 
 ```bash
 APPLY=1 scripts/ops/dr_bringup.sh
@@ -31,10 +46,21 @@ RUN_JOB=1 scripts/ops/dr_validate.sh
 CONFIRM_DESTROY=1 scripts/ops/dr_teardown.sh
 ```
 
-## Verify Restore Inputs
+Success criteria:
+- Infra comes up, one JobIntel run executes, teardown removes cloud infra.
+
+If it fails:
+- bringup: inspect `ops/proof/bundles/m4-<run_id>/provision_terraform_apply*.log`
+- restore: inspect `ops/proof/bundles/m4-<run_id>/restore.log`
+- validate: inspect `ops/proof/bundles/m4-<run_id>/run.log`
+- teardown: inspect `ops/proof/bundles/m4-<run_id>/teardown.log`
+
+## 3) Post-run spend safety check
 
 ```bash
-scripts/ops/dr_contract.py --backup-uri s3://<bucket>/<prefix>/backups/<backup_id>
+aws ec2 describe-instances --filters Name=tag:Project,Values=jobintel-dr Name=instance-state-name,Values=running
+aws eks list-clusters
 ```
 
-This command prints the required object keys and should be treated as the contract source of truth.
+Success criteria:
+- No lingering DR compute resources unless explicitly retained for debugging.

@@ -11,7 +11,19 @@ spec:
           env:
             - name: JOBINTEL_DASHBOARD_BIND
               value: "0.0.0.0"
+            - name: JOBINTEL_DATA_DIR
+              value: "/app/data/ashby_cache"
+            - name: JOBINTEL_STATE_DIR
+              value: "/app/state"
+          volumeMounts:
+            - name: jobintel-state
+              mountPath: /app/state
+            - name: jobintel-data
+              mountPath: /app/data/ashby_cache
       volumes:
         - name: jobintel-state
           persistentVolumeClaim:
             claimName: jobintel-state-pvc
+        - name: jobintel-data
+          persistentVolumeClaim:
+            claimName: jobintel-data-pvc

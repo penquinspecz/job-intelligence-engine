@@ -46,6 +46,8 @@ This directory is the on-prem operations scaffold for JobIntel primary runtime.
 - `ops/onprem/RUNBOOK_DEPLOY.md`
 - `ops/onprem/RUNBOOK_UPGRADES.md`
 - `ops/onprem/RUNBOOK_BACKUPS.md`
+- `ops/onprem/RUNBOOK_BORING_72H_PROOF.md`
+- `ops/dr/RUNBOOK_DISASTER_RECOVERY.md`
 
 ## Milestone 4 prove-it bundle
 
@@ -58,4 +60,14 @@ python scripts/ops/prove_it_m4.py \
   --backup-bucket <bucket> \
   --backup-prefix <prefix>/backups/m4-plan \
   --backup-uri s3://<bucket>/<prefix>/backups/m4-plan
+```
+
+## 72h proof harness (plan-first)
+
+```bash
+python scripts/ops/prove_m4_onprem.py \
+  --run-id 20260207T120000Z \
+  --output-dir ops/proof/bundles \
+  --namespace jobintel \
+  --cluster-context <k3s-context>
 ```
