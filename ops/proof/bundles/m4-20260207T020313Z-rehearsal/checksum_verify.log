@@ -1,0 +1,6 @@
+head size metadata.json: local=832 remote=832 ok=True
+head size checksums.json: local=184 remote=184 ok=True
+head size db_backup.enc: local=1521264 remote=1521264 ok=True
+sha256 db_backup.enc: local=6c418f36ae023c7aeaafe6851acb52dfcac2d0a9890a880820087c17cd6a13c6 remote=6c418f36ae023c7aeaafe6851acb52dfcac2d0a9890a880820087c17cd6a13c6 ok=True
+head size artifacts_backup.enc: local=5858880 remote=5858880 ok=True
+sha256 artifacts_backup.enc: local=c296bb83b021a3b17428545e7a0831326f7e69524887998e61c62476ce87f199 remote=c296bb83b021a3b17428545e7a0831326f7e69524887998e61c62476ce87f199 ok=True

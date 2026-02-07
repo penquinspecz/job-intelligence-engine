@@ -1,0 +1,5 @@
+checksum db_backup.enc ok=True
+checksum artifacts_backup.enc ok=True
+restore_verify state_present=true
+restore_verify proof_present=true
+restore_verify db_present=true

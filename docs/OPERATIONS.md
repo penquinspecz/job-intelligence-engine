@@ -92,6 +92,19 @@ Discord run summaries are diff-gated by default:
 - Summaries use identity-based deltas (`job_id` first, provider identity fallback) and include top new/changed items.
 - Tune summary detail with `JOBINTEL_DISCORD_DIFF_TOP_N` (default `5`).
 
+## Redaction enforcement
+
+Secret scanning runs on proof bundles by default (fail-closed unless `--allow-secrets` is passed to the proof wrapper).
+
+Run report and diff artifact writes support opt-in fail-closed mode:
+
+```bash
+export REDACTION_ENFORCE=1
+python scripts/run_daily.py --profiles cs --us_only --no_post --snapshot-only --offline
+```
+
+With `REDACTION_ENFORCE=1`, secret-like patterns in generated JSON/markdown artifacts raise an error instead of only warning.
+
 ## Identity diff artifacts
 
 Each run writes deterministic identity delta artifacts under `state/runs/<run_id>/`:

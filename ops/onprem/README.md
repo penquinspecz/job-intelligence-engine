@@ -45,3 +45,17 @@ This directory is the on-prem operations scaffold for JobIntel primary runtime.
 - `ops/onprem/RUNBOOK_ONPREM_INSTALL.md`
 - `ops/onprem/RUNBOOK_DEPLOY.md`
 - `ops/onprem/RUNBOOK_UPGRADES.md`
+- `ops/onprem/RUNBOOK_BACKUPS.md`
+
+## Milestone 4 prove-it bundle
+
+```bash
+python scripts/ops/prove_it_m4.py \
+  --plan \
+  --run-id m4-plan \
+  --output-dir ops/proof/bundles \
+  --aws-region us-east-1 \
+  --backup-bucket <bucket> \
+  --backup-prefix <prefix>/backups/m4-plan \
+  --backup-uri s3://<bucket>/<prefix>/backups/m4-plan
+```

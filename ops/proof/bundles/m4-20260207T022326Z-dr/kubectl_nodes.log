@@ -1,0 +1,2 @@
+NAME               STATUS   ROLES                  AGE   VERSION        INTERNAL-IP     EXTERNAL-IP   OS-IMAGE             KERNEL-VERSION    CONTAINER-RUNTIME
+ip-172-31-87-104   Ready    control-plane,master   45s   v1.31.5+k3s1   172.31.87.104   <none>        Ubuntu 24.04.3 LTS   6.14.0-1018-aws   containerd://1.7.23-k3s2

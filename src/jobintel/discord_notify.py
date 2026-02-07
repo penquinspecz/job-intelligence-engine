@@ -12,6 +12,11 @@ from typing import Any, Dict, Iterable, List, Optional
 logger = logging.getLogger(__name__)
 
 
+def _status_tag(item: Dict[str, Any]) -> str:
+    status = str(item.get("user_state_status") or "").strip()
+    return f" [{status}]" if status else ""
+
+
 def resolve_webhook(profile: str) -> str:
     override = os.environ.get(f"DISCORD_WEBHOOK_URL_{profile.upper()}", "").strip()
     if override:
@@ -91,11 +96,12 @@ def build_run_summary_message(
                 title = str(item.get("title") or "Untitled").strip()
                 score = item.get("score")
                 url = str(item.get("apply_url") or "").strip()
+                tag = _status_tag(item)
                 score_prefix = f"**{int(score)}** " if isinstance(score, (int, float)) else ""
                 if url:
-                    lines.append(f"- {score_prefix}{title} — {url}")
+                    lines.append(f"- {score_prefix}{title}{tag} — {url}")
                 else:
-                    lines.append(f"- {score_prefix}{title}")
+                    lines.append(f"- {score_prefix}{title}{tag}")
         if changed_items:
             lines.append("")
             lines.append(f"Top changed (identity diff, max {diff_top_n}):")
@@ -103,13 +109,14 @@ def build_run_summary_message(
                 title = str(item.get("title") or "Untitled").strip()
                 score = item.get("score")
                 url = str(item.get("apply_url") or "").strip()
+                tag = _status_tag(item)
                 changed_fields = item.get("changed_fields") or []
                 changed_note = f" (changed: {', '.join(changed_fields)})" if changed_fields else ""
                 score_prefix = f"**{int(score)}** " if isinstance(score, (int, float)) else ""
                 if url:
-                    lines.append(f"- {score_prefix}{title} — {url}{changed_note}")
+                    lines.append(f"- {score_prefix}{title}{tag} — {url}{changed_note}")
                 else:
-                    lines.append(f"- {score_prefix}{title}{changed_note}")
+                    lines.append(f"- {score_prefix}{title}{tag}{changed_note}")
 
     if extra_lines:
         lines.append("")

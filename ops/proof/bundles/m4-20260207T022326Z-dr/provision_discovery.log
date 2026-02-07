@@ -1,0 +1,21 @@
+## aws identity
+{
+    "UserId": "AIDAQWUQ2CAGLIBM5EEAN",
+    "Account": "048622080012",
+    "Arn": "arn:aws:iam::048622080012:user/jobintel-deployer"
+}
+## default vpc us-east-1
+vpc-4362fc3e
+## candidate subnets us-east-1
+----------------------------------------------------------------
+|                        DescribeSubnets                       |
++------------+------------+-------------------+----------------+
+|     Az     |   State    |     SubnetId      |     VpcId      |
++------------+------------+-------------------+----------------+
+|  us-east-1c|  available |  subnet-1e470941  |  vpc-4362fc3e  |
+|  us-east-1b|  available |  subnet-11001d5c  |  vpc-4362fc3e  |
+|  us-east-1a|  available |  subnet-a4b7ff85  |  vpc-4362fc3e  |
+|  us-east-1d|  available |  subnet-f23c7194  |  vpc-4362fc3e  |
+|  us-east-1e|  available |  subnet-f141d0c0  |  vpc-4362fc3e  |
+|  us-east-1f|  available |  subnet-f97176f7  |  vpc-4362fc3e  |
++------------+------------+-------------------+----------------+

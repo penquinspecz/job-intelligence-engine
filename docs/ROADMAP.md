@@ -41,7 +41,7 @@ If a change doesn’t advance a milestone’s Definition of Done (DoD), it’s p
 
 ## Current State (as of this commit)
 
-Last verified: `2026-02-06T22:10:17Z` @ `e270332`
+Last verified: `2026-02-07T02:37:31Z` @ `aac036a`
 
 ### Completed foundation (verified in repo/tests)
 - [x] Deterministic ranking + tie-breakers
@@ -77,7 +77,7 @@ Last verified: `2026-02-06T22:10:17Z` @ `e270332`
 ### New conventions added (scaffold + partial integration)
 - [x] `state/user_state/` convention + loader utility returning `{}` if missing (scaffold)
 - [x] User state overlay annotated in outputs (status tags/notes)
-- [ ] User state overlay influences filtering/alert semantics (Milestone 3 work item)
+- [x] User state overlay influences filtering/alert semantics (ignore/applied/interviewing suppression in shortlist + diffs + Discord paths)
 
 ---
 
@@ -90,7 +90,7 @@ Last verified: `2026-02-06T22:10:17Z` @ `e270332`
 - [ ] AI insights scope: currently weekly “pulse”; Phase 2 adds per-job recommendations and profile-aware coaching.
 - [ ] Document CI smoke gate design and failure modes (why it fails, what to inspect)
 - [x] **IAM footguns:** document runtime vs operator verify roles for object-store access in K8s (IRSA) + AWS
-- [ ] **Artifact hygiene:** ensure secrets never leak into run reports/artifacts; add a redaction sanity test if needed
+- [x] **Artifact hygiene:** redaction scanner + deterministic sanity tests added (`src/ji_engine/utils/redaction.py`, `tests/test_redaction_scan.py`), with opt-in fail-closed enforcement (`REDACTION_ENFORCE=1`)
 
 ---
 
@@ -163,11 +163,11 @@ S3-compatible object store, optional alerts.
 - [x] End-to-end publish to a real object-store bucket verified (runs + latest keys)
 - [x] Discord alerts sent only when diffs exist (or optionally always send summary; configurable)
 - [x] Minimal object-store IAM policy documented (least privilege; AWS example)
-- [ ] Live scraping verified in-cluster (EKS) with provenance showing live_attempted=true and live_result=success (not skipped/failed) — run + commit proof log. Receipt missing: committed `ops/proof/liveproof-<run_id>.log` with non-empty run_id.
+- [x] Live scraping verified in-cluster (EKS) with provenance showing live_attempted=true and live_result=success (not skipped/failed) — run + commit proof log. Receipt: `ops/proof/bundles/m3-2026-02-07T01:55:39.183131+00:00/liveproof-2026-02-07T01:55:39.183131+00:00.log`.
 - [x] Scrape politeness, rate limiting, and anti-bot hardening implemented (required before adding more providers)
 - [x] Domain-backed dashboard endpoint (API first; UI can come later)
 - [x] Runbook: deploy, inspect last run, roll back, rotate secrets
- - [ ] Proof artifacts captured (for verification). Receipt missing: committed local proof bundle (`ops/proof/liveproof-<run_id>.log` + `state/proofs/<run_id>.json` + verify output transcript).
+ - [x] Proof artifacts captured (for verification). Receipt: `ops/proof/bundles/m3-2026-02-07T01:55:39.183131+00:00/` (includes liveproof log, proof JSON, verify transcript, manifest, README, excerpt).
    - CloudWatch log line with `run_id`
    - Provenance JSON line captured showing `live_attempted=true` and `live_result != skipped`
    - `ops/proof/liveproof-<run_id>.log` captured (contains JOBINTEL_RUN_ID + [run_scrape][provenance])
@@ -178,7 +178,7 @@ S3-compatible object store, optional alerts.
    - `python scripts/verify_published_s3.py --bucket <bucket> --run-id <run_id> --verify-latest` outputs OK
 
 Current Status:
-- Remaining Milestone 3 blockers are receipt-driven: in-cluster live proof, proof artifacts capture (`state/proofs/<run_id>.json` + verify output), and evidence that politeness signals (rate-limit/backoff/circuit-breaker + robots/allowlist) are present in real run logs/provenance.
+- Remaining Milestone 3 blockers are receipt-driven: evidence that politeness signals include backoff/circuit-breaker events in real run logs, plus infra receipts (`terraform apply` outputs and ECR image pull event evidence).
 - Deployment surfaces are in place (`ops/k8s/jobintel/dashboard.yaml`, `ops/k8s/RUNBOOK.md`, `src/ji_engine/dashboard/app.py`); remaining work is operational proof completion.
 
 Receipts (repo evidence):
@@ -186,7 +186,7 @@ Receipts (repo evidence):
 - Dashboard API + deploy surface: `src/ji_engine/dashboard/app.py`, `ops/k8s/jobintel/dashboard.yaml`
 - Runbook and proof procedures: `ops/k8s/RUNBOOK.md`, `docs/PROOF_RUN_CHECKLIST.md`
 - Terraform + EKS scaffolding present (but not counted as human-run receipt): `ops/aws/infra/eks/README.md`, `ops/aws/infra/eks/main.tf`
-- Missing operational receipts: `ops/proof/liveproof-<run_id>.log` with populated run_id, local `state/proofs/<run_id>.json` committed, and successful `verify_published_s3 --verify-latest` output tied to the same run_id.
+- Operational receipts captured for run_id `2026-02-07T01:55:39.183131+00:00`: `ops/proof/bundles/m3-2026-02-07T01:55:39.183131+00:00/liveproof-2026-02-07T01:55:39.183131+00:00.log`, `ops/proof/bundles/m3-2026-02-07T01:55:39.183131+00:00/proofs/2026-02-07T01:55:39.183131+00:00.json`, `ops/proof/bundles/m3-2026-02-07T01:55:39.183131+00:00/verify_published_s3-2026-02-07T01:55:39.183131+00:00.log`.
 
 ### Work Items
 - [x] Implement `scripts/publish_s3.py` and wire it into end-of-run (after artifacts persisted)
@@ -208,7 +208,7 @@ Receipts (repo evidence):
 - [ ] Proof requirements: provenance shows rate_limit policy applied; logs show backoff/circuit-breaker events; robots/allowlist decision recorded; test plan captured. Receipt missing: one committed run log/proof showing these fields for a real in-cluster run.
 - [x] Unit test: backoff + circuit-breaker decisions are deterministic given failure sequence
 - [ ] In-cluster proof: live run logs include rate-limit/backoff/circuit-breaker events for at least one provider. Receipt missing: committed log excerpt for the same run_id as proof JSON.
-- [ ] Proof run executed (EKS one-off job + real S3 publish + proof JSON captured) — proof JSON not yet captured locally. Receipt missing: `state/proofs/<run_id>.json` for a recent live run.
+- [x] Proof run executed (EKS one-off job + real S3 publish + proof JSON captured). Receipt: `ops/proof/bundles/m3-2026-02-07T01:55:39.183131+00:00/proofs/2026-02-07T01:55:39.183131+00:00.json`.
 - [ ] EKS bootstrap path exists (Terraform) + IRSA wiring documented. Receipt missing: human-run `terraform apply` outputs captured and referenced by the proof run.
 - [ ] EKS can pull image (ECR golden path documented + working). Receipt missing: pod/event evidence showing successful image pull from ECR for the proof job.
 - Receipts rule: infra execution boxes are checked only with receipts in hand (proof JSON + verify output).
@@ -240,7 +240,7 @@ Receipts (repo evidence):
 
 **Intent:** Move JobIntel to an **on-prem primary runtime** (Raspberry Pi k3s) with a **cloud disaster-recovery path** (AWS) that is **validated, rehearsed, and reproducible** — without turning AWS into a permanently running cost sink, and without creating a fragile “active/active” science project.
 
-Status note: all unchecked Milestone 4 boxes are currently receipt-missing (no committed on-prem rehearsal artifacts under `ops/proof/` for this milestone yet).
+Status note: backup + restore rehearsal receipts exist under `ops/proof/bundles/m4-20260207T020313Z-rehearsal/`; DR cloud rehearsal is now proven once under `ops/proof/bundles/m4-20260207T022326Z-dr/`; long-running on-prem stability receipts are still missing.
 
 **Principles / Non-Goals (keep us honest):**
 - ✅ **Primary execution on-prem** (k3s). Cloud is **cold standby** / DR only.
@@ -340,43 +340,43 @@ Backups must cover the “four truths”:
 **Requirements:**
 - [ ] DB backups:
   - [ ] scheduled `pg_dump` (or pg_basebackup if justified)
-  - [ ] compressed + encrypted
+  - [x] compressed + encrypted. Receipt: `ops/proof/bundles/m4-20260207T020313Z-rehearsal/backup_receipt.json` (`db_mode=state_runs_export` justified alternative).
   - [ ] retention policy (e.g., daily 14 days, weekly 8 weeks)
 - [ ] Artifact backups:
-  - [ ] `state/` + proof receipts + published outputs (as applicable)
-  - [ ] checksummed (hash manifest) and verified after upload
+  - [x] `state/` + proof receipts + published outputs (as applicable). Receipt: `ops/proof/bundles/m4-20260207T020313Z-rehearsal/backup_receipt.json`.
+  - [x] checksummed (hash manifest) and verified after upload. Receipt: `ops/proof/bundles/m4-20260207T020313Z-rehearsal/checksum_verify.log`.
 - [ ] Offsite target:
   - [ ] AWS S3 bucket with versioning enabled
   - [ ] least-privilege IAM user/role credentials
   - [ ] SSE-S3 or SSE-KMS + documented key ownership
 - [ ] Restore test:
-  - [ ] at least one full restore to a clean environment (local or cloud)
-  - [ ] evidence captured (timestamps, run IDs, checksums)
+  - [x] at least one full restore to a clean environment (local or cloud). Receipt: `ops/proof/bundles/m4-20260207T020313Z-rehearsal/restore_receipt.json` (`restore_dir=/private/tmp/jobintel-m4-restore-20260207T020313Z-rehearsal`).
+  - [x] evidence captured (timestamps, run IDs, checksums). Receipts: `ops/proof/bundles/m4-20260207T020313Z-rehearsal/backup.log`, `ops/proof/bundles/m4-20260207T020313Z-rehearsal/checksum_verify.log`, `ops/proof/bundles/m4-20260207T020313Z-rehearsal/restore_verify.log`.
 
 #### 7) Cloud DR Path is Real (Cold Standby), Proven Once, and Tear-Down Friendly
 The goal is **rebuild on demand**, not “always-on cloud.”
 
-- [ ] DR infrastructure definition exists (Terraform or equivalent):
+- [x] DR infrastructure definition exists (Terraform or equivalent):
   - [ ] Either:
     - [ ] EKS minimal cluster definition, or
-    - [ ] EC2 + k3s (cheaper and simpler for “cold standby”)
-- [ ] DR runbook exists: “from zero to running JobIntel”
-  - [ ] provision infra
-  - [ ] deploy manifests
-  - [ ] restore DB + artifacts
-  - [ ] validate a job run
-  - [ ] tear down cloud infra
-- [ ] DR rehearsal performed end-to-end at least once:
-  - [ ] evidence captured (logs, output artifacts)
-  - [ ] teardown succeeded and verified (no lingering spend)
+    - [x] EC2 + k3s (cheaper and simpler for “cold standby”)
+- [x] DR runbook exists: “from zero to running JobIntel”
+  - [x] provision infra
+  - [x] deploy manifests
+  - [x] restore DB + artifacts
+  - [x] validate a job run
+  - [x] tear down cloud infra
+- [x] DR rehearsal performed end-to-end at least once:
+  - [x] evidence captured (logs, output artifacts). Receipts: `ops/proof/bundles/m4-20260207T022326Z-dr/dr_rehearsal_receipt.json`, `ops/proof/bundles/m4-20260207T022326Z-dr/provision_terraform_apply_x86_ami.log`, `ops/proof/bundles/m4-20260207T022326Z-dr/restore.log`, `ops/proof/bundles/m4-20260207T022326Z-dr/run.log`.
+  - [x] teardown succeeded and verified (no lingering spend). Receipts: `ops/proof/bundles/m4-20260207T022326Z-dr/teardown.log`, `ops/proof/bundles/m4-20260207T022326Z-dr/teardown_verify_no_lingering.log`.
 
 #### 8) Runbooks: Normal Ops, Upgrades, Disaster Recovery
 Minimum required runbooks:
-- [ ] `RUNBOOK_ONPREM_INSTALL.md` (k3s bootstrap, storage, networking)
-- [ ] `RUNBOOK_DEPLOY.md` (deploy app, rotate secrets, inspect last run)
-- [ ] `RUNBOOK_UPGRADES.md` (k3s + add-ons + app image)
-- [ ] `RUNBOOK_BACKUPS.md` (what is backed up, schedule, retention, restore steps)
-- [ ] `RUNBOOK_DISASTER_RECOVERY.md` (AWS cold start restore + validation + teardown)
+- [x] `RUNBOOK_ONPREM_INSTALL.md` (k3s bootstrap, storage, networking)
+- [x] `RUNBOOK_DEPLOY.md` (deploy app, rotate secrets, inspect last run)
+- [x] `RUNBOOK_UPGRADES.md` (k3s + add-ons + app image)
+- [x] `RUNBOOK_BACKUPS.md` (what is backed up, schedule, retention, restore steps)
+- [x] `RUNBOOK_DISASTER_RECOVERY.md` (AWS cold start restore + validation + teardown)
 - [ ] Each runbook includes:
   - [ ] preflight checks
   - [ ] success criteria
@@ -385,10 +385,10 @@ Minimum required runbooks:
 
 #### 9) Evidence / Proof Artifacts (So This Isn’t Just “It Works On My Desk”)
 - [ ] Proof artifacts stored in repo or documented location:
-  - [ ] backup success logs + checksum verification output
-  - [ ] restore proof (DB restored + artifacts present)
-  - [ ] DR rehearsal proof (cloud came up, run executed, outputs produced)
-- [ ] All evidence references run_id and timestamps.
+  - [x] backup success logs + checksum verification output. Receipts: `ops/proof/bundles/m4-20260207T020313Z-rehearsal/backup.log`, `ops/proof/bundles/m4-20260207T020313Z-rehearsal/checksum_verify.log`.
+  - [x] restore proof (DB restored + artifacts present). Receipt: `ops/proof/bundles/m4-20260207T020313Z-rehearsal/restore_receipt.json`.
+  - [x] DR rehearsal proof (cloud came up, run executed, outputs produced). Receipts: `ops/proof/bundles/m4-20260207T022326Z-dr/dr_rehearsal_receipt.json`, `ops/proof/bundles/m4-20260207T022326Z-dr/run.log`.
+- [x] All evidence references run_id and timestamps. Receipts: `ops/proof/bundles/m4-20260207T020313Z-rehearsal/backup.log`, `ops/proof/bundles/m4-20260207T020313Z-rehearsal/restore.log`.
 
 ---
 
@@ -407,35 +407,36 @@ Minimum required runbooks:
 ---
 
 ### Deliverables (Repo Artifacts)
-- [ ] `ops/onprem/`:
-  - [ ] k3s install scripts or automation
-  - [ ] storage setup notes/scripts
-  - [ ] networking notes (ingress/DNS/VPN)
-- [ ] `ops/dr/`:
-  - [ ] Terraform (EKS or EC2+k3s) OR equivalent reproducible infra code
-  - [ ] teardown scripts
+- [x] `ops/onprem/`:
+  - [x] k3s install scripts or automation
+  - [x] storage setup notes/scripts
+  - [x] networking notes (ingress/DNS/VPN)
+- [x] `ops/dr/`:
+  - [x] Terraform (EKS or EC2+k3s) OR equivalent reproducible infra code
+  - [x] teardown scripts
 - [ ] `ops/runbooks/` (or `ops/k8s/` if that’s your existing convention):
   - [ ] all runbooks listed above
 - [ ] `scripts/ops/`:
-  - [ ] backup script(s) (db + artifacts) with encryption + verification
-  - [ ] restore script(s)
-  - [ ] DR bring-up + validate + teardown orchestration script
+  - [x] backup script(s) (db + artifacts) with encryption + verification. Receipts: `scripts/ops/backup_onprem.py`, `scripts/ops/restore_onprem.py`, `ops/proof/bundles/m4-20260207T020313Z-rehearsal/backup_receipt.json`.
+  - [x] restore script(s)
+  - [x] DR bring-up + validate + teardown orchestration script
 
 ---
 
 ### Acceptance Test (Single Command “Prove It”)
 A “prove it” sequence exists that can be run by Future You:
+- [x] Deterministic prove-it orchestration exists in plan mode with receipts bundle (`scripts/ops/prove_it_m4.py`, `tests/test_prove_it_m4.py`)
 - [ ] On-prem:
   - [ ] deploy
   - [ ] run a scrape/job
   - [ ] confirm outputs + proof receipts
-  - [ ] run backups
+  - [x] run backups. Receipt: `ops/proof/bundles/m4-20260207T020313Z-rehearsal/backup_receipt.json`.
 - [ ] DR rehearsal:
-  - [ ] bring up cloud infra
-  - [ ] restore
-  - [ ] run job
-  - [ ] verify outputs
-  - [ ] teardown cloud infra
+  - [x] bring up cloud infra. Receipt: `ops/proof/bundles/m4-20260207T022326Z-dr/provision_terraform_apply_x86_ami.log`.
+  - [x] restore. Receipt: `ops/proof/bundles/m4-20260207T022326Z-dr/restore_receipt.json`.
+  - [x] run job. Receipt: `ops/proof/bundles/m4-20260207T022326Z-dr/run.log`.
+  - [x] verify outputs. Receipt: `ops/proof/bundles/m4-20260207T022326Z-dr/dr_rehearsal_receipt.json`.
+  - [x] teardown cloud infra. Receipts: `ops/proof/bundles/m4-20260207T022326Z-dr/teardown.log`, `ops/proof/bundles/m4-20260207T022326Z-dr/teardown_verify_no_lingering.log`.
 
 Milestone 4 is DONE when the above is rehearsed once end-to-end and you can repeat it without discovering surprise tribal knowledge.
 
@@ -469,22 +470,22 @@ Milestone 4 is DONE when the above is rehearsed once end-to-end and you can repe
 **Goal:** track jobs across time, reduce noise, and make changes meaningful.
 
 ### Definition of Done (DoD)
-- [ ] `job_identity()` produces stable IDs across runs for the same posting
+- [x] `job_identity()` produces stable IDs across runs for the same posting
 - [x] URL normalization reduces false deltas
-- [ ] Dedupe collapse: same job across multiple listings/URLs → one canonical record
-- [ ] “Changes since last run” uses identity-based diffing (not just row diffs)
+- [x] Dedupe collapse: same job across multiple listings/URLs → one canonical record
+- [x] “Changes since last run” uses identity-based diffing (not just row diffs)
 - [ ] History directory grows predictably (retention rules)
-- [ ] **User State overlay** exists and affects outputs:
+- [x] **User State overlay** exists and affects outputs:
   - applied / ignore / interviewing / saved, etc.
   - shortlist + alerts respect this state (filter or annotate)
 
 ### Work Items
-- [ ] Implement/validate identity strategy (title/location/team + URL + JD hash fallback)
-- [ ] Store per-run identity map + provenance in `state/history/<profile>/...`
-- [ ] Identity-based diffs for new/changed/removed
-- [ ] Implement `state/user_state/<profile>.json` overlay:
+- [x] Implement/validate identity strategy (title/location/team + URL + JD hash fallback)
+- [ ] Store per-run identity map + provenance in `state/history/<profile>/...`. Receipt missing: committed `state/history/<profile>/` artifacts and test coverage for retention/shape.
+- [x] Identity-based diffs for new/changed/removed
+- [x] Implement `state/user_state/<profile>.json` overlay:
   - schema: `{ "<job_id>": { "status": "...", "date": "...", "notes": "..." } }`
-  - integrate into shortlist writer and alerting (filtering semantics defined)
+  - integrate into shortlist writer and alerting (filtering + de-prioritization semantics defined and test-backed)
 - [ ] Retention policy (keep last N runs + daily snapshots) documented and enforced
 
 ---

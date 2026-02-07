@@ -1,0 +1,13 @@
+{
+  "backup_uri": "s3://my-real-jobintel-bucket/jobintel/onprem/backups/20260207T022326Z-dr",
+  "restore_log": "ops/proof/bundles/m4-20260207T022326Z-dr/restore.log",
+  "restore_target": "ec2-k3s-dr-host:/tmp/jobintel-dr-restore/restored",
+  "run_id": "20260207T022326Z-dr",
+  "schema_version": 1,
+  "verified": {
+    "db_present": true,
+    "proof_present": true,
+    "state_present": true
+  },
+  "verify_log": "ops/proof/bundles/m4-20260207T022326Z-dr/restore_verify.log"
+}

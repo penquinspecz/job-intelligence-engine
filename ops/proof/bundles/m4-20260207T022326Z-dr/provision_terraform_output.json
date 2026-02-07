@@ -1,0 +1,27 @@
+{
+  "instance_id": {
+    "sensitive": false,
+    "type": "string",
+    "value": "i-03b5d644bb4e6d0b1"
+  },
+  "kubeconfig_hint": {
+    "sensitive": false,
+    "type": "string",
+    "value": "scp ubuntu@44.204.229.202:/etc/rancher/k3s/k3s.yaml ./k3s-dr.yaml"
+  },
+  "private_ip": {
+    "sensitive": false,
+    "type": "string",
+    "value": "172.31.87.104"
+  },
+  "public_ip": {
+    "sensitive": false,
+    "type": "string",
+    "value": "44.204.229.202"
+  },
+  "ssh_command": {
+    "sensitive": false,
+    "type": "string",
+    "value": "ssh -i \u003cpath-to-key\u003e ubuntu@44.204.229.202"
+  }
+}

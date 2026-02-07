@@ -63,6 +63,7 @@ from ji_engine.utils.content_fingerprint import content_fingerprint
 from ji_engine.utils.diff_report import build_diff_markdown, build_diff_report
 from ji_engine.utils.dotenv import load_dotenv
 from ji_engine.utils.job_identity import job_identity
+from ji_engine.utils.redaction import scan_json_for_secrets, scan_text_for_secrets
 from ji_engine.utils.user_state import load_user_state_checked, normalize_user_status
 from ji_engine.utils.verification import (
     build_verifiable_artifacts,
@@ -322,13 +323,41 @@ def _read_json(path: Path) -> Any:
 
 def _write_json(path: Path, obj: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    _redaction_guard_json(path, obj)
     path.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _write_canonical_json(path: Path, obj: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    _redaction_guard_json(path, obj)
     payload = json.dumps(obj, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
     path.write_text(payload, encoding="utf-8")
+
+
+def _redaction_enforce_enabled() -> bool:
+    return os.environ.get("REDACTION_ENFORCE", "").strip() == "1"
+
+
+def _redaction_guard_text(path: Path, text: str) -> None:
+    findings = scan_text_for_secrets(text)
+    if not findings:
+        return
+    summary = ", ".join(sorted({f"{item.pattern}@{item.location}" for item in findings}))
+    msg = f"Potential secret-like content detected for {path}: {summary}"
+    if _redaction_enforce_enabled():
+        raise RuntimeError(msg)
+    logger.warning("%s (set REDACTION_ENFORCE=1 to fail closed)", msg)
+
+
+def _redaction_guard_json(path: Path, payload: Any) -> None:
+    findings = scan_json_for_secrets(payload)
+    if not findings:
+        return
+    summary = ", ".join(sorted({f"{item.pattern}@{item.location}" for item in findings}))
+    msg = f"Potential secret-like JSON content detected for {path}: {summary}"
+    if _redaction_enforce_enabled():
+        raise RuntimeError(msg)
+    logger.warning("%s (set REDACTION_ENFORCE=1 to fail closed)", msg)
 
 
 _PROOF_PROVENANCE_FIELDS = [
@@ -1177,9 +1206,9 @@ def _persist_run_metadata(
         payload["failed_stage"] = telemetry["failed_stage"]
     path = _run_metadata_path(run_id)
     path.parent.mkdir(parents=True, exist_ok=True)
+    _redaction_guard_json(path, payload)
     path.write_text(
-        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n",
-        encoding="utf-8",
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8"
     )
     return path
 
@@ -1967,6 +1996,7 @@ _FIELD_DIFF_KEYS: List[Tuple[str, str]] = [
     ("score", "score"),
     ("description_text", "description"),
 ]
+_DEPRIORITIZED_USER_STATUSES = {"applied", "interviewing"}
 
 
 def _hash_job(job: Dict[str, Any]) -> str:
@@ -2011,6 +2041,32 @@ def _filter_by_ids(items: List[Dict[str, Any]], blocked_ids: set[str]) -> List[D
     if not blocked_ids:
         return list(items)
     return [item for item in items if _job_key(item) not in blocked_ids]
+
+
+def _status_for_item(item: Dict[str, Any], state_map: Dict[str, Dict[str, Any]]) -> str:
+    key = _job_key(item)
+    record = state_map.get(key)
+    if not isinstance(record, dict):
+        return ""
+    return normalize_user_status(record.get("status") or "")
+
+
+def _annotate_and_deprioritize_items(
+    items: List[Dict[str, Any]],
+    state_map: Dict[str, Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    primary: List[Dict[str, Any]] = []
+    deprioritized: List[Dict[str, Any]] = []
+    for item in items:
+        status = _status_for_item(item, state_map)
+        enriched = dict(item)
+        if status:
+            enriched["user_state_status"] = status
+        if status in _DEPRIORITIZED_USER_STATUSES:
+            deprioritized.append(enriched)
+        else:
+            primary.append(enriched)
+    return primary + deprioritized
 
 
 def _apply_user_state_to_alerts(
@@ -3499,7 +3555,7 @@ def main() -> int:
                 state_path = _state_last_ranked(provider, profile)
                 state_exists = state_path.exists()
                 curr = _read_json(ranked_json)
-                _, user_state_counts, ignored_ids, suppress_new_ids = _user_state_sets(profile, curr)
+                state_map, user_state_counts, ignored_ids, suppress_new_ids = _user_state_sets(profile, curr)
                 user_state_counts_by_provider_profile.setdefault(provider, {})[profile] = user_state_counts
                 alerts_json, alerts_md = _alerts_paths(provider, profile)
                 last_seen_path = _last_seen_path(provider, profile)
@@ -3587,6 +3643,11 @@ def main() -> int:
                 visible_changed_jobs = _filter_by_ids(changed_jobs, ignored_ids)
                 visible_removed_jobs = _filter_by_ids(removed_jobs, ignored_ids)
                 visible_new_jobs_for_notifications = _filter_by_ids(visible_new_jobs, suppress_new_ids)
+                visible_changed_jobs = _annotate_and_deprioritize_items(visible_changed_jobs, state_map)
+                visible_new_jobs_for_notifications = _annotate_and_deprioritize_items(
+                    visible_new_jobs_for_notifications,
+                    state_map,
+                )
 
                 # Append "Changes since last run" section to shortlist (filtered by min_alert_score)
                 _append_shortlist_changes_section(
@@ -3611,7 +3672,9 @@ def main() -> int:
                     ignored_ids=ignored_ids,
                 )
                 _write_canonical_json(diff_json_path, diff_report)
-                diff_md_path.write_text(build_diff_markdown(diff_report), encoding="utf-8")
+                diff_markdown = build_diff_markdown(diff_report)
+                _redaction_guard_text(diff_md_path, diff_markdown)
+                diff_md_path.write_text(diff_markdown, encoding="utf-8")
                 diff_summary_by_provider_profile.setdefault(provider, {})[profile] = _diff_summary_entry(
                     run_id=run_id,
                     provider=provider,
@@ -3708,10 +3771,15 @@ def main() -> int:
                     no_post=args.no_post or all_unavailable,
                     extra_lines=extra_lines or None,
                     diff_items={
-                        "new": [
-                            item for item in (diff_report.get("added") or []) if item.get("id") not in suppress_new_ids
-                        ],
-                        "changed": diff_report.get("changed") or [],
+                        "new": _annotate_and_deprioritize_items(
+                            [
+                                item
+                                for item in (diff_report.get("added") or [])
+                                if item.get("id") not in suppress_new_ids
+                            ],
+                            state_map,
+                        ),
+                        "changed": _annotate_and_deprioritize_items(diff_report.get("changed") or [], state_map),
                     },
                 )
                 discord_status_by_provider.setdefault(provider, {})[profile] = discord_status
@@ -3766,7 +3834,11 @@ def main() -> int:
                     lines.append(f"🆕 **New high-scoring jobs (>= {args.min_alert_score})**")
                     for j in interesting_new[:8]:
                         loc = j.get("location") or j.get("locationName") or ""
-                        lines.append(f"- **{j.get('score')}** [{j.get('role_band')}] {j.get('title')} ({loc})")
+                        status = str(j.get("user_state_status") or "").strip()
+                        status_tag = f" [{status}]" if status else ""
+                        lines.append(
+                            f"- **{j.get('score')}** [{j.get('role_band')}] {j.get('title')} ({loc}){status_tag}"
+                        )
                         if j.get("apply_url"):
                             lines.append(f"  {j['apply_url']}")
                     lines.append("")
@@ -3775,7 +3847,11 @@ def main() -> int:
                     lines.append(f"♻️ **Changed high-scoring jobs (>= {args.min_alert_score})**")
                     for j in interesting_changed[:8]:
                         loc = j.get("location") or j.get("locationName") or ""
-                        lines.append(f"- **{j.get('score')}** [{j.get('role_band')}] {j.get('title')} ({loc})")
+                        status = str(j.get("user_state_status") or "").strip()
+                        status_tag = f" [{status}]" if status else ""
+                        lines.append(
+                            f"- **{j.get('score')}** [{j.get('role_band')}] {j.get('title')} ({loc}){status_tag}"
+                        )
                         if j.get("apply_url"):
                             lines.append(f"  {j['apply_url']}")
                     lines.append("")

@@ -30,7 +30,6 @@ except ModuleNotFoundError:
 
 import argparse
 import csv
-import io
 import json
 import logging
 import os
@@ -61,6 +60,7 @@ from ji_engine.utils.user_state import load_user_state_checked, normalize_user_s
 
 logger = logging.getLogger(__name__)
 JSON_DUMP_SETTINGS = {"ensure_ascii": False, "separators": (",", ":"), "sort_keys": True}
+_DEPRIORITIZED_USER_STATUSES = {"applied", "interviewing"}
 CSV_FIELDNAMES = [
     "job_id",
     "score",
@@ -1011,54 +1011,78 @@ def _dedupe_jobs_for_scoring(jobs: List[Dict[str, Any]]) -> List[Dict[str, Any]]
 # ------------------------------------------------------------
 
 
+def _shortlist_profile(path: Path) -> Optional[str]:
+    name = path.name
+    if name.startswith("openai_shortlist.") and name.endswith(".md"):
+        return name[len("openai_shortlist.") : -len(".md")]
+    return None
+
+
+def _truncate_note(note: str, limit: int = 160) -> str:
+    trimmed = " ".join(note.split()).strip()
+    if len(trimmed) <= limit:
+        return trimmed
+    return trimmed[: limit - 1].rstrip() + "…"
+
+
+def _load_user_state_map(profile: Optional[str]) -> Dict[str, Dict[str, Any]]:
+    if not profile:
+        return {}
+    path = USER_STATE_DIR / f"{profile}.json"
+    data, warning = load_user_state_checked(path)
+    if warning:
+        logger.warning("%s", warning)
+        return {}
+    return data
+
+
+def _user_state_status_note(job: Dict[str, Any], user_state: Dict[str, Dict[str, Any]]) -> Tuple[str, str]:
+    identity = job_identity(job)
+    if not identity:
+        return "", ""
+    record = user_state.get(identity)
+    if not isinstance(record, dict):
+        return "", ""
+    status = normalize_user_status(record.get("status") or "")
+    note = _norm(record.get("notes") or "")
+    return status, note
+
+
+def _shortlist_entries(
+    scored: List[Dict[str, Any]],
+    *,
+    min_score: int,
+    user_state: Dict[str, Dict[str, Any]],
+) -> List[Tuple[Dict[str, Any], str, str]]:
+    primary: List[Tuple[Dict[str, Any], str, str]] = []
+    deprioritized: List[Tuple[Dict[str, Any], str, str]] = []
+    for raw_job in scored:
+        if raw_job.get("score", 0) < min_score or raw_job.get("enrich_status") == "unavailable":
+            continue
+        job = _strip_ephemeral_fields(raw_job)
+        status, note = _user_state_status_note(job, user_state)
+        if status == "ignore":
+            continue
+        entry = (job, status, note)
+        if status in _DEPRIORITIZED_USER_STATUSES:
+            deprioritized.append(entry)
+        else:
+            primary.append(entry)
+    return primary + deprioritized
+
+
 def write_shortlist_md(scored: List[Dict[str, Any]], out_path: Path, min_score: int) -> None:
-    def _shortlist_profile(path: Path) -> Optional[str]:
-        name = path.name
-        if name.startswith("openai_shortlist.") and name.endswith(".md"):
-            return name[len("openai_shortlist.") : -len(".md")]
-        return None
-
-    def _truncate_note(note: str, limit: int = 160) -> str:
-        trimmed = " ".join(note.split()).strip()
-        if len(trimmed) <= limit:
-            return trimmed
-        return trimmed[: limit - 1].rstrip() + "…"
-
-    def _load_user_state_map(profile: Optional[str]) -> Dict[str, Dict[str, Any]]:
-        if not profile:
-            return {}
-        path = USER_STATE_DIR / f"{profile}.json"
-        data, warning = load_user_state_checked(path)
-        if warning:
-            logger.warning("%s", warning)
-            return {}
-        return data
-
-    shortlist = [
-        _strip_ephemeral_fields(j)
-        for j in scored
-        if j.get("score", 0) >= min_score and j.get("enrich_status") != "unavailable"
-    ]
     profile = _shortlist_profile(out_path)
     user_state = _load_user_state_map(profile)
+    entries = _shortlist_entries(scored, min_score=min_score, user_state=user_state)
 
     lines: List[str] = ["# OpenAI Shortlist", "", f"Min score: **{min_score}**", ""]
-    for idx, job in enumerate(shortlist):
+    for idx, (job, status, note) in enumerate(entries):
         title = _norm(job.get("title")) or "Untitled"
         score = job.get("score", 0)
         role_band = _norm(job.get("role_band"))
         apply_url = _norm(job.get("apply_url"))
         job_id = _norm(job.get("job_id"))
-        identity = job_identity(job)
-        status = ""
-        note = ""
-        if identity and identity in user_state:
-            record = user_state.get(identity) or {}
-            if isinstance(record, dict):
-                status = normalize_user_status(record.get("status") or "")
-                note = _norm(record.get("notes") or "")
-        if status == "ignore":
-            continue
 
         status_tag = f" [{status}]" if status else ""
         lines.append(f"## {title} — {score} [{role_band}]{status_tag}")
@@ -1673,27 +1697,27 @@ def main() -> int:
     families = build_families(ranked_scored)
     atomic_write_text(out_families, _serialize_json(families))
 
-    shortlist_content: str
-    shortlist_buffer = io.StringIO()
-    shortlist = [
-        _strip_ephemeral_fields(j)
-        for j in scored
-        if j.get("score", 0) >= args.min_score and j.get("enrich_status") != "unavailable"
-    ]
+    profile = _shortlist_profile(out_md)
+    user_state = _load_user_state_map(profile)
+    shortlist_entries = _shortlist_entries(scored, min_score=args.min_score, user_state=user_state)
+    shortlist = [entry[0] for entry in shortlist_entries]
 
     lines: List[str] = ["# OpenAI Shortlist", "", f"Min score: **{args.min_score}**", ""]
-    for job in shortlist:
+    for job, status, note in shortlist_entries:
         title = _norm(job.get("title")) or "Untitled"
         score = job.get("score", 0)
         role_band = _norm(job.get("role_band"))
         apply_url = _norm(job.get("apply_url"))
         job_id = _norm(job.get("job_id"))
 
-        lines.append(f"## {title} — {score} [{role_band}]")
+        status_tag = f" [{status}]" if status else ""
+        lines.append(f"## {title} — {score} [{role_band}]{status_tag}")
         if apply_url:
             lines.append(f"[Apply link]({apply_url})")
         if job_id:
             lines.append(f"(job_id: {job_id})")
+        if note:
+            lines.append(f"Note: {_truncate_note(note)}")
 
         fit = job.get("fit_signals") or []
         risk = job.get("risk_signals") or []
