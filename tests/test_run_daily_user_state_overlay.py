@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import scripts.run_daily as run_daily
 
@@ -56,3 +57,24 @@ def test_user_state_sets_collect_counts_and_suppression(tmp_path: Path, monkeypa
     assert counts == {"ignore": 1, "saved": 1, "applied": 1, "interviewing": 1}
     assert ignored_ids == {"a"}
     assert suppress_new_ids == {"a", "b", "d"}
+
+
+def test_annotate_and_deprioritize_items_marks_status_and_pushes_down_applied_interviewing() -> None:
+    items = [
+        {"job_id": "a", "title": "A", "score": 95},
+        {"job_id": "b", "title": "B", "score": 99},
+        {"job_id": "c", "title": "C", "score": 91},
+        {"job_id": "d", "title": "D", "score": 88},
+    ]
+    state_map = {
+        "b": {"status": "applied"},
+        "c": {"status": "interviewing"},
+        "d": {"status": "saved"},
+    }
+
+    out = run_daily._annotate_and_deprioritize_items(items, state_map)
+
+    assert [item["job_id"] for item in out] == ["a", "d", "b", "c"]
+    assert out[1]["user_state_status"] == "saved"
+    assert out[2]["user_state_status"] == "applied"
+    assert out[3]["user_state_status"] == "interviewing"

@@ -41,7 +41,7 @@ If a change doesn’t advance a milestone’s Definition of Done (DoD), it’s p
 
 ## Current State (as of this commit)
 
-Last verified: `2026-02-07T02:03:22Z` @ `0feaed9`
+Last verified: `2026-02-07T02:11:39Z` @ `ca5814d`
 
 ### Completed foundation (verified in repo/tests)
 - [x] Deterministic ranking + tie-breakers
@@ -485,7 +485,7 @@ Milestone 4 is DONE when the above is rehearsed once end-to-end and you can repe
 - [x] Identity-based diffs for new/changed/removed
 - [x] Implement `state/user_state/<profile>.json` overlay:
   - schema: `{ "<job_id>": { "status": "...", "date": "...", "notes": "..." } }`
-  - integrate into shortlist writer and alerting (filtering semantics defined)
+  - integrate into shortlist writer and alerting (filtering + de-prioritization semantics defined and test-backed)
 - [ ] Retention policy (keep last N runs + daily snapshots) documented and enforced
 
 ---

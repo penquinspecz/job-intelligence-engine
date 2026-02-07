@@ -60,12 +60,20 @@ def test_build_run_summary_message_includes_identity_diff_sections(tmp_path: Pat
         timestamp="2026-01-22T00:00:00+00:00",
         diff_top_n=2,
         diff_items={
-            "new": [{"title": "New Role", "score": 88, "apply_url": "https://example.com/new"}],
+            "new": [
+                {
+                    "title": "New Role",
+                    "score": 88,
+                    "apply_url": "https://example.com/new",
+                    "user_state_status": "saved",
+                }
+            ],
             "changed": [
                 {
                     "title": "Changed Role",
                     "score": 83,
                     "apply_url": "https://example.com/changed",
+                    "user_state_status": "applied",
                     "changed_fields": ["title", "score"],
                 }
             ],
@@ -76,4 +84,6 @@ def test_build_run_summary_message_includes_identity_diff_sections(tmp_path: Pat
     assert "New Role" in msg
     assert "Top changed (identity diff, max 2):" in msg
     assert "Changed Role" in msg
+    assert "[saved]" in msg
+    assert "[applied]" in msg
     assert "changed: title, score" in msg
