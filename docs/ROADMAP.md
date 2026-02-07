@@ -41,7 +41,7 @@ If a change doesn’t advance a milestone’s Definition of Done (DoD), it’s p
 
 ## Current State (as of this commit)
 
-Last verified: `2026-02-07T01:57:19Z` @ `189cd29`
+Last verified: `2026-02-07T02:03:22Z` @ `0feaed9`
 
 ### Completed foundation (verified in repo/tests)
 - [x] Deterministic ranking + tie-breakers
@@ -240,7 +240,7 @@ Receipts (repo evidence):
 
 **Intent:** Move JobIntel to an **on-prem primary runtime** (Raspberry Pi k3s) with a **cloud disaster-recovery path** (AWS) that is **validated, rehearsed, and reproducible** — without turning AWS into a permanently running cost sink, and without creating a fragile “active/active” science project.
 
-Status note: all unchecked Milestone 4 boxes are currently receipt-missing (no committed on-prem rehearsal artifacts under `ops/proof/` for this milestone yet).
+Status note: backup + restore rehearsal receipts now exist under `ops/proof/bundles/m4-20260207T020313Z-rehearsal/`; DR compute rehearsal and long-running on-prem stability receipts are still missing.
 
 **Principles / Non-Goals (keep us honest):**
 - ✅ **Primary execution on-prem** (k3s). Cloud is **cold standby** / DR only.
@@ -340,18 +340,18 @@ Backups must cover the “four truths”:
 **Requirements:**
 - [ ] DB backups:
   - [ ] scheduled `pg_dump` (or pg_basebackup if justified)
-  - [ ] compressed + encrypted
+  - [x] compressed + encrypted. Receipt: `ops/proof/bundles/m4-20260207T020313Z-rehearsal/backup_receipt.json` (`db_mode=state_runs_export` justified alternative).
   - [ ] retention policy (e.g., daily 14 days, weekly 8 weeks)
 - [ ] Artifact backups:
-  - [ ] `state/` + proof receipts + published outputs (as applicable)
-  - [ ] checksummed (hash manifest) and verified after upload
+  - [x] `state/` + proof receipts + published outputs (as applicable). Receipt: `ops/proof/bundles/m4-20260207T020313Z-rehearsal/backup_receipt.json`.
+  - [x] checksummed (hash manifest) and verified after upload. Receipt: `ops/proof/bundles/m4-20260207T020313Z-rehearsal/checksum_verify.log`.
 - [ ] Offsite target:
   - [ ] AWS S3 bucket with versioning enabled
   - [ ] least-privilege IAM user/role credentials
   - [ ] SSE-S3 or SSE-KMS + documented key ownership
 - [ ] Restore test:
-  - [ ] at least one full restore to a clean environment (local or cloud)
-  - [ ] evidence captured (timestamps, run IDs, checksums)
+  - [x] at least one full restore to a clean environment (local or cloud). Receipt: `ops/proof/bundles/m4-20260207T020313Z-rehearsal/restore_receipt.json` (`restore_dir=/private/tmp/jobintel-m4-restore-20260207T020313Z-rehearsal`).
+  - [x] evidence captured (timestamps, run IDs, checksums). Receipts: `ops/proof/bundles/m4-20260207T020313Z-rehearsal/backup.log`, `ops/proof/bundles/m4-20260207T020313Z-rehearsal/checksum_verify.log`, `ops/proof/bundles/m4-20260207T020313Z-rehearsal/restore_verify.log`.
 
 #### 7) Cloud DR Path is Real (Cold Standby), Proven Once, and Tear-Down Friendly
 The goal is **rebuild on demand**, not “always-on cloud.”
@@ -385,10 +385,10 @@ Minimum required runbooks:
 
 #### 9) Evidence / Proof Artifacts (So This Isn’t Just “It Works On My Desk”)
 - [ ] Proof artifacts stored in repo or documented location:
-  - [ ] backup success logs + checksum verification output
-  - [ ] restore proof (DB restored + artifacts present)
+  - [x] backup success logs + checksum verification output. Receipts: `ops/proof/bundles/m4-20260207T020313Z-rehearsal/backup.log`, `ops/proof/bundles/m4-20260207T020313Z-rehearsal/checksum_verify.log`.
+  - [x] restore proof (DB restored + artifacts present). Receipt: `ops/proof/bundles/m4-20260207T020313Z-rehearsal/restore_receipt.json`.
   - [ ] DR rehearsal proof (cloud came up, run executed, outputs produced)
-- [ ] All evidence references run_id and timestamps.
+- [x] All evidence references run_id and timestamps. Receipts: `ops/proof/bundles/m4-20260207T020313Z-rehearsal/backup.log`, `ops/proof/bundles/m4-20260207T020313Z-rehearsal/restore.log`.
 
 ---
 
@@ -417,7 +417,7 @@ Minimum required runbooks:
 - [ ] `ops/runbooks/` (or `ops/k8s/` if that’s your existing convention):
   - [ ] all runbooks listed above
 - [ ] `scripts/ops/`:
-  - [ ] backup script(s) (db + artifacts) with encryption + verification. Receipt missing: committed backup/retention scripts under `scripts/ops/`.
+  - [x] backup script(s) (db + artifacts) with encryption + verification. Receipts: `scripts/ops/backup_onprem.py`, `scripts/ops/restore_onprem.py`, `ops/proof/bundles/m4-20260207T020313Z-rehearsal/backup_receipt.json`.
   - [x] restore script(s)
   - [x] DR bring-up + validate + teardown orchestration script
 
@@ -430,7 +430,7 @@ A “prove it” sequence exists that can be run by Future You:
   - [ ] deploy
   - [ ] run a scrape/job
   - [ ] confirm outputs + proof receipts
-  - [ ] run backups. Receipt missing: committed backup execution receipts under `ops/proof/bundles/m4-<run_id>/`.
+  - [x] run backups. Receipt: `ops/proof/bundles/m4-20260207T020313Z-rehearsal/backup_receipt.json`.
 - [ ] DR rehearsal:
   - [ ] bring up cloud infra
   - [ ] restore

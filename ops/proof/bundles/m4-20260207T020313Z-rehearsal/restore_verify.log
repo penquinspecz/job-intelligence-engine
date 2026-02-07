@@ -1,0 +1,6 @@
+sha256 db_backup.enc: expected=6c418f36ae023c7aeaafe6851acb52dfcac2d0a9890a880820087c17cd6a13c6 actual=6c418f36ae023c7aeaafe6851acb52dfcac2d0a9890a880820087c17cd6a13c6 ok=True
+sha256 artifacts_backup.enc: expected=c296bb83b021a3b17428545e7a0831326f7e69524887998e61c62476ce87f199 actual=c296bb83b021a3b17428545e7a0831326f7e69524887998e61c62476ce87f199 ok=True
+db alternative restored: /private/tmp/jobintel-m4-restore-20260207T020313Z-rehearsal/db_export
+verify state_present=True
+verify proof_present=True
+verify db_present=True

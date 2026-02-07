@@ -1,0 +1,14 @@
+{
+  "backup_uri": "s3://my-real-jobintel-bucket/jobintel/onprem/backups/20260207T020313Z-rehearsal",
+  "db_mode": "state_runs_export",
+  "restore_dir": "/private/tmp/jobintel-m4-restore-20260207T020313Z-rehearsal",
+  "restore_log": "/Users/christophermenendez/Projects/job-intelligence-engine/ops/proof/bundles/m4-20260207T020313Z-rehearsal/restore.log",
+  "run_id": "20260207T020313Z-rehearsal",
+  "schema_version": 1,
+  "verified": {
+    "db_present": true,
+    "proof_present": true,
+    "state_present": true
+  },
+  "verify_log": "/Users/christophermenendez/Projects/job-intelligence-engine/ops/proof/bundles/m4-20260207T020313Z-rehearsal/restore_verify.log"
+}

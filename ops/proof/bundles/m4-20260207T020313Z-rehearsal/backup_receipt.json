@@ -1,0 +1,24 @@
+{
+  "backup_log": "/Users/christophermenendez/Projects/job-intelligence-engine/ops/proof/bundles/m4-20260207T020313Z-rehearsal/backup.log",
+  "backup_uri": "s3://my-real-jobintel-bucket/jobintel/onprem/backups/20260207T020313Z-rehearsal",
+  "bundle_dir": "/Users/christophermenendez/Projects/job-intelligence-engine/ops/proof/bundles/m4-20260207T020313Z-rehearsal",
+  "checksum_log": "/Users/christophermenendez/Projects/job-intelligence-engine/ops/proof/bundles/m4-20260207T020313Z-rehearsal/checksum_verify.log",
+  "checksums": {
+    "artifacts_backup.enc": "c296bb83b021a3b17428545e7a0831326f7e69524887998e61c62476ce87f199",
+    "db_backup.enc": "6c418f36ae023c7aeaafe6851acb52dfcac2d0a9890a880820087c17cd6a13c6"
+  },
+  "db_mode": "state_runs_export",
+  "db_note": "postgres unavailable; backing up run-registry state as database alternative",
+  "run_id": "20260207T020313Z-rehearsal",
+  "schema_version": 1,
+  "sizes": {
+    "artifacts_backup.enc": 5858880,
+    "db_backup.enc": 1521264
+  },
+  "uploaded_keys": [
+    "jobintel/onprem/backups/20260207T020313Z-rehearsal/metadata.json",
+    "jobintel/onprem/backups/20260207T020313Z-rehearsal/checksums.json",
+    "jobintel/onprem/backups/20260207T020313Z-rehearsal/db_backup.enc",
+    "jobintel/onprem/backups/20260207T020313Z-rehearsal/artifacts_backup.enc"
+  ]
+}
