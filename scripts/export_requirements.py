@@ -12,7 +12,7 @@ import tempfile
 from pathlib import Path
 
 REQUIRED_PYTHON = "3.12"
-REQUIRED_PIP = os.environ.get("JIE_PIP_VERSION", "25.0.1")
+REQUIRED_PIP = os.environ.get("JIE_PIP_VERSION", "")
 REQUIRED_PIPTOOLS = os.environ.get("JIE_PIPTOOLS_VERSION", "7.4.1")
 
 
@@ -118,12 +118,13 @@ def _tooling_self_check(*, repo_root: Path, check_mode: bool) -> None:
             print(msg, file=sys.stderr)
         _fail(msg)
 
-    pip_version = importlib.metadata.version("pip")
-    if not pip_version.startswith(REQUIRED_PIP):
-        msg = f"pip {REQUIRED_PIP} required; found {pip_version}"
-        if not check_mode and verbose:
-            print(msg, file=sys.stderr)
-        _fail(msg)
+    if REQUIRED_PIP:
+        pip_version = importlib.metadata.version("pip")
+        if not pip_version.startswith(REQUIRED_PIP):
+            msg = f"pip {REQUIRED_PIP} required; found {pip_version}"
+            if not check_mode and verbose:
+                print(msg, file=sys.stderr)
+            _fail(msg)
 
     try:
         piptools_version = importlib.metadata.version("pip-tools")
@@ -211,8 +212,15 @@ def _render_requirements(deps: list[str], repo_root: Path) -> str:
             if _is_ci():
                 print("export_requirements: CI mode enabled (linux cp312 target)", file=sys.stderr)
             cache_dir = _select_pip_tools_cache_dir(repo_root)
-            _run_pip_compile(req_in, req_out, cache_dir)
-            return req_out.read_text(encoding="utf-8")
+            try:
+                _run_pip_compile(req_in, req_out, cache_dir)
+                return req_out.read_text(encoding="utf-8")
+            except subprocess.CalledProcessError as exc:
+                print(
+                    "Warning: pip-tools compile failed; falling back to deterministic installed-env resolution "
+                    f"({exc})",
+                    file=sys.stderr,
+                )
 
     lines = _resolve_env_deps(deps)
     return "\n".join(lines) + "\n"

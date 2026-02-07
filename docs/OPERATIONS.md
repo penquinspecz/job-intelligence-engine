@@ -28,9 +28,29 @@ make gate-ci
 Dependency lock workflow (source of truth):
 
 - `requirements.txt` is generated, not hand-edited.
+- Lock-generation tooling contract is pinned for CI/repro runs via `make tooling-sync` (`pip==25.0.1`, `pip-tools==7.4.1`).
 - Update lockfiles with `make deps-sync`.
 - Enforce parity with `make deps-check` (used in CI).
 - If runtime dependencies change, update `pyproject.toml` first, then re-run `make deps-sync`.
+- If local `pip`/`pip-tools` are incompatible, export falls back to deterministic installed-env resolution; run
+  `make tooling-sync` to return to the pinned toolchain.
+- Determinism check (optional): run `make deps-sync` twice and confirm no diff in `requirements.txt`.
+
+Dashboard install/run (optional):
+- Core install does not include dashboard runtime deps.
+- Install dashboard runtime explicitly:
+
+```bash
+pip install -e ".[dashboard]"
+```
+
+- Run dashboard API:
+
+```bash
+make dashboard
+```
+
+If `fastapi`/`uvicorn` are missing, dashboard startup fails closed with a clear install command.
 
 Kubernetes CronJob (portable, K8s-first):
 
@@ -48,6 +68,16 @@ Fast local/PR gate (no Docker):
 
 ```bash
 make gate-fast
+```
+
+Roadmap discipline guard:
+- CI now runs a warn-only guard in `ci.yml`:
+  - `.venv/bin/python scripts/check_roadmap_discipline.py`
+- Local checks:
+
+```bash
+python scripts/check_roadmap_discipline.py
+python scripts/check_roadmap_discipline.py --strict
 ```
 
 Snapshot-only violations fail fast with exit code 2 and a message naming the provider.
@@ -143,6 +173,11 @@ Data outputs (`./data`):
 
 State (`./state`):
 - `history/` per-run archived artifacts by profile
+- `history/<profile>/runs/<run_id>/pointer.json` canonical run pointer to `state/runs/<run_id-sanitized>/`
+- `history/<profile>/runs/<run_id>/identity_map.json` deterministic per-run identity map (compact `job_id` keyed view)
+- `history/<profile>/runs/<run_id>/provenance.json` deterministic per-run scrape/provenance summary for that profile
+- `history/<profile>/daily/<YYYY-MM-DD>/pointer.json` canonical day pointer to selected run_id
+- `history/<profile>/retention.json` active retention settings for profile pointer pruning
 - `runs/` run metadata JSON
 - `last_run.json` last run telemetry snapshot
 - `user_state/` reserved for user-scoped state files
@@ -158,6 +193,29 @@ Run ID in logs:
 Success pointer:
 - `state/last_success.json` is updated only on successful runs.
 - It includes `run_id`, completion timestamp, provider/profile summaries, and key artifact hashes.
+
+History retention controls:
+- Disabled by default (safe): `HISTORY_ENABLED=0` unless explicitly set.
+- Enable deterministic pointer retention: `HISTORY_ENABLED=1`
+- Tune limits:
+  - `HISTORY_KEEP_RUNS` (default `30`)
+  - `HISTORY_KEEP_DAYS` (default `90`)
+- CLI overrides:
+  - `--history-enabled`
+  - `--history-keep-runs <N>`
+  - `--history-keep-days <D>`
+
+Machine-parseable history logs:
+- `HISTORY_RETENTION enabled=<0|1> ... run_id=<run_id>`
+- Per profile on success:
+  - `HISTORY_RETENTION profile=<profile> run_id=<run_id> enabled=1 keep_runs=<N> keep_days=<D> runs_kept=<n> runs_pruned=<n> daily_kept=<n> daily_pruned=<n> identity_count=<n> identity_map=<path> provenance=<path> run_pointer=<path> daily_pointer=<path>`
+
+Inspect history identity/provenance artifacts:
+
+```bash
+cat state/history/<profile>/runs/<run_id>/identity_map.json
+cat state/history/<profile>/runs/<run_id>/provenance.json
+```
 
 ## Replayability and verification
 

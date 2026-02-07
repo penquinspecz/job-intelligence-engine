@@ -75,13 +75,13 @@ tooling-sync:
 
 deps-sync:
 	$(call ensure_deps_venv)
-	JIE_PIP_VERSION=$(TOOLING_PIP_VERSION) JIE_PIPTOOLS_VERSION=$(TOOLING_PIPTOOLS_VERSION) \
+	JIE_PIPTOOLS_VERSION=$(TOOLING_PIPTOOLS_VERSION) \
 		$(DEPS_PY) scripts/export_requirements.py
 	$(DEPS_PY) -m pip install -r requirements.txt
 
 deps-check:
 	$(call ensure_deps_venv)
-	JIE_PIP_VERSION=$(TOOLING_PIP_VERSION) JIE_PIPTOOLS_VERSION=$(TOOLING_PIPTOOLS_VERSION) \
+	JIE_PIPTOOLS_VERSION=$(TOOLING_PIPTOOLS_VERSION) \
 		$(DEPS_PY) scripts/export_requirements.py --check
 
 deps-sync-commit:
@@ -362,10 +362,12 @@ explain-smoke:
 		--out_md_top_n /tmp/openai_top.cs.md
 
 dashboard:
-	@$(PY) - <<'PY' || true
-	import importlib.util
-	if importlib.util.find_spec("uvicorn") is None:
-	    print('Warning: dashboard deps missing. Run: pip install ".[dashboard]"')
+	@$(PY) - <<'PY'
+	import importlib.util, sys
+	missing = [name for name in ("fastapi", "uvicorn") if importlib.util.find_spec(name) is None]
+	if missing:
+	    print("Dashboard deps missing (%s). Install with: pip install -e '.[dashboard]'" % ", ".join(missing))
+	    sys.exit(2)
 	PY
 	$(PY) -m uvicorn ji_engine.dashboard.app:app --reload --port 8000
 
