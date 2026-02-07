@@ -1,19 +1,107 @@
-[
-  {
-    "provider_id": "openai",
-    "type": "ashby",
-    "board_url": "https://jobs.ashbyhq.com/openai",
-    "mode": "snapshot",
-    "snapshot_dir": "data/openai_snapshots",
-    "snapshot_path": "data/openai_snapshots/index.html",
-    "live_enabled": true
-  },
-  {
-    "provider_id": "anthropic",
-    "type": "ashby",
-    "board_url": "https://jobs.ashbyhq.com/anthropic",
-    "mode": "snapshot",
-    "snapshot_dir": "data/anthropic_snapshots",
-    "live_enabled": false
-  }
-]
+{
+  "schema_version": 1,
+  "providers": [
+    {
+      "provider_id": "anthropic",
+      "name": "Anthropic",
+      "careers_urls": [
+        "https://jobs.ashbyhq.com/anthropic"
+      ],
+      "allowed_domains": [
+        "jobs.ashbyhq.com"
+      ],
+      "extraction_mode": "ashby",
+      "mode": "snapshot",
+      "snapshot_dir": "data/anthropic_snapshots",
+      "live_enabled": false,
+      "update_cadence": {
+        "min_interval_hours": 24,
+        "priority": "normal"
+      },
+      "politeness": {
+        "min_delay_s": 1.0,
+        "max_attempts": 3
+      }
+    },
+    {
+      "provider_id": "openai",
+      "name": "OpenAI",
+      "careers_urls": [
+        "https://jobs.ashbyhq.com/openai"
+      ],
+      "allowed_domains": [
+        "jobs.ashbyhq.com"
+      ],
+      "extraction_mode": "ashby",
+      "mode": "snapshot",
+      "snapshot_dir": "data/openai_snapshots",
+      "snapshot_path": "data/openai_snapshots/index.html",
+      "live_enabled": true,
+      "update_cadence": {
+        "min_interval_hours": 24,
+        "priority": "high"
+      },
+      "politeness": {
+        "min_delay_s": 1.0,
+        "max_attempts": 3
+      }
+    },
+    {
+      "provider_id": "xai",
+      "name": "xAI",
+      "careers_urls": [
+        "https://x.ai/careers"
+      ],
+      "allowed_domains": [
+        "x.ai"
+      ],
+      "extraction_mode": "jsonld",
+      "mode": "snapshot",
+      "snapshot_dir": "data/xai_snapshots",
+      "snapshot_path": "data/xai_snapshots/index.html",
+      "live_enabled": false,
+      "update_cadence": {
+        "min_interval_hours": 24,
+        "priority": "normal"
+      },
+      "politeness": {
+        "min_delay_s": 1.0,
+        "max_attempts": 2
+      }
+    },
+    {
+      "provider_id": "perplexity",
+      "name": "Perplexity",
+      "careers_urls": [
+        "https://www.perplexity.ai/careers"
+      ],
+      "allowed_domains": [
+        "www.perplexity.ai"
+      ],
+      "extraction_mode": "jsonld",
+      "mode": "snapshot",
+      "snapshot_dir": "data/perplexity_snapshots",
+      "snapshot_path": "data/perplexity_snapshots/index.html",
+      "live_enabled": false,
+      "update_cadence": {
+        "min_interval_hours": 24,
+        "max_staleness_hours": 72,
+        "priority": "normal",
+        "schedule_hint": "daily"
+      },
+      "politeness": {
+        "defaults": {
+          "max_qps": 1.0,
+          "max_attempts": 2,
+          "max_inflight_per_host": 1
+        },
+        "host_overrides": {
+          "www.perplexity.ai": {
+            "max_qps": 0.5,
+            "max_inflight_per_host": 1
+          }
+        }
+      }
+    }
+  ]
+}

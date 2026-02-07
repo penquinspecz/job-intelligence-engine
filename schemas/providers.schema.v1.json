@@ -1,0 +1,280 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "JobIntel Providers Config v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "providers"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "providers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/provider"
+      }
+    }
+  },
+  "$defs": {
+    "provider": {
+      "type": "object",
+      "required": [
+        "provider_id"
+      ],
+      "properties": {
+        "provider_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "careers_urls": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "careers_url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "board_url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "allowed_domains": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "extraction_mode": {
+          "type": "string",
+          "enum": [
+            "ashby",
+            "jsonld",
+            "snapshot_json",
+            "html_list"
+          ]
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "ashby",
+            "jsonld",
+            "snapshot_json",
+            "html_list",
+            "openai",
+            "snapshot"
+          ]
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "snapshot",
+            "live",
+            "auto"
+          ]
+        },
+        "live_enabled": {
+          "type": "boolean"
+        },
+        "snapshot_path": {
+          "type": "string"
+        },
+        "snapshot_dir": {
+          "type": "string"
+        },
+        "update_cadence": {
+          "$ref": "#/$defs/update_cadence"
+        },
+        "politeness": {
+          "$ref": "#/$defs/politeness"
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "careers_urls"
+          ]
+        },
+        {
+          "required": [
+            "careers_url"
+          ]
+        },
+        {
+          "required": [
+            "board_url"
+          ]
+        }
+      ],
+      "allOf": [
+        {
+          "anyOf": [
+            {
+              "required": [
+                "extraction_mode"
+              ]
+            },
+            {
+              "required": [
+                "type"
+              ]
+            }
+          ]
+        }
+      ],
+      "additionalProperties": false
+    },
+    "update_cadence": {
+      "type": "object",
+      "properties": {
+        "min_interval_hours": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_staleness_hours": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "priority": {
+          "type": "string",
+          "enum": [
+            "low",
+            "normal",
+            "high"
+          ]
+        },
+        "schedule_hint": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "politeness_defaults": {
+      "type": "object",
+      "properties": {
+        "min_delay_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "max_qps": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "rate_jitter_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "max_attempts": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "backoff_base_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "backoff_max_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "backoff_jitter_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "max_consecutive_failures": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cooldown_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "max_inflight_per_host": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "politeness": {
+      "type": "object",
+      "properties": {
+        "defaults": {
+          "$ref": "#/$defs/politeness_defaults"
+        },
+        "host_overrides": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/politeness_defaults"
+          }
+        },
+        "host_qps_caps": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          }
+        },
+        "host_concurrency_caps": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "min_delay_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "max_qps": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "rate_jitter_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "max_attempts": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "backoff_base_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "backoff_max_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "backoff_jitter_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "max_consecutive_failures": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cooldown_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "max_inflight_per_host": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

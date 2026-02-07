@@ -751,7 +751,8 @@ def _resolve_providers(args: argparse.Namespace) -> List[str]:
     try:
         return resolve_provider_ids(args.providers, providers_cfg, default_provider="openai")
     except ValueError as exc:
-        raise SystemExit(str(exc)) from exc
+        logger.error(str(exc))
+        raise SystemExit(2) from exc
 
 
 def _resolve_output_dir() -> Path:
