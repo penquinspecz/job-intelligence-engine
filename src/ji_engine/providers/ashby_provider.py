@@ -13,6 +13,7 @@ from bs4.element import Tag
 from ji_engine.models import JobSource, RawJobPosting
 from ji_engine.providers.base import BaseJobProvider
 from ji_engine.providers.retry import fetch_urlopen_with_retry
+from ji_engine.utils.time import utc_now_naive
 from jobintel.snapshots.validate import validate_snapshot_file
 
 _ASHBY_JOB_ID_RE = re.compile(r"/([0-9a-f-]{36})/application", re.IGNORECASE)
@@ -20,7 +21,7 @@ _ASHBY_JOB_ID_RE = re.compile(r"/([0-9a-f-]{36})/application", re.IGNORECASE)
 
 def parse_ashby_snapshot_html_with_source(html: str, *, strict: bool = False) -> tuple[list[dict[str, Any]], str]:
     provider = AshbyProvider("snapshot", "https://jobs.ashbyhq.com/", Path("."))
-    now = datetime.utcnow()
+    now = utc_now_naive()
     soup = BeautifulSoup(html, "html.parser")
     parsed = provider._parse_next_data(soup, now)
     if parsed:
@@ -101,7 +102,7 @@ class AshbyProvider(BaseJobProvider):
         soup = BeautifulSoup(html, "html.parser")
         results: List[RawJobPosting] = []
         seen_apply_urls: set[str] = set()
-        now = datetime.utcnow()
+        now = utc_now_naive()
 
         parsed = self._parse_next_data(soup, now)
         if parsed:

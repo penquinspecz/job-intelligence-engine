@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 from typing import List
 
 from ji_engine.embeddings.provider import EmbeddingProvider
 from ji_engine.models import JobSource, RawJobPosting
+from ji_engine.utils.time import utc_now_naive
 from scripts.run_classify import _reclassify_maybe
 
 
@@ -33,7 +33,7 @@ def test_reclassify_uses_cache(monkeypatch, tmp_path: Path) -> None:
         apply_url="u1",
         detail_url="d1",
         raw_text="Some description",
-        scraped_at=datetime.utcnow(),
+        scraped_at=utc_now_naive(),
     )
     labeled = [{"relevance": "MAYBE"}]
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
@@ -12,6 +11,7 @@ from ji_engine.config import SNAPSHOT_DIR
 from ji_engine.models import JobSource, RawJobPosting
 from ji_engine.providers.base import BaseJobProvider
 from ji_engine.providers.retry import fetch_text_with_retry
+from ji_engine.utils.time import utc_now_naive
 from jobintel.snapshots.validate import validate_snapshot_file
 
 CAREERS_SEARCH_URL = "https://openai.com/careers/search/"
@@ -134,7 +134,7 @@ class OpenAICareersProvider(BaseJobProvider):
         soup = BeautifulSoup(html, "html.parser")
         results: List[RawJobPosting] = []
         seen_apply_urls: set[str] = set()
-        now = datetime.utcnow()
+        now = utc_now_naive()
 
         job_cards = soup.find_all(
             ["li", "div", "article", "section"],

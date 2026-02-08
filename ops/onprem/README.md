@@ -71,3 +71,14 @@ python scripts/ops/prove_m4_onprem.py \
   --namespace jobintel \
   --cluster-context <k3s-context>
 ```
+
+Capture baseline evidence (execute-explicit):
+
+```bash
+python scripts/ops/prove_m4_onprem.py \
+  --run-id 20260207T120000Z \
+  --output-dir ops/proof/bundles \
+  --namespace jobintel \
+  --cluster-context <k3s-context> \
+  --execute
+```

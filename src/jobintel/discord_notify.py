@@ -5,9 +5,10 @@ import logging
 import os
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
+
+from ji_engine.utils.time import utc_now_z
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ def resolve_webhook(profile: str) -> str:
 
 
 def _utcnow_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return utc_now_z(seconds_precision=True)
 
 
 def _load_ranked(path: Path) -> list[dict]:

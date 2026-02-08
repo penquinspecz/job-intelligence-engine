@@ -19,8 +19,9 @@ from typing import Any, Dict, List, Optional
 
 from ji_engine.config import DATA_DIR, RAW_JOBS_JSON
 from ji_engine.providers.ashby_provider import AshbyProvider
+from ji_engine.providers.jsonld_provider import JsonLdProvider
 from ji_engine.providers.openai_provider import CAREERS_SEARCH_URL, OpenAICareersProvider
-from ji_engine.providers.registry import load_providers_config
+from ji_engine.providers.registry import load_providers_config, resolve_provider_ids
 from ji_engine.providers.retry import (
     ProviderFetchError,
     classify_failure_type,
@@ -188,6 +189,54 @@ def _build_policy_snapshot(provider_id: str, policy: Dict[str, Any]) -> Dict[str
     }
 
 
+def _apply_politeness_defaults(provider_id: str, provider_cfg: Dict[str, Any]) -> List[tuple[str, Optional[str]]]:
+    politeness = provider_cfg.get("politeness")
+    if not isinstance(politeness, dict):
+        return []
+    defaults = politeness.get("defaults") if isinstance(politeness.get("defaults"), dict) else {}
+    merged: Dict[str, Any] = dict(defaults)
+    for key in (
+        "min_delay_s",
+        "rate_jitter_s",
+        "max_attempts",
+        "backoff_base_s",
+        "backoff_max_s",
+        "backoff_jitter_s",
+        "max_consecutive_failures",
+        "cooldown_s",
+        "max_inflight_per_host",
+        "max_qps",
+    ):
+        if key in politeness:
+            merged[key] = politeness[key]
+    if "min_delay_s" not in merged and "max_qps" in merged:
+        max_qps = float(merged["max_qps"])
+        if max_qps <= 0:
+            raise ValueError(f"politeness.max_qps must be > 0 for provider {provider_id}")
+        merged["min_delay_s"] = 1.0 / max_qps
+    env_map = {
+        "min_delay_s": "JOBINTEL_PROVIDER_MIN_DELAY_S",
+        "rate_jitter_s": "JOBINTEL_PROVIDER_RATE_JITTER_S",
+        "max_attempts": "JOBINTEL_PROVIDER_MAX_ATTEMPTS",
+        "backoff_base_s": "JOBINTEL_PROVIDER_BACKOFF_BASE",
+        "backoff_max_s": "JOBINTEL_PROVIDER_BACKOFF_MAX",
+        "backoff_jitter_s": "JOBINTEL_PROVIDER_BACKOFF_JITTER_S",
+        "max_consecutive_failures": "JOBINTEL_PROVIDER_MAX_CONSEC_FAILS",
+        "cooldown_s": "JOBINTEL_PROVIDER_COOLDOWN_S",
+        "max_inflight_per_host": "JOBINTEL_PROVIDER_MAX_INFLIGHT_PER_HOST",
+    }
+    applied: List[tuple[str, Optional[str]]] = []
+    for key, env_base in env_map.items():
+        if key not in merged:
+            continue
+        scoped_key = f"{env_base}_{''.join(ch if ch.isalnum() else '_' for ch in provider_id.upper())}"
+        if scoped_key in os.environ:
+            continue
+        applied.append((scoped_key, os.environ.get(scoped_key)))
+        os.environ[scoped_key] = str(merged[key])
+    return applied
+
+
 def _chaos_enabled(provider_id: str) -> bool:
     if not _truthy_env("JOBINTEL_CHAOS_MODE"):
         return False
@@ -231,229 +280,97 @@ def main(argv: List[str] | None = None) -> int:
 
     providers = load_providers_config(Path(args.providers_config))
     provider_map = {p["provider_id"]: p for p in providers}
-    requested = [p.strip() for p in args.providers.split(",") if p.strip()]
-    for provider_id in requested:
-        if provider_id not in provider_map:
-            raise SystemExit(f"Unknown provider_id '{provider_id}' in --providers")
+    try:
+        requested = resolve_provider_ids(args.providers, providers, default_provider="openai")
+    except ValueError as exc:
+        logger.error(str(exc))
+        raise SystemExit(2) from exc
 
     output_dir = Path(os.environ.get("JOBINTEL_OUTPUT_DIR") or (Path(DATA_DIR) / "ashby_cache"))
     output_dir.mkdir(parents=True, exist_ok=True)
     snapshot_write_dir = Path(args.snapshot_write_dir).expanduser() if args.snapshot_write_dir else None
-    for provider_id in requested:
-        os.environ["JOBINTEL_PROVENANCE_LOG"] = "1"
-        provider_cfg = provider_map[provider_id]
-        provider_type = provider_cfg.get("type", "snapshot")
-        mode = (args.mode or provider_cfg.get("mode") or "snapshot").upper()
-        if args.snapshot_only and mode != "SNAPSHOT":
-            logger.error(
-                "[run_scrape] snapshot-only enforced; provider %s requested %s",
-                provider_id,
-                mode,
-            )
-            raise SystemExit(2)
-        provenance: Dict[str, Any] = {
-            "provider_id": provider_id,
-            "mode": mode,
-            "live_attempted": False,
-            "live_result": None,
-            "live_http_status": None,
-            "live_error_type": None,
-            "snapshot_used": False,
-            "snapshot_path": None,
-            "snapshot_mtime_iso": None,
-            "snapshot_sha256": None,
-            "snapshot_validated": None,
-            "snapshot_reason": None,
-            "scrape_mode": None,
-            "live_status_code": None,
-            "error": None,
-            "availability": "available",
-            "unavailable_reason": None,
-            "attempts_made": 0,
-            "parsed_job_count": 0,
-            "snapshot_baseline_count": None,
-            "robots_url": None,
-            "robots_fetched": None,
-            "robots_status": None,
-            "robots_allowed": None,
-            "allowlist_allowed": None,
-            "robots_final_allowed": None,
-            "robots_reason": None,
-            "robots_user_agent": None,
-            "rate_limit_min_delay_s": None,
-            "rate_limit_jitter_s": None,
-            "max_attempts": None,
-            "backoff_base_s": None,
-            "backoff_max_s": None,
-            "backoff_jitter_s": None,
-            "circuit_breaker_threshold": None,
-            "circuit_breaker_cooldown_s": None,
-            "policy_snapshot": None,
-            "chaos_mode_enabled": False,
-            "chaos_triggered": False,
-        }
-        policy = get_politeness_policy(provider_id)
-        provenance["rate_limit_min_delay_s"] = policy.get("min_delay_s")
-        provenance["rate_limit_jitter_s"] = policy.get("rate_jitter_s")
-        provenance["max_attempts"] = policy.get("max_attempts")
-        provenance["backoff_base_s"] = policy.get("backoff_base_s")
-        provenance["backoff_max_s"] = policy.get("backoff_max_s")
-        provenance["backoff_jitter_s"] = policy.get("backoff_jitter_s")
-        provenance["circuit_breaker_threshold"] = policy.get("max_consecutive_failures")
-        provenance["circuit_breaker_cooldown_s"] = policy.get("cooldown_s")
-        policy_snapshot = _build_policy_snapshot(provider_id, policy)
-        provenance["policy_snapshot"] = policy_snapshot
-        provenance["chaos_mode_enabled"] = bool(policy_snapshot.get("chaos_mode_enabled"))
+    applied_env: List[tuple[str, Optional[str]]] = []
+    try:
+        for provider_id in requested:
+            os.environ["JOBINTEL_PROVENANCE_LOG"] = "1"
+            provider_cfg = provider_map[provider_id]
+            applied_env.extend(_apply_politeness_defaults(provider_id, provider_cfg))
+            provider_type = provider_cfg.get("extraction_mode") or provider_cfg.get("type", "snapshot_json")
+            mode = (args.mode or provider_cfg.get("mode") or "snapshot").upper()
+            if args.snapshot_only and mode != "SNAPSHOT":
+                logger.error(
+                    "[run_scrape] snapshot-only enforced; provider %s requested %s",
+                    provider_id,
+                    mode,
+                )
+                raise SystemExit(2)
+            provenance: Dict[str, Any] = {
+                "provider_id": provider_id,
+                "mode": mode,
+                "live_attempted": False,
+                "live_result": None,
+                "live_http_status": None,
+                "live_error_type": None,
+                "snapshot_used": False,
+                "snapshot_path": None,
+                "snapshot_mtime_iso": None,
+                "snapshot_sha256": None,
+                "snapshot_validated": None,
+                "snapshot_reason": None,
+                "scrape_mode": None,
+                "live_status_code": None,
+                "error": None,
+                "availability": "available",
+                "unavailable_reason": None,
+                "attempts_made": 0,
+                "parsed_job_count": 0,
+                "snapshot_baseline_count": None,
+                "robots_url": None,
+                "robots_fetched": None,
+                "robots_status": None,
+                "robots_allowed": None,
+                "allowlist_allowed": None,
+                "robots_final_allowed": None,
+                "robots_reason": None,
+                "robots_user_agent": None,
+                "rate_limit_min_delay_s": None,
+                "rate_limit_jitter_s": None,
+                "max_attempts": None,
+                "backoff_base_s": None,
+                "backoff_max_s": None,
+                "backoff_jitter_s": None,
+                "circuit_breaker_threshold": None,
+                "circuit_breaker_cooldown_s": None,
+                "policy_snapshot": None,
+                "chaos_mode_enabled": False,
+                "chaos_triggered": False,
+            }
+            policy = get_politeness_policy(provider_id)
+            provenance["rate_limit_min_delay_s"] = policy.get("min_delay_s")
+            provenance["rate_limit_jitter_s"] = policy.get("rate_jitter_s")
+            provenance["max_attempts"] = policy.get("max_attempts")
+            provenance["backoff_base_s"] = policy.get("backoff_base_s")
+            provenance["backoff_max_s"] = policy.get("backoff_max_s")
+            provenance["backoff_jitter_s"] = policy.get("backoff_jitter_s")
+            provenance["circuit_breaker_threshold"] = policy.get("max_consecutive_failures")
+            provenance["circuit_breaker_cooldown_s"] = policy.get("cooldown_s")
+            policy_snapshot = _build_policy_snapshot(provider_id, policy)
+            provenance["policy_snapshot"] = policy_snapshot
+            provenance["chaos_mode_enabled"] = bool(policy_snapshot.get("chaos_mode_enabled"))
 
-        if provider_type == "openai":
-            if mode == "AUTO":
-                mode = "LIVE"
-            provider = OpenAICareersProvider(
-                mode=mode,
-                data_dir=str(output_dir),
-                snapshot_write_dir=snapshot_write_dir,
-            )
-            snapshot_path = provider._snapshot_file()
-            snapshot_meta = _load_snapshot_meta(snapshot_path)
-            if mode == "LIVE":
-                _log_policy_summary(provider_id, policy_snapshot)
-                robots = evaluate_robots_policy(CAREERS_SEARCH_URL, provider_id=provider_id)
-                provenance["robots_url"] = robots.get("robots_url")
-                provenance["robots_fetched"] = robots.get("robots_fetched")
-                provenance["robots_status"] = robots.get("robots_status")
-                provenance["robots_allowed"] = robots.get("robots_allowed")
-                provenance["allowlist_allowed"] = robots.get("allowlist_allowed")
-                provenance["robots_final_allowed"] = robots.get("final_allowed")
-                provenance["robots_reason"] = robots.get("reason")
-                provenance["robots_user_agent"] = robots.get("user_agent")
-                if not robots.get("final_allowed"):
-                    reason = robots.get("reason") or "policy_denied"
-                    provenance["live_attempted"] = True
-                    provenance["live_result"] = "skipped"
-                    provenance["live_error_reason"] = reason
-                    provenance["live_unavailable_reason"] = reason
-                    provenance["live_error_type"] = classify_failure_type(str(reason))
-                    provenance["availability"] = "unavailable"
-                    provenance["unavailable_reason"] = reason
-                    record_policy_block(provider_id, str(reason))
-                    logger.warning(
-                        "[run_scrape] LIVE blocked by robots/policy (%s) → falling back to SNAPSHOT",
-                        reason,
-                    )
-                    provider = OpenAICareersProvider(mode="SNAPSHOT", data_dir=str(output_dir))
-                    raw_jobs = provider.load_from_snapshot()
-                    provenance["scrape_mode"] = "snapshot"
-                    provenance["snapshot_used"] = True
-                else:
-                    raw_jobs = None
-                try:
-                    if raw_jobs is None:
-                        if _chaos_enabled(provider_id):
-                            provenance["chaos_triggered"] = True
-                            logger.warning("[run_scrape][chaos] forcing deterministic live failure for %s", provider_id)
-                            raise ProviderFetchError("chaos_forced_error", attempts=1, status_code=599)
-                        raw_jobs = provider.scrape_live()
-                    provenance["scrape_mode"] = "live"
-                    provenance["attempts_made"] = 1
-                    provenance["live_attempted"] = True
-                    provenance["live_result"] = "success"
-                    provenance["live_error_type"] = "success"
-                except ProviderFetchError as e:
-                    err = str(e)
-                    provenance["live_status_code"] = e.status_code
-                    provenance["live_http_status"] = e.status_code
-                    provenance["error"] = err
-                    provenance["attempts_made"] = e.attempts
-                    provenance["live_error_reason"] = e.reason
-                    provenance["live_unavailable_reason"] = e.reason
-                    provenance["live_error_type"] = classify_failure_type(e.reason)
-                    if e.reason in {"auth_error", "blocked", "circuit_breaker"}:
-                        provenance["availability"] = "unavailable"
-                        provenance["unavailable_reason"] = e.reason
-                        provenance["live_result"] = "skipped" if e.reason == "circuit_breaker" else "blocked"
-                    else:
-                        provenance["live_result"] = "failed"
-                    provenance["live_attempted"] = e.reason != "circuit_breaker"
-                    logger.warning(f"[run_scrape] LIVE failed ({e!r}) → falling back to SNAPSHOT")
-                    provider = OpenAICareersProvider(mode="SNAPSHOT", data_dir=str(output_dir))
-                    raw_jobs = provider.load_from_snapshot()
-                    provenance["scrape_mode"] = "snapshot"
-                    provenance["snapshot_used"] = True
-                except Exception as e:
-                    err = str(e)
-                    provenance["live_status_code"] = _parse_status_code(err)
-                    provenance["live_http_status"] = _parse_status_code(err)
-                    provenance["error"] = err
-                    provenance["attempts_made"] = 1
-                    provenance["live_error_reason"] = "network_error"
-                    provenance["live_unavailable_reason"] = "network_error"
-                    provenance["live_error_type"] = "transient_error"
-                    provenance["live_attempted"] = True
-                    provenance["live_result"] = "failed"
-                    logger.warning(f"[run_scrape] LIVE failed ({e!r}) → falling back to SNAPSHOT")
-                    provider = OpenAICareersProvider(mode="SNAPSHOT", data_dir=str(output_dir))
-                    raw_jobs = provider.load_from_snapshot()
-                    provenance["scrape_mode"] = "snapshot"
-                    provenance["snapshot_used"] = True
-            else:
-                raw_jobs = provider.fetch_jobs()
-                provenance["scrape_mode"] = "snapshot"
-                provenance["live_result"] = "skipped"
-            provenance["snapshot_path"] = str(snapshot_path)
-            provenance["snapshot_mtime_iso"] = _mtime_iso(snapshot_path)
-            provenance["snapshot_sha256"] = snapshot_meta.get("sha256") or _sha256(snapshot_path)
-            if snapshot_path.exists():
-                ok, reason = validate_snapshot_file(provider_id, snapshot_path)
-                provenance["snapshot_validated"] = ok
-                if not ok:
-                    provenance["snapshot_reason"] = reason
-            if snapshot_meta.get("fetched_at"):
-                provenance["fetched_at"] = snapshot_meta.get("fetched_at")
-            jobs = _normalize_jobs(raw_jobs)
-            _write_raw_jobs(provider_id, jobs, output_dir)
-            provenance["parsed_job_count"] = len(jobs)
-            if mode == "LIVE" and snapshot_path.exists():
-                try:
-                    baseline_jobs = provider.load_from_snapshot()
-                    provenance["snapshot_baseline_count"] = len(_normalize_jobs(baseline_jobs))
-                except Exception:
-                    provenance["snapshot_baseline_count"] = None
-            if provenance.get("scrape_mode") == "snapshot" and provenance.get("attempts_made", 0) == 0:
-                provenance["attempts_made"] = 1
-                provenance["snapshot_used"] = True
-            if len(jobs) == 0 and not snapshot_path.exists():
-                provenance["availability"] = "unavailable"
-                provenance["unavailable_reason"] = provenance.get("live_unavailable_reason") or "parse_error"
-            if provenance.get("live_result") is None:
-                provenance["live_result"] = "skipped"
-            _write_scrape_meta(provider_id, output_dir, provenance)
-            _log_provenance(provider_id, provenance)
-            # For backward compatibility, also write to canonical RAW_JOBS_JSON when writable.
-            if provider_id == "openai" and RAW_JOBS_JSON.parent.exists() and os.access(RAW_JOBS_JSON.parent, os.W_OK):
-                RAW_JOBS_JSON.write_text(json.dumps(jobs, indent=2, ensure_ascii=False), encoding="utf-8")
-        else:
-            if provider_type == "ashby":
+            if provider_type == "openai":
                 if mode == "AUTO":
-                    mode = "LIVE" if provider_cfg.get("live_enabled", True) else "SNAPSHOT"
-                snapshot_dir = Path(provider_cfg["snapshot_dir"])
-                snapshot_path = Path(provider_cfg["snapshot_path"])
-                if mode == "SNAPSHOT" and not snapshot_path.exists():
-                    msg = (
-                        f"Snapshot not found at {snapshot_path} for provider {provider_id}. "
-                        "Add a snapshot file or update providers config."
-                    )
-                    logger.error(msg)
-                    raise SystemExit(2)
-                provider = AshbyProvider(
-                    provider_id=provider_id,
-                    board_url=provider_cfg["board_url"],
-                    snapshot_dir=snapshot_dir,
+                    mode = "LIVE"
+                provider = OpenAICareersProvider(
                     mode=mode,
+                    data_dir=str(output_dir),
                     snapshot_write_dir=snapshot_write_dir,
                 )
+                snapshot_path = provider._snapshot_file()
+                snapshot_meta = _load_snapshot_meta(snapshot_path)
                 if mode == "LIVE":
                     _log_policy_summary(provider_id, policy_snapshot)
-                    robots = evaluate_robots_policy(provider_cfg["board_url"], provider_id=provider_id)
+                    robots = evaluate_robots_policy(CAREERS_SEARCH_URL, provider_id=provider_id)
                     provenance["robots_url"] = robots.get("robots_url")
                     provenance["robots_fetched"] = robots.get("robots_fetched")
                     provenance["robots_status"] = robots.get("robots_status")
@@ -476,13 +393,7 @@ def main(argv: List[str] | None = None) -> int:
                             "[run_scrape] LIVE blocked by robots/policy (%s) → falling back to SNAPSHOT",
                             reason,
                         )
-                        if not snapshot_path.exists():
-                            msg = (
-                                f"Snapshot not found at {snapshot_path} for provider {provider_id}. "
-                                "Add a snapshot file or update providers config."
-                            )
-                            logger.error(msg)
-                            raise SystemExit(2)
+                        provider = OpenAICareersProvider(mode="SNAPSHOT", data_dir=str(output_dir))
                         raw_jobs = provider.load_from_snapshot()
                         provenance["scrape_mode"] = "snapshot"
                         provenance["snapshot_used"] = True
@@ -519,13 +430,7 @@ def main(argv: List[str] | None = None) -> int:
                             provenance["live_result"] = "failed"
                         provenance["live_attempted"] = e.reason != "circuit_breaker"
                         logger.warning(f"[run_scrape] LIVE failed ({e!r}) → falling back to SNAPSHOT")
-                        if not snapshot_path.exists():
-                            msg = (
-                                f"Snapshot not found at {snapshot_path} for provider {provider_id}. "
-                                "Add a snapshot file or update providers config."
-                            )
-                            logger.error(msg)
-                            raise SystemExit(2)
+                        provider = OpenAICareersProvider(mode="SNAPSHOT", data_dir=str(output_dir))
                         raw_jobs = provider.load_from_snapshot()
                         provenance["scrape_mode"] = "snapshot"
                         provenance["snapshot_used"] = True
@@ -541,37 +446,17 @@ def main(argv: List[str] | None = None) -> int:
                         provenance["live_attempted"] = True
                         provenance["live_result"] = "failed"
                         logger.warning(f"[run_scrape] LIVE failed ({e!r}) → falling back to SNAPSHOT")
-                        if not snapshot_path.exists():
-                            msg = (
-                                f"Snapshot not found at {snapshot_path} for provider {provider_id}. "
-                                "Add a snapshot file or update providers config."
-                            )
-                            logger.error(msg)
-                            raise SystemExit(2)
+                        provider = OpenAICareersProvider(mode="SNAPSHOT", data_dir=str(output_dir))
                         raw_jobs = provider.load_from_snapshot()
                         provenance["scrape_mode"] = "snapshot"
                         provenance["snapshot_used"] = True
                 else:
-                    raw_jobs = provider.load_from_snapshot()
+                    raw_jobs = provider.fetch_jobs()
                     provenance["scrape_mode"] = "snapshot"
                     provenance["live_result"] = "skipped"
-                jobs = _normalize_jobs(raw_jobs)
-                _write_raw_jobs(provider_id, jobs, output_dir)
-                snapshot_meta = _load_snapshot_meta(snapshot_path)
-                provenance.update(
-                    {
-                        "snapshot_path": str(snapshot_path),
-                        "snapshot_mtime_iso": _mtime_iso(snapshot_path),
-                        "snapshot_sha256": snapshot_meta.get("sha256") or _sha256(snapshot_path),
-                        "parsed_job_count": len(jobs),
-                    }
-                )
-                if mode == "LIVE" and snapshot_path.exists():
-                    try:
-                        baseline_jobs = provider.load_from_snapshot()
-                        provenance["snapshot_baseline_count"] = len(_normalize_jobs(baseline_jobs))
-                    except Exception:
-                        provenance["snapshot_baseline_count"] = None
+                provenance["snapshot_path"] = str(snapshot_path)
+                provenance["snapshot_mtime_iso"] = _mtime_iso(snapshot_path)
+                provenance["snapshot_sha256"] = snapshot_meta.get("sha256") or _sha256(snapshot_path)
                 if snapshot_path.exists():
                     ok, reason = validate_snapshot_file(provider_id, snapshot_path)
                     provenance["snapshot_validated"] = ok
@@ -579,11 +464,26 @@ def main(argv: List[str] | None = None) -> int:
                         provenance["snapshot_reason"] = reason
                 if snapshot_meta.get("fetched_at"):
                     provenance["fetched_at"] = snapshot_meta.get("fetched_at")
+                jobs = _normalize_jobs(raw_jobs)
+                _write_raw_jobs(provider_id, jobs, output_dir)
+                provenance["parsed_job_count"] = len(jobs)
+                if mode == "LIVE" and snapshot_path.exists():
+                    try:
+                        baseline_jobs = provider.load_from_snapshot()
+                        provenance["snapshot_baseline_count"] = len(_normalize_jobs(baseline_jobs))
+                    except Exception:
+                        provenance["snapshot_baseline_count"] = None
                 if provenance.get("scrape_mode") == "snapshot" and provenance.get("attempts_made", 0) == 0:
                     provenance["attempts_made"] = 1
                     provenance["snapshot_used"] = True
+                if len(jobs) == 0 and not snapshot_path.exists():
+                    provenance["availability"] = "unavailable"
+                    provenance["unavailable_reason"] = provenance.get("live_unavailable_reason") or "parse_error"
+                if provenance.get("live_result") is None:
+                    provenance["live_result"] = "skipped"
                 _write_scrape_meta(provider_id, output_dir, provenance)
                 _log_provenance(provider_id, provenance)
+                # For backward compatibility, also write to canonical RAW_JOBS_JSON when writable.
                 if (
                     provider_id == "openai"
                     and RAW_JOBS_JSON.parent.exists()
@@ -591,43 +491,345 @@ def main(argv: List[str] | None = None) -> int:
                 ):
                     RAW_JOBS_JSON.write_text(json.dumps(jobs, indent=2, ensure_ascii=False), encoding="utf-8")
             else:
-                if mode == "AUTO":
-                    mode = "SNAPSHOT"
-                if mode != "SNAPSHOT":
-                    raise SystemExit(f"Provider {provider_id} supports SNAPSHOT mode only")
-                snapshot_path = Path(provider_cfg["snapshot_path"])
-                if not snapshot_path.exists():
-                    msg = (
-                        f"Snapshot not found at {snapshot_path} for provider {provider_id}. "
-                        "Add a snapshot file or update providers config."
+                if provider_type == "ashby":
+                    if mode == "AUTO":
+                        mode = "LIVE" if provider_cfg.get("live_enabled", True) else "SNAPSHOT"
+                    snapshot_dir = Path(provider_cfg["snapshot_dir"])
+                    snapshot_path = Path(provider_cfg["snapshot_path"])
+                    if mode == "SNAPSHOT" and not snapshot_path.exists():
+                        msg = (
+                            f"Snapshot not found at {snapshot_path} for provider {provider_id}. "
+                            "Add a snapshot file or update providers config."
+                        )
+                        logger.error(msg)
+                        raise SystemExit(2)
+                    provider = AshbyProvider(
+                        provider_id=provider_id,
+                        board_url=provider_cfg["board_url"],
+                        snapshot_dir=snapshot_dir,
+                        mode=mode,
+                        snapshot_write_dir=snapshot_write_dir,
                     )
-                    logger.error(msg)
-                    raise SystemExit(2)
-                provider = SnapshotJsonProvider(snapshot_path)
-                jobs = _normalize_jobs(provider.fetch_jobs())
-                _write_raw_jobs(provider_id, jobs, output_dir)
-                snapshot_meta = _load_snapshot_meta(snapshot_path)
-                provenance.update(
-                    {
-                        "scrape_mode": "snapshot",
-                        "snapshot_path": str(snapshot_path),
-                        "snapshot_mtime_iso": _mtime_iso(snapshot_path),
-                        "snapshot_sha256": snapshot_meta.get("sha256") or _sha256(snapshot_path),
-                        "parsed_job_count": len(jobs),
-                    }
-                )
-                provenance["snapshot_validated"] = True
-                provenance["snapshot_reason"] = "not_applicable"
-                if snapshot_meta.get("fetched_at"):
-                    provenance["fetched_at"] = snapshot_meta.get("fetched_at")
-                if provenance.get("attempts_made", 0) == 0:
-                    provenance["attempts_made"] = 1
-                    provenance["snapshot_used"] = True
-                provenance["live_result"] = "skipped"
-                _write_scrape_meta(provider_id, output_dir, provenance)
-                _log_provenance(provider_id, provenance)
+                    if mode == "LIVE":
+                        _log_policy_summary(provider_id, policy_snapshot)
+                        robots = evaluate_robots_policy(provider_cfg["board_url"], provider_id=provider_id)
+                        provenance["robots_url"] = robots.get("robots_url")
+                        provenance["robots_fetched"] = robots.get("robots_fetched")
+                        provenance["robots_status"] = robots.get("robots_status")
+                        provenance["robots_allowed"] = robots.get("robots_allowed")
+                        provenance["allowlist_allowed"] = robots.get("allowlist_allowed")
+                        provenance["robots_final_allowed"] = robots.get("final_allowed")
+                        provenance["robots_reason"] = robots.get("reason")
+                        provenance["robots_user_agent"] = robots.get("user_agent")
+                        if not robots.get("final_allowed"):
+                            reason = robots.get("reason") or "policy_denied"
+                            provenance["live_attempted"] = True
+                            provenance["live_result"] = "skipped"
+                            provenance["live_error_reason"] = reason
+                            provenance["live_unavailable_reason"] = reason
+                            provenance["live_error_type"] = classify_failure_type(str(reason))
+                            provenance["availability"] = "unavailable"
+                            provenance["unavailable_reason"] = reason
+                            record_policy_block(provider_id, str(reason))
+                            logger.warning(
+                                "[run_scrape] LIVE blocked by robots/policy (%s) → falling back to SNAPSHOT",
+                                reason,
+                            )
+                            if not snapshot_path.exists():
+                                msg = (
+                                    f"Snapshot not found at {snapshot_path} for provider {provider_id}. "
+                                    "Add a snapshot file or update providers config."
+                                )
+                                logger.error(msg)
+                                raise SystemExit(2)
+                            raw_jobs = provider.load_from_snapshot()
+                            provenance["scrape_mode"] = "snapshot"
+                            provenance["snapshot_used"] = True
+                        else:
+                            raw_jobs = None
+                        try:
+                            if raw_jobs is None:
+                                if _chaos_enabled(provider_id):
+                                    provenance["chaos_triggered"] = True
+                                    logger.warning(
+                                        "[run_scrape][chaos] forcing deterministic live failure for %s", provider_id
+                                    )
+                                    raise ProviderFetchError("chaos_forced_error", attempts=1, status_code=599)
+                                raw_jobs = provider.scrape_live()
+                            provenance["scrape_mode"] = "live"
+                            provenance["attempts_made"] = 1
+                            provenance["live_attempted"] = True
+                            provenance["live_result"] = "success"
+                            provenance["live_error_type"] = "success"
+                        except ProviderFetchError as e:
+                            err = str(e)
+                            provenance["live_status_code"] = e.status_code
+                            provenance["live_http_status"] = e.status_code
+                            provenance["error"] = err
+                            provenance["attempts_made"] = e.attempts
+                            provenance["live_error_reason"] = e.reason
+                            provenance["live_unavailable_reason"] = e.reason
+                            provenance["live_error_type"] = classify_failure_type(e.reason)
+                            if e.reason in {"auth_error", "blocked", "circuit_breaker"}:
+                                provenance["availability"] = "unavailable"
+                                provenance["unavailable_reason"] = e.reason
+                                provenance["live_result"] = "skipped" if e.reason == "circuit_breaker" else "blocked"
+                            else:
+                                provenance["live_result"] = "failed"
+                            provenance["live_attempted"] = e.reason != "circuit_breaker"
+                            logger.warning(f"[run_scrape] LIVE failed ({e!r}) → falling back to SNAPSHOT")
+                            if not snapshot_path.exists():
+                                msg = (
+                                    f"Snapshot not found at {snapshot_path} for provider {provider_id}. "
+                                    "Add a snapshot file or update providers config."
+                                )
+                                logger.error(msg)
+                                raise SystemExit(2)
+                            raw_jobs = provider.load_from_snapshot()
+                            provenance["scrape_mode"] = "snapshot"
+                            provenance["snapshot_used"] = True
+                        except Exception as e:
+                            err = str(e)
+                            provenance["live_status_code"] = _parse_status_code(err)
+                            provenance["live_http_status"] = _parse_status_code(err)
+                            provenance["error"] = err
+                            provenance["attempts_made"] = 1
+                            provenance["live_error_reason"] = "network_error"
+                            provenance["live_unavailable_reason"] = "network_error"
+                            provenance["live_error_type"] = "transient_error"
+                            provenance["live_attempted"] = True
+                            provenance["live_result"] = "failed"
+                            logger.warning(f"[run_scrape] LIVE failed ({e!r}) → falling back to SNAPSHOT")
+                            if not snapshot_path.exists():
+                                msg = (
+                                    f"Snapshot not found at {snapshot_path} for provider {provider_id}. "
+                                    "Add a snapshot file or update providers config."
+                                )
+                                logger.error(msg)
+                                raise SystemExit(2)
+                            raw_jobs = provider.load_from_snapshot()
+                            provenance["scrape_mode"] = "snapshot"
+                            provenance["snapshot_used"] = True
+                    else:
+                        raw_jobs = provider.load_from_snapshot()
+                        provenance["scrape_mode"] = "snapshot"
+                        provenance["live_result"] = "skipped"
+                    jobs = _normalize_jobs(raw_jobs)
+                    _write_raw_jobs(provider_id, jobs, output_dir)
+                    snapshot_meta = _load_snapshot_meta(snapshot_path)
+                    provenance.update(
+                        {
+                            "snapshot_path": str(snapshot_path),
+                            "snapshot_mtime_iso": _mtime_iso(snapshot_path),
+                            "snapshot_sha256": snapshot_meta.get("sha256") or _sha256(snapshot_path),
+                            "parsed_job_count": len(jobs),
+                        }
+                    )
+                    if mode == "LIVE" and snapshot_path.exists():
+                        try:
+                            baseline_jobs = provider.load_from_snapshot()
+                            provenance["snapshot_baseline_count"] = len(_normalize_jobs(baseline_jobs))
+                        except Exception:
+                            provenance["snapshot_baseline_count"] = None
+                    if snapshot_path.exists():
+                        ok, reason = validate_snapshot_file(provider_id, snapshot_path)
+                        provenance["snapshot_validated"] = ok
+                        if not ok:
+                            provenance["snapshot_reason"] = reason
+                    if snapshot_meta.get("fetched_at"):
+                        provenance["fetched_at"] = snapshot_meta.get("fetched_at")
+                    if provenance.get("scrape_mode") == "snapshot" and provenance.get("attempts_made", 0) == 0:
+                        provenance["attempts_made"] = 1
+                        provenance["snapshot_used"] = True
+                    _write_scrape_meta(provider_id, output_dir, provenance)
+                    _log_provenance(provider_id, provenance)
+                    if (
+                        provider_id == "openai"
+                        and RAW_JOBS_JSON.parent.exists()
+                        and os.access(RAW_JOBS_JSON.parent, os.W_OK)
+                    ):
+                        RAW_JOBS_JSON.write_text(json.dumps(jobs, indent=2, ensure_ascii=False), encoding="utf-8")
+                elif provider_type == "jsonld":
+                    if mode == "AUTO":
+                        mode = "LIVE" if provider_cfg.get("live_enabled", True) else "SNAPSHOT"
+                    snapshot_dir = Path(provider_cfg["snapshot_dir"])
+                    snapshot_path = Path(provider_cfg["snapshot_path"])
+                    if mode == "SNAPSHOT" and not snapshot_path.exists():
+                        msg = (
+                            f"Snapshot not found at {snapshot_path} for provider {provider_id}. "
+                            "Add a snapshot file or update providers config."
+                        )
+                        logger.error(msg)
+                        raise SystemExit(2)
+                    provider = JsonLdProvider(
+                        provider_id=provider_id,
+                        careers_url=provider_cfg["careers_url"],
+                        snapshot_dir=snapshot_dir,
+                        mode=mode,
+                        snapshot_write_dir=snapshot_write_dir,
+                    )
+                    if mode == "LIVE":
+                        _log_policy_summary(provider_id, policy_snapshot)
+                        robots = evaluate_robots_policy(provider_cfg["careers_url"], provider_id=provider_id)
+                        provenance["robots_url"] = robots.get("robots_url")
+                        provenance["robots_fetched"] = robots.get("robots_fetched")
+                        provenance["robots_status"] = robots.get("robots_status")
+                        provenance["robots_allowed"] = robots.get("robots_allowed")
+                        provenance["allowlist_allowed"] = robots.get("allowlist_allowed")
+                        provenance["robots_final_allowed"] = robots.get("final_allowed")
+                        provenance["robots_reason"] = robots.get("reason")
+                        provenance["robots_user_agent"] = robots.get("user_agent")
+                        if not robots.get("final_allowed"):
+                            reason = robots.get("reason") or "policy_denied"
+                            provenance["live_attempted"] = True
+                            provenance["live_result"] = "skipped"
+                            provenance["live_error_reason"] = reason
+                            provenance["live_unavailable_reason"] = reason
+                            provenance["live_error_type"] = classify_failure_type(str(reason))
+                            provenance["availability"] = "unavailable"
+                            provenance["unavailable_reason"] = reason
+                            record_policy_block(provider_id, str(reason))
+                            if not snapshot_path.exists():
+                                msg = (
+                                    f"Snapshot not found at {snapshot_path} for provider {provider_id}. "
+                                    "Add a snapshot file or update providers config."
+                                )
+                                logger.error(msg)
+                                raise SystemExit(2)
+                            raw_jobs = provider.load_from_snapshot()
+                            provenance["scrape_mode"] = "snapshot"
+                            provenance["snapshot_used"] = True
+                        else:
+                            raw_jobs = None
+                        try:
+                            if raw_jobs is None:
+                                if _chaos_enabled(provider_id):
+                                    provenance["chaos_triggered"] = True
+                                    logger.warning(
+                                        "[run_scrape][chaos] forcing deterministic live failure for %s", provider_id
+                                    )
+                                    raise ProviderFetchError("chaos_forced_error", attempts=1, status_code=599)
+                                raw_jobs = provider.scrape_live()
+                            provenance["scrape_mode"] = "live"
+                            provenance["attempts_made"] = 1
+                            provenance["live_attempted"] = True
+                            provenance["live_result"] = "success"
+                            provenance["live_error_type"] = "success"
+                        except ProviderFetchError as e:
+                            err = str(e)
+                            provenance["live_status_code"] = e.status_code
+                            provenance["live_http_status"] = e.status_code
+                            provenance["error"] = err
+                            provenance["attempts_made"] = e.attempts
+                            provenance["live_error_reason"] = e.reason
+                            provenance["live_unavailable_reason"] = e.reason
+                            provenance["live_error_type"] = classify_failure_type(e.reason)
+                            if e.reason in {"auth_error", "blocked", "circuit_breaker"}:
+                                provenance["availability"] = "unavailable"
+                                provenance["unavailable_reason"] = e.reason
+                                provenance["live_result"] = "skipped" if e.reason == "circuit_breaker" else "blocked"
+                            else:
+                                provenance["live_result"] = "failed"
+                            provenance["live_attempted"] = e.reason != "circuit_breaker"
+                            logger.warning(f"[run_scrape] LIVE failed ({e!r}) → falling back to SNAPSHOT")
+                            if not snapshot_path.exists():
+                                msg = (
+                                    f"Snapshot not found at {snapshot_path} for provider {provider_id}. "
+                                    "Add a snapshot file or update providers config."
+                                )
+                                logger.error(msg)
+                                raise SystemExit(2)
+                            raw_jobs = provider.load_from_snapshot()
+                            provenance["scrape_mode"] = "snapshot"
+                            provenance["snapshot_used"] = True
+                        except Exception as e:
+                            err = str(e)
+                            provenance["live_status_code"] = _parse_status_code(err)
+                            provenance["live_http_status"] = _parse_status_code(err)
+                            provenance["error"] = err
+                            provenance["attempts_made"] = 1
+                            provenance["live_error_reason"] = "network_error"
+                            provenance["live_unavailable_reason"] = "network_error"
+                            provenance["live_error_type"] = "transient_error"
+                            provenance["live_attempted"] = True
+                            provenance["live_result"] = "failed"
+                            logger.warning(f"[run_scrape] LIVE failed ({e!r}) → falling back to SNAPSHOT")
+                            if not snapshot_path.exists():
+                                msg = (
+                                    f"Snapshot not found at {snapshot_path} for provider {provider_id}. "
+                                    "Add a snapshot file or update providers config."
+                                )
+                                logger.error(msg)
+                                raise SystemExit(2)
+                            raw_jobs = provider.load_from_snapshot()
+                            provenance["scrape_mode"] = "snapshot"
+                            provenance["snapshot_used"] = True
+                    else:
+                        raw_jobs = provider.load_from_snapshot()
+                        provenance["scrape_mode"] = "snapshot"
+                        provenance["live_result"] = "skipped"
+                    jobs = _normalize_jobs(raw_jobs)
+                    _write_raw_jobs(provider_id, jobs, output_dir)
+                    snapshot_meta = _load_snapshot_meta(snapshot_path)
+                    provenance.update(
+                        {
+                            "snapshot_path": str(snapshot_path),
+                            "snapshot_mtime_iso": _mtime_iso(snapshot_path),
+                            "snapshot_sha256": snapshot_meta.get("sha256") or _sha256(snapshot_path),
+                            "parsed_job_count": len(jobs),
+                        }
+                    )
+                    if snapshot_meta.get("fetched_at"):
+                        provenance["fetched_at"] = snapshot_meta.get("fetched_at")
+                    if provenance.get("scrape_mode") == "snapshot" and provenance.get("attempts_made", 0) == 0:
+                        provenance["attempts_made"] = 1
+                        provenance["snapshot_used"] = True
+                    _write_scrape_meta(provider_id, output_dir, provenance)
+                    _log_provenance(provider_id, provenance)
+                else:
+                    if mode == "AUTO":
+                        mode = "SNAPSHOT"
+                    if mode != "SNAPSHOT":
+                        raise SystemExit(f"Provider {provider_id} supports SNAPSHOT mode only")
+                    snapshot_path = Path(provider_cfg["snapshot_path"])
+                    if not snapshot_path.exists():
+                        msg = (
+                            f"Snapshot not found at {snapshot_path} for provider {provider_id}. "
+                            "Add a snapshot file or update providers config."
+                        )
+                        logger.error(msg)
+                        raise SystemExit(2)
+                    provider = SnapshotJsonProvider(snapshot_path)
+                    jobs = _normalize_jobs(provider.fetch_jobs())
+                    _write_raw_jobs(provider_id, jobs, output_dir)
+                    snapshot_meta = _load_snapshot_meta(snapshot_path)
+                    provenance.update(
+                        {
+                            "scrape_mode": "snapshot",
+                            "snapshot_path": str(snapshot_path),
+                            "snapshot_mtime_iso": _mtime_iso(snapshot_path),
+                            "snapshot_sha256": snapshot_meta.get("sha256") or _sha256(snapshot_path),
+                            "parsed_job_count": len(jobs),
+                        }
+                    )
+                    provenance["snapshot_validated"] = True
+                    provenance["snapshot_reason"] = "not_applicable"
+                    if snapshot_meta.get("fetched_at"):
+                        provenance["fetched_at"] = snapshot_meta.get("fetched_at")
+                    if provenance.get("attempts_made", 0) == 0:
+                        provenance["attempts_made"] = 1
+                        provenance["snapshot_used"] = True
+                    provenance["live_result"] = "skipped"
+                    _write_scrape_meta(provider_id, output_dir, provenance)
+                    _log_provenance(provider_id, provenance)
 
-    return 0
+        return 0
+    finally:
+        for key, old_value in reversed(applied_env):
+            if old_value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = old_value
 
 
 if __name__ == "__main__":

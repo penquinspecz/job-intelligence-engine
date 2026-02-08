@@ -59,6 +59,44 @@ make dashboard
 
 If `fastapi`/`uvicorn` are missing, dashboard startup fails closed with a clear install command.
 
+Provider registry (Milestone 5 foundation):
+
+- Canonical file: `config/providers.json` (schema: `schemas/providers.schema.v1.json`)
+- Registry loader: `src/ji_engine/providers/registry.py`
+- Provider selection resolver used by both:
+  - `scripts/run_scrape.py`
+  - `scripts/run_daily.py`
+- Supported extraction modes:
+  - `ashby` (existing Ashby parser)
+  - `jsonld` (structured JobPosting JSON-LD parser)
+  - `snapshot_json` (static JSON snapshot list)
+  - `html_list` (reserved; treated as snapshot parser until implemented)
+
+How to add a provider (deterministic path):
+
+1. Add entry in `config/providers.json` under `providers[]`:
+   - required: `provider_id`, `extraction_mode`, one of `careers_urls`/`careers_url`/`board_url`
+   - scrape mode + snapshots: `mode`, `snapshot_path` or `snapshot_dir`
+   - allowlist + cadence hints: `allowed_domains`, `update_cadence`
+   - politeness defaults/overrides:
+     - `politeness.defaults` (provider-level defaults)
+     - `politeness.host_overrides` (per-host override map)
+     - back-compat flat keys still accepted (`min_delay_s`, `max_attempts`, etc.)
+2. Add/update snapshot fixture under `data/<provider_id>_snapshots/`.
+3. Run scrape in snapshot mode:
+
+```bash
+python scripts/run_scrape.py --providers <provider_id> --providers-config config/providers.json --mode SNAPSHOT
+```
+
+4. Verify deterministic output:
+   - `data/ashby_cache/<provider_id>_raw_jobs.json`
+   - `data/ashby_cache/<provider_id>_scrape_meta.json`
+
+Proof-of-design provider in-tree:
+- `perplexity` (`jsonld`, snapshot-first)
+- Snapshot fixture: `data/perplexity_snapshots/index.html`
+
 Kubernetes CronJob (portable, K8s-first):
 
 Use the kustomize base at `ops/k8s/jobintel` or the AWS EKS overlay at
@@ -238,6 +276,10 @@ JOBINTEL_LOG_FILE=1 python scripts/run_daily.py --profiles cs
 ```
 
 Per-run log pointers are written into `run_report.json` under `logs`.
+The pointer contract is best-effort and cloud-agnostic:
+- `logs.local`: local run/log paths plus optional structured JSONL sink path
+- `logs.k8s`: kubectl command templates to locate pod/job logs by `JOBINTEL_RUN_ID`
+- `logs.cloud`: CloudWatch group/stream (when env is set) plus a run-id filter pattern
 
 Find logs by run_id locally:
 
@@ -251,9 +293,12 @@ cat "state/runs/$safe_id/logs/run.log.jsonl"   # if log sink enabled
 Find logs in k3s:
 
 ```bash
+run_id=<run_id>
+safe_id=$(echo "$run_id" | tr -d ':-.')
+cat "state/runs/$safe_id/run_report.json" | jq '.logs.k8s'
 kubectl -n jobintel get pods --sort-by=.metadata.creationTimestamp
-kubectl -n jobintel logs <pod-name>
-kubectl -n jobintel logs job/<job-name>
+kubectl -n jobintel get jobs --sort-by=.metadata.creationTimestamp
+kubectl -n jobintel logs <pod-or-job> | rg "JOBINTEL_RUN_ID=$run_id"
 ```
 
 Find logs in AWS (if `logs.cloud` pointers are populated in run report):
@@ -264,6 +309,8 @@ safe_id=$(echo "$run_id" | tr -d ':-.')
 group=$(jq -r '.logs.cloud.cloudwatch_log_group // empty' "state/runs/$safe_id/run_report.json")
 stream=$(jq -r '.logs.cloud.cloudwatch_log_stream // empty' "state/runs/$safe_id/run_report.json")
 region=$(jq -r '.logs.cloud.region // empty' "state/runs/$safe_id/run_report.json")
+pattern=$(jq -r '.logs.cloud.cloudwatch_filter_pattern // empty' "state/runs/$safe_id/run_report.json")
+aws logs filter-log-events --region "$region" --log-group-name "$group" --filter-pattern "$pattern"
 aws logs get-log-events --region "$region" --log-group-name "$group" --log-stream-name "$stream"
 ```
 

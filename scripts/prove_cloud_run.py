@@ -7,9 +7,10 @@ import os
 import re
 import subprocess
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+
+from ji_engine.utils.time import utc_now_z
 
 RUN_ID_REGEX = re.compile(r"jobintel start\s+([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z)")
 RUN_ID_KV_REGEX = re.compile(r"^JOBINTEL_RUN_ID=([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z)$", re.MULTILINE)
@@ -19,7 +20,7 @@ PUBLISH_POINTER_REGEX = re.compile(r"PUBLISH_CONTRACT .*pointer_global=([a-z_]+)
 
 
 def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return utc_now_z(seconds_precision=True)
 
 
 def _repo_root() -> Path:

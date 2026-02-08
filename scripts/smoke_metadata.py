@@ -4,13 +4,14 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
+from ji_engine.utils.time import utc_now_z
+
 
 def _utcnow_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return utc_now_z(seconds_precision=True)
 
 
 def _git_sha() -> str | None:

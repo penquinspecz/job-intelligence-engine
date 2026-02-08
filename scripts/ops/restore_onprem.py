@@ -10,13 +10,17 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import boto3
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+SRC_DIR = REPO_ROOT / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
+from ji_engine.utils.time import utc_now_z  # noqa: E402
 
 
 def _parse_s3_uri(uri: str) -> tuple[str, str]:
@@ -100,7 +104,7 @@ def main(argv: list[str] | None = None) -> int:
     verify_log = bundle_dir / "restore_verify.log"
 
     def log(msg: str) -> None:
-        line = f"{datetime.now(timezone.utc).isoformat()} {msg}"
+        line = f"{utc_now_z(seconds_precision=True)} {msg}"
         print(line)
         with restore_log.open("a", encoding="utf-8") as f:
             f.write(line + "\n")

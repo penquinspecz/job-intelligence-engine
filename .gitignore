@@ -98,3 +98,4 @@ ops/proof/
 
 # Local Python venvs
 .venv*/
+data/xai_snapshots/

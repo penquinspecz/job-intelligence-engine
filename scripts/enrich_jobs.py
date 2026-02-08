@@ -24,7 +24,6 @@ import os
 import sys
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -37,6 +36,7 @@ from ji_engine.integrations.html_to_text import html_to_text
 from ji_engine.providers.retry import ProviderFetchError, classify_failure_type
 from ji_engine.utils.atomic_write import atomic_write_text
 from ji_engine.utils.job_id import extract_job_id_from_url
+from ji_engine.utils.time import utc_now_naive
 
 logger = logging.getLogger(__name__)
 _CANONICAL_JSON_KWARGS = {"ensure_ascii": False, "sort_keys": True, "separators": (",", ":")}
@@ -289,7 +289,7 @@ def _enrich_single(
         updated_job["enrich_status"] = "unavailable"
         updated_job["enrich_reason"] = "api_unavailable"
         updated_job["jd_text"] = None
-        updated_job["fetched_at"] = datetime.utcnow().isoformat()
+        updated_job["fetched_at"] = utc_now_naive().isoformat()
         return updated_job, "api_unavailable", "unavailable"
     if failure_type == "invalid_response":
         updated_job["enrich_status"] = "failed"
@@ -327,7 +327,7 @@ def _enrich_single(
         jd_text = None
         unavailable_reason = updated_job.get("enrich_reason") or "unavailable"
 
-    updated_job["fetched_at"] = datetime.utcnow().isoformat()
+    updated_job["fetched_at"] = utc_now_naive().isoformat()
 
     if jd_text:
         logger.info(f" ✅ Final JD length: {len(jd_text)} chars")

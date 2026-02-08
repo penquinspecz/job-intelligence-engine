@@ -3,7 +3,6 @@
 import json
 import os
 import time
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -11,6 +10,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from ji_engine.utils.job_id import extract_job_id_from_url
+from ji_engine.utils.time import utc_now_naive
 
 # Debug mode flag
 DEBUG = os.getenv("JI_DEBUG") == "1"
@@ -291,7 +291,7 @@ def enrich_jobs(
                 if not clean_title:
                     clean_title = extract_clean_title_from_html(html) or clean_title
 
-        fetched_at = datetime.utcnow().isoformat()
+        fetched_at = utc_now_naive().isoformat()
         if jd_text:
             print(f"    ✅ Final JD length: {len(jd_text)} chars")
         else:

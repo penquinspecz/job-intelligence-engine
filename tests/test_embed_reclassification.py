@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 
 from ji_engine.embeddings.simple import build_profile_text
 from ji_engine.models import JobSource, RawJobPosting
 from ji_engine.profile_loader import Basics, CandidateProfile, Constraints, Preferences, Skills
+from ji_engine.utils.time import utc_now_naive
 from scripts.run_classify import _reclassify_maybe, _select_provider
 
 
@@ -45,7 +45,7 @@ def test_maybe_job_promoted_by_embedding(tmp_path: Path) -> None:
             apply_url="u1",
             detail_url="d1",
             raw_text="We need customer success and value realization with APIs experience.",
-            scraped_at=datetime.utcnow(),
+            scraped_at=utc_now_naive(),
         ),
         RawJobPosting(
             source=JobSource.OPENAI,
@@ -55,7 +55,7 @@ def test_maybe_job_promoted_by_embedding(tmp_path: Path) -> None:
             apply_url="u2",
             detail_url="d2",
             raw_text="Nothing relevant.",
-            scraped_at=datetime.utcnow(),
+            scraped_at=utc_now_naive(),
         ),
     ]
 

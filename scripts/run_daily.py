@@ -59,12 +59,14 @@ from ji_engine.config import (
     shortlist_md as shortlist_md_path,
 )
 from ji_engine.history_retention import update_history_retention, write_history_run_artifacts
+from ji_engine.providers.registry import load_providers_config, resolve_provider_ids
 from ji_engine.utils.atomic_write import atomic_write_text
 from ji_engine.utils.content_fingerprint import content_fingerprint
 from ji_engine.utils.diff_report import build_diff_markdown, build_diff_report
 from ji_engine.utils.dotenv import load_dotenv
 from ji_engine.utils.job_identity import job_identity
 from ji_engine.utils.redaction import scan_json_for_secrets, scan_text_for_secrets
+from ji_engine.utils.time import utc_now_naive, utc_now_z
 from ji_engine.utils.user_state import load_user_state_checked, normalize_user_status
 from ji_engine.utils.verification import (
     build_verifiable_artifacts,
@@ -180,7 +182,7 @@ def _warn_if_not_user_writable(paths: List[Path], *, context: str) -> None:
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:  # type: ignore[override]
         payload = {
-            "time": datetime.utcnow().isoformat(),
+            "time": utc_now_naive().isoformat(),
             "level": record.levelname,
             "msg": record.getMessage(),
         }
@@ -203,7 +205,7 @@ load_dotenv()  # loads .env if present; won't override exported env vars
 
 
 def _utcnow_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return utc_now_z(seconds_precision=True)
 
 
 def _pid_alive(pid: int) -> bool:
@@ -745,18 +747,12 @@ def _sanitize_run_id(run_id: str) -> str:
 
 
 def _resolve_providers(args: argparse.Namespace) -> List[str]:
-    providers_arg = (args.providers or "").strip()
-    providers = [p.strip() for p in providers_arg.split(",") if p.strip()]
-    if not providers:
-        providers = ["openai"]
-
-    seen = set()
-    out: List[str] = []
-    for p in providers:
-        if p not in seen:
-            seen.add(p)
-            out.append(p)
-    return out
+    providers_cfg = load_providers_config(Path(args.providers_config))
+    try:
+        return resolve_provider_ids(args.providers, providers_cfg, default_provider="openai")
+    except ValueError as exc:
+        logger.error(str(exc))
+        raise SystemExit(2) from exc
 
 
 def _resolve_output_dir() -> Path:
@@ -1659,7 +1655,7 @@ def _score_input_selection_detail_for(args: argparse.Namespace, provider: str) -
     comparison_details: Dict[str, Any] = {}
     selection_reason_labeled_vs_enriched = "not_applicable"
     selection_reason_enriched_vs_ai = "not_applicable"
-    decision_timestamp = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    decision_timestamp = utc_now_z(seconds_precision=True)
 
     def _selection_reason_detail(
         rule_id: str,
@@ -2008,6 +2004,29 @@ def _collect_run_log_pointers(run_id: str, file_sink_path: Optional[str]) -> Dic
     if file_sink_path:
         local_payload["structured_log_jsonl"] = file_sink_path
 
+    k8s_namespace = (
+        os.environ.get("JOBINTEL_K8S_NAMESPACE") or os.environ.get("POD_NAMESPACE") or os.environ.get("K8S_NAMESPACE")
+    )
+    k8s_context = os.environ.get("JOBINTEL_K8S_CONTEXT")
+    k8s_payload: Dict[str, Any] = {}
+    if k8s_namespace or os.environ.get("KUBERNETES_SERVICE_HOST"):
+        namespace = k8s_namespace or "jobintel"
+        context_fragment = f"--context {k8s_context} " if k8s_context else ""
+        k8s_payload = {
+            "namespace": namespace,
+            "context": k8s_context,
+            "run_id": run_id,
+            "pod_list_command": (
+                f"kubectl {context_fragment}-n {namespace} get pods --sort-by=.metadata.creationTimestamp"
+            ),
+            "job_list_command": (
+                f"kubectl {context_fragment}-n {namespace} get jobs --sort-by=.metadata.creationTimestamp"
+            ),
+            "logs_command_template": (
+                f"kubectl {context_fragment}-n {namespace} logs <pod-or-job> | rg 'JOBINTEL_RUN_ID={run_id}'"
+            ),
+        }
+
     region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
     log_group = (
         os.environ.get("JOBINTEL_CLOUDWATCH_LOG_GROUP")
@@ -2029,12 +2048,14 @@ def _collect_run_log_pointers(run_id: str, file_sink_path: Optional[str]) -> Dic
             "region": region,
             "cloudwatch_log_group": log_group,
             "cloudwatch_log_stream": log_stream,
+            "cloudwatch_filter_pattern": f'"JOBINTEL_RUN_ID={run_id}"',
         }
 
     return {
         "schema_version": 1,
         "run_id": run_id,
         "local": local_payload,
+        "k8s": k8s_payload,
         "cloud": cloud_payload,
     }
 

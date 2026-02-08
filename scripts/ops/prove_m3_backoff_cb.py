@@ -7,7 +7,6 @@ import shlex
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -22,18 +21,19 @@ from ji_engine.proof.politeness_proof import (  # noqa: E402
     provider_payload,
     required_politeness_issues,
 )
+from ji_engine.utils.time import utc_now, utc_now_z  # noqa: E402
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return utc_now()
 
 
 def _utc_now_iso() -> str:
-    return _utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
+    return utc_now_z(seconds_precision=True)
 
 
 def _run_id_default() -> str:
-    return _utc_now().isoformat()
+    return utc_now_z(seconds_precision=True)
 
 
 def _run(cmd: list[str], *, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:

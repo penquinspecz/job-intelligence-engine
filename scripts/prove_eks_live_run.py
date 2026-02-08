@@ -11,7 +11,6 @@ import json
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -23,12 +22,13 @@ from ji_engine.proof.liveproof import (
     extract_run_id,
     required_provenance_issues,
 )
+from ji_engine.utils.time import utc_now
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _utc_stamp() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    return utc_now().strftime("%Y%m%d%H%M%S")
 
 
 def _run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
