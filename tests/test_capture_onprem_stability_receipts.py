@@ -25,7 +25,7 @@ def test_plan_mode_is_deterministic_and_no_kubectl_calls(tmp_path: Path, monkeyp
         "--namespace",
         "jobintel",
         "--cluster-context",
-        "k3s-main",
+        "does-not-exist",
         "--window-hours",
         "72",
         "--interval-minutes",
@@ -57,6 +57,23 @@ def test_plan_mode_is_deterministic_and_no_kubectl_calls(tmp_path: Path, monkeyp
     assert receipt["mode"] == "plan"
     assert receipt["status"] == "planned"
 
+    manifest = json.loads((bundle_dir / "manifest.json").read_text(encoding="utf-8"))
+    manifest_paths = [item["path"] for item in manifest["files"]]
+    expected = sorted(
+        [
+            "README.md",
+            "capture_commands.sh",
+            "host_k3s_service_evidence.txt",
+            "host_storage_evidence.txt",
+            "host_timesync_evidence.txt",
+            "ingress_dns_tls_evidence.txt",
+            "plan.json",
+            "proof_observations.md",
+            "receipt.json",
+        ]
+    )
+    assert manifest_paths == expected
+
 
 def test_receipt_schema_required_keys(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(capture, "REPO_ROOT", tmp_path)
@@ -71,7 +88,7 @@ def test_receipt_schema_required_keys(tmp_path: Path, monkeypatch) -> None:
         "--namespace",
         "jobintel",
         "--cluster-context",
-        "k3s-main",
+        "any-context-is-ok",
         "--window-hours",
         "72",
         "--interval-minutes",

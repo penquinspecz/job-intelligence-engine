@@ -26,7 +26,7 @@ python scripts/ops/prove_m4_onprem.py \
   --run-id 20260207T120000Z \
   --output-dir ops/proof/bundles \
   --namespace jobintel \
-  --cluster-context <k3s-context> \
+  --cluster-context k3s-pi \
   --overlay-path ops/k8s/jobintel/overlays/onprem
 ```
 
@@ -48,7 +48,7 @@ python scripts/ops/capture_onprem_stability_receipts.py --plan \
   --run-id 20260207T120000Z \
   --output-dir ops/proof/bundles \
   --namespace jobintel \
-  --cluster-context <k3s-context> \
+  --cluster-context k3s-pi \
   --window-hours 72 \
   --interval-minutes 360
 ```
@@ -71,7 +71,7 @@ python scripts/ops/prove_m4_onprem.py \
   --run-id 20260207T120000Z \
   --output-dir ops/proof/bundles \
   --namespace jobintel \
-  --cluster-context <k3s-context> \
+  --cluster-context k3s-pi \
   --execute
 ```
 
@@ -103,7 +103,7 @@ python scripts/ops/capture_onprem_stability_receipts.py --execute \
   --run-id 20260207T120000Z \
   --output-dir ops/proof/bundles \
   --namespace jobintel \
-  --cluster-context <k3s-context> \
+  --cluster-context k3s-pi \
   --checkpoint-index 0
 ```
 
@@ -175,10 +175,10 @@ Recommended commands (run periodically):
 Copy/paste commands:
 
 ```bash
-kubectl --context <k3s-context> get nodes -o wide
-kubectl --context <k3s-context> -n jobintel get pods -o custom-columns=NAME:.metadata.name,RESTARTS:.status.containerStatuses[*].restartCount
-kubectl --context <k3s-context> -n jobintel get jobs --sort-by=.metadata.creationTimestamp
-kubectl --context <k3s-context> -n jobintel get events --sort-by=.metadata.creationTimestamp | tail -n 80
+kubectl --context k3s-pi get nodes -o wide
+kubectl --context k3s-pi -n jobintel get pods -o custom-columns=NAME:.metadata.name,RESTARTS:.status.containerStatuses[*].restartCount
+kubectl --context k3s-pi -n jobintel get jobs --sort-by=.metadata.creationTimestamp
+kubectl --context k3s-pi -n jobintel get events --sort-by=.metadata.creationTimestamp | tail -n 80
 ```
 
 Update `proof_observations.md` at each checkpoint (`T+00h`, `T+24h`, `T+48h`, `T+72h`) so the final bundle has an explicit operator narrative linked to raw logs.
@@ -192,7 +192,7 @@ python scripts/ops/capture_onprem_stability_receipts.py --execute --loop \
   --run-id 20260207T120000Z \
   --output-dir ops/proof/bundles \
   --namespace jobintel \
-  --cluster-context <k3s-context> \
+  --cluster-context k3s-pi \
   --window-hours 72 \
   --interval-minutes 360
 ```
@@ -208,7 +208,7 @@ python scripts/ops/capture_onprem_stability_receipts.py --finalize \
   --run-id 20260207T120000Z \
   --output-dir ops/proof/bundles \
   --namespace jobintel \
-  --cluster-context <k3s-context>
+  --cluster-context k3s-pi
 ```
 
 If you must finalize without host evidence (not recommended), pass:
@@ -219,8 +219,10 @@ python scripts/ops/capture_onprem_stability_receipts.py --finalize \
   --run-id 20260207T120000Z \
   --output-dir ops/proof/bundles \
   --namespace jobintel \
-  --cluster-context <k3s-context>
+  --cluster-context k3s-pi
 ```
+
+Note: avoid angle brackets in copy/paste examples; many shells (including zsh) interpret them.
 
 ## 4) Failure branches
 

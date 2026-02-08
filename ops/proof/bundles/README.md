@@ -10,7 +10,7 @@ python scripts/ops/capture_onprem_stability_receipts.py --plan \
   --run-id 20260207T120000Z \
   --output-dir ops/proof/bundles \
   --namespace jobintel \
-  --cluster-context <k3s-context>
+  --cluster-context k3s-pi
 ```
 
 Capture one checkpoint (trial):
@@ -19,7 +19,7 @@ python scripts/ops/capture_onprem_stability_receipts.py --execute \
   --run-id 20260207T120000Z \
   --output-dir ops/proof/bundles \
   --namespace jobintel \
-  --cluster-context <k3s-context> \
+  --cluster-context k3s-pi \
   --checkpoint-index 0
 ```
 
@@ -29,7 +29,7 @@ python scripts/ops/capture_onprem_stability_receipts.py --execute --loop \
   --run-id 20260207T120000Z \
   --output-dir ops/proof/bundles \
   --namespace jobintel \
-  --cluster-context <k3s-context> \
+  --cluster-context k3s-pi \
   --window-hours 72 \
   --interval-minutes 360
 ```
@@ -40,7 +40,7 @@ python scripts/ops/capture_onprem_stability_receipts.py --finalize \
   --run-id 20260207T120000Z \
   --output-dir ops/proof/bundles \
   --namespace jobintel \
-  --cluster-context <k3s-context>
+  --cluster-context k3s-pi
 ```
 
 If you must finalize without host evidence (not recommended), pass:
@@ -50,5 +50,7 @@ python scripts/ops/capture_onprem_stability_receipts.py --finalize \
   --run-id 20260207T120000Z \
   --output-dir ops/proof/bundles \
   --namespace jobintel \
-  --cluster-context <k3s-context>
+  --cluster-context k3s-pi
 ```
+
+Note: avoid angle brackets in copy/paste examples; many shells (including zsh) interpret them.
