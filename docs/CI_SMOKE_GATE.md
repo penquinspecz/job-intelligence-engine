@@ -1,6 +1,6 @@
 # CI Smoke Gate Contract
 
-This document is the operational contract for `.github/workflows/ci.yml`.
+This document is the operational contract for CI smoke gates.
 It describes exactly what CI runs, what each step proves, and how to debug failures quickly.
 
 ## CI Step Order
@@ -25,7 +25,9 @@ It describes exactly what CI runs, what each step proves, and how to debug failu
    - `.venv/bin/python scripts/check_roadmap_discipline.py`
    - `continue-on-error: true`
 
-Source: `.github/workflows/ci.yml`.
+Sources:
+- `.github/workflows/ci.yml` (unit + determinism + cronjob smoke)
+- `.github/workflows/docker-smoke.yml` (containerized smoke gate)
 
 ## Gate Contracts
 
@@ -82,6 +84,36 @@ Source: `Makefile` target `cronjob-smoke`.
 - Findings are logged but do not fail CI yet (`continue-on-error: true`).
 
 Source: `.github/workflows/ci.yml`.
+
+### 5) Docker smoke gate (containerized)
+
+Workflow: `.github/workflows/docker-smoke.yml`
+
+Exact invocation (env vars + command):
+
+```bash
+export CONTAINER_NAME=jobintel_smoke
+export SMOKE_ARTIFACTS_DIR="$GITHUB_WORKSPACE/smoke_artifacts"
+export SMOKE_PROVIDERS=openai
+export SMOKE_PROFILES=cs
+export SMOKE_SKIP_BUILD=1
+export SMOKE_UPDATE_SNAPSHOTS=0
+export SMOKE_MIN_SCORE=40
+./scripts/smoke_docker.sh --skip-build --providers openai --profiles cs
+```
+
+Required artifacts (in `smoke_artifacts/`):
+- `exit_code.txt` (container exit code)
+- `smoke.log` (combined stdout/stderr)
+- `docker_context.txt` (context + docker info)
+- `run_report.json` (real or placeholder on failure)
+- `smoke_summary.json` (status + missing_artifacts + tail)
+- `metadata.json` (smoke metadata)
+- `openai_labeled_jobs.json`
+- `openai_ranked_jobs.cs.json`
+- `openai_ranked_jobs.cs.csv`
+- `openai_shortlist.cs.md` (may be empty, must exist)
+- `openai_top.cs.md` (may be empty, must exist)
 
 ## Failure Modes And What To Inspect
 
@@ -152,6 +184,22 @@ JOBINTEL_DATA_DIR=$tmp_data JOBINTEL_STATE_DIR=$tmp_state JOBINTEL_CRONJOB_RUN_I
 ls -R "$tmp_state"
 ```
 
+### Failure: Docker smoke gate
+
+Inspect:
+
+```bash
+ls -la smoke_artifacts
+cat smoke_artifacts/exit_code.txt
+tail -n 200 smoke_artifacts/smoke.log
+cat smoke_artifacts/docker_context.txt
+```
+
+Common causes:
+- missing image tag when `SMOKE_SKIP_BUILD=1`
+- snapshot validation failed inside container
+- missing artifacts copied from container (see `smoke_summary.json`)
+
 ### Failure: `deps-check` / stale lock contract
 
 Inspect:
@@ -186,6 +234,30 @@ make cronjob-smoke
 ```bash
 DOCKER_BUILDKIT=1 docker build --no-cache --build-arg RUN_TESTS=1 -t jobintel:tests .
 ```
+
+## Determinism Rules (CI Smoke)
+
+- Snapshot-only: no live scraping in CI (`--offline --snapshot-only` in smoke container).
+- Providers config is pinned: `SMOKE_PROVIDERS_CONFIG=/app/config/providers.json`.
+- Validation scope is explicit:
+  - `snapshots validate --provider <id>` validates only requested providers.
+  - `--all` skips missing snapshot dirs and reports a skip reason.
+- No snapshot refresh in CI (`SMOKE_UPDATE_SNAPSHOTS=0`).
+- Outputs are compared via smoke contract checks (`scripts/smoke_contract_check.py`).
+
+## Case Study: Perplexity Snapshot Mismatch (Historical)
+
+Symptom:
+- Docker smoke gate failed after adding `perplexity` to `config/providers.json` without committed
+  `data/perplexity_snapshots/` in the image.
+
+Root cause:
+- Snapshot validation was too broad (attempted to validate all configured providers),
+  so missing snapshot directories caused a hard failure.
+
+Fix behavior (current):
+- CI smoke validates only the requested provider(s) (`openai` in docker smoke).
+- `--all` now skips missing snapshot directories with an explicit reason.
 
 ## Reference Paths
 
