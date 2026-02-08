@@ -458,7 +458,11 @@ def main(argv: List[str] | None = None) -> int:
                 provenance["snapshot_mtime_iso"] = _mtime_iso(snapshot_path)
                 provenance["snapshot_sha256"] = snapshot_meta.get("sha256") or _sha256(snapshot_path)
                 if snapshot_path.exists():
-                    ok, reason = validate_snapshot_file(provider_id, snapshot_path)
+                    ok, reason = validate_snapshot_file(
+                        provider_id,
+                        snapshot_path,
+                        extraction_mode=provider_cfg.get("extraction_mode", "ashby"),
+                    )
                     provenance["snapshot_validated"] = ok
                     if not ok:
                         provenance["snapshot_reason"] = reason
@@ -632,7 +636,11 @@ def main(argv: List[str] | None = None) -> int:
                         except Exception:
                             provenance["snapshot_baseline_count"] = None
                     if snapshot_path.exists():
-                        ok, reason = validate_snapshot_file(provider_id, snapshot_path)
+                        ok, reason = validate_snapshot_file(
+                            provider_id,
+                            snapshot_path,
+                            extraction_mode=provider_cfg.get("extraction_mode"),
+                        )
                         provenance["snapshot_validated"] = ok
                         if not ok:
                             provenance["snapshot_reason"] = reason
@@ -667,6 +675,7 @@ def main(argv: List[str] | None = None) -> int:
                         snapshot_dir=snapshot_dir,
                         mode=mode,
                         snapshot_write_dir=snapshot_write_dir,
+                        llm_fallback=provider_cfg.get("llm_fallback"),
                     )
                     if mode == "LIVE":
                         _log_policy_summary(provider_id, policy_snapshot)

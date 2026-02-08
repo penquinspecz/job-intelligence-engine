@@ -46,3 +46,25 @@ def test_jsonld_provider_rejects_invalid_snapshot(tmp_path: Path) -> None:
     )
     with pytest.raises(RuntimeError, match="Invalid snapshot"):
         provider.load_from_snapshot()
+
+
+def test_jsonld_provider_job_ids_are_stable(tmp_path: Path) -> None:
+    snapshot_dir = tmp_path / "mistral_snapshots"
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    snapshot_path = snapshot_dir / "index.html"
+    snapshot_path.write_text(
+        Path("tests/fixtures/providers/mistral/index.html").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
+    provider = JsonLdProvider(
+        provider_id="mistral",
+        careers_url="https://mistral.ai/careers",
+        snapshot_dir=snapshot_dir,
+        mode="SNAPSHOT",
+    )
+    first = provider.load_from_snapshot()
+    second = provider.load_from_snapshot()
+
+    assert [item.job_id for item in first] == [item.job_id for item in second]
+    assert all(item.job_id for item in first)

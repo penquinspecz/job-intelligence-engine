@@ -73,7 +73,7 @@ class AshbyProvider(BaseJobProvider):
         if not snapshot_file.exists():
             print(f"[AshbyProvider] ❌ Snapshot not found at {snapshot_file}")
             return []
-        ok, reason = validate_snapshot_file(self.provider_id, snapshot_file)
+        ok, reason = validate_snapshot_file(self.provider_id, snapshot_file, extraction_mode="ashby")
         if not ok:
             raise RuntimeError(f"Invalid snapshot for {self.provider_id} at {snapshot_file}: {reason}")
         html = snapshot_file.read_text(encoding="utf-8")
