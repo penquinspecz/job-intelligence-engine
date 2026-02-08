@@ -21,6 +21,29 @@ def test_collect_run_log_pointers_is_stable(monkeypatch) -> None:
     assert first["local"]["structured_log_jsonl"] == log_path
     assert first["cloud"]["cloudwatch_log_group"] == "/aws/ecs/jobintel"
     assert first["cloud"]["cloudwatch_log_stream"] == "jobintel/liveproof"
+    assert first["cloud"]["cloudwatch_filter_pattern"] == f'"JOBINTEL_RUN_ID={run_id}"'
+    assert first["k8s"] == {}
+
+
+def test_collect_run_log_pointers_k8s_templates(monkeypatch) -> None:
+    run_id = "2026-02-07T05:00:00Z"
+    monkeypatch.setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
+    monkeypatch.setenv("JOBINTEL_K8S_NAMESPACE", "jobintel")
+    monkeypatch.setenv("JOBINTEL_K8S_CONTEXT", "my-cluster")
+
+    payload = run_daily._collect_run_log_pointers(run_id, file_sink_path=None)
+    assert payload["k8s"]["namespace"] == "jobintel"
+    assert payload["k8s"]["context"] == "my-cluster"
+    assert payload["k8s"]["run_id"] == run_id
+    assert payload["k8s"]["pod_list_command"] == (
+        "kubectl --context my-cluster -n jobintel get pods --sort-by=.metadata.creationTimestamp"
+    )
+    assert payload["k8s"]["job_list_command"] == (
+        "kubectl --context my-cluster -n jobintel get jobs --sort-by=.metadata.creationTimestamp"
+    )
+    assert payload["k8s"]["logs_command_template"] == (
+        "kubectl --context my-cluster -n jobintel logs <pod-or-job> | rg 'JOBINTEL_RUN_ID=2026-02-07T05:00:00Z'"
+    )
 
 
 def test_enforce_run_log_retention_prunes_logs_only(tmp_path: Path) -> None:
