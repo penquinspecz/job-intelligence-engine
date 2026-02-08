@@ -11,7 +11,10 @@ def test_jsonld_provider_parses_snapshot_deterministically(tmp_path: Path) -> No
     snapshot_dir = tmp_path / "xai_snapshots"
     snapshot_dir.mkdir(parents=True, exist_ok=True)
     snapshot_path = snapshot_dir / "index.html"
-    snapshot_path.write_text(Path("data/xai_snapshots/index.html").read_text(encoding="utf-8"), encoding="utf-8")
+    snapshot_path.write_text(
+        Path("tests/fixtures/providers/xai/index.html").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
 
     provider = JsonLdProvider(
         provider_id="xai",

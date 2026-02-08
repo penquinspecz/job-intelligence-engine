@@ -12,7 +12,10 @@ def test_run_scrape_jsonld_snapshot_provider(tmp_path, monkeypatch) -> None:
     data_dir.mkdir(parents=True, exist_ok=True)
     snapshot_dir = data_dir / "xai_snapshots"
     snapshot_dir.mkdir(parents=True, exist_ok=True)
-    (snapshot_dir / "index.html").write_text(Path("data/xai_snapshots/index.html").read_text(encoding="utf-8"))
+    (snapshot_dir / "index.html").write_text(
+        Path("tests/fixtures/providers/xai/index.html").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
 
     providers_path = tmp_path / "providers.json"
     providers_path.write_text(
