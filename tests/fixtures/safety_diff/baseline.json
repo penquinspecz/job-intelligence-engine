@@ -1,0 +1,27 @@
+[
+  {
+    "job_id": "job-1",
+    "title": "Role A",
+    "location": "NY",
+    "team": "Eng",
+    "apply_url": "https://example.com/a",
+    "detail_url": "https://example.com/a",
+    "source": "cohere"
+  },
+  {
+    "job_id": "job-2",
+    "title": "Role B",
+    "location": "",
+    "team": "Ops",
+    "apply_url": "https://example.com/b",
+    "source": "cohere"
+  },
+  {
+    "job_id": "job-3",
+    "title": "Role C",
+    "location": "SF",
+    "team": "Eng",
+    "detail_url": "https://example.com/c",
+    "source": "cohere"
+  }
+]
