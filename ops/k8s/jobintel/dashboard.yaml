@@ -21,7 +21,7 @@ spec:
       serviceAccountName: jobintel
       containers:
         - name: dashboard
-          image: 048622080012.dkr.ecr.us-east-1.amazonaws.com/jobintel:live-snapshotdir-20260205-082950
+          image: ghcr.io/yourorg/jobintel:latest
           imagePullPolicy: IfNotPresent
           command:
             - python
@@ -37,6 +37,7 @@ spec:
                 name: jobintel-config
             - secretRef:
                 name: jobintel-secrets
+                optional: true
           ports:
             - containerPort: 8080
           resources:

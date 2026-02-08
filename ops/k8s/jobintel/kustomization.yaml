@@ -11,3 +11,4 @@ resources:
   - cronjob.yaml
   - job.manual.yaml
   - job.s3preflight.yaml
+  - dashboard.yaml

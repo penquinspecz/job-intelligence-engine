@@ -52,12 +52,15 @@ kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" get cronjob jobintel-daily
 kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" get cronjob jobintel-daily -o yaml | rg -n "image:|CAREERS_MODE|PUBLISH_S3"
 ```
 
-## Dashboard API
+## Dashboard API (EKS-safe, no ingress required)
 
-Deploy the API service:
+Apply base + AWS overlay (includes dashboard deployment + service):
 
 ```bash
-kubectl --context "$KUBE_CONTEXT" apply -f ops/k8s/jobintel/dashboard.yaml
+export JOBINTEL_IMAGE="<acct>.dkr.ecr.<region>.amazonaws.com/jobintel:<tag>"
+JOBINTEL_IRSA_ROLE_ARN="$JOBINTEL_IRSA_ROLE_ARN" \
+  python scripts/k8s_render.py --overlay aws-eks --image "$JOBINTEL_IMAGE" > /tmp/jobintel.yaml
+kubectl --context "$KUBE_CONTEXT" apply -f /tmp/jobintel.yaml
 kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" get deploy jobintel-dashboard
 ```
 
@@ -66,8 +69,11 @@ Port-forward locally:
 ```bash
 kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" port-forward svc/jobintel-dashboard 8080:80
 curl -s http://localhost:8080/healthz
-curl -s http://localhost:8080/v1/latest | jq .
 ```
+
+No-secrets path (read-only):
+- `jobintel-secrets` is optional for the dashboard deployment.
+- Without secrets, `/healthz` is available; S3-backed browsing is not configured by default.
 
 ## Verify Deployment (Scheduled + One-off)
 
