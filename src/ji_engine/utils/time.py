@@ -18,7 +18,7 @@ def utc_now_naive() -> datetime:
     return utc_now().replace(tzinfo=None)
 
 
-def utc_now_z(*, seconds_precision: bool = False) -> str:
+def utc_now_z(*, seconds_precision: bool = True) -> str:
     """Return an ISO-8601 UTC timestamp with trailing Z."""
     current = utc_now()
     if seconds_precision:

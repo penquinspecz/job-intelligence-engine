@@ -205,7 +205,7 @@ load_dotenv()  # loads .env if present; won't override exported env vars
 
 
 def _utcnow_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return utc_now_z(seconds_precision=True)
 
 
 def _pid_alive(pid: int) -> bool:

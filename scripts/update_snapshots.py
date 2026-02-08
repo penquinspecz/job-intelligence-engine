@@ -15,7 +15,6 @@ import re
 import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Optional, Tuple
 from urllib.error import HTTPError, URLError
@@ -24,10 +23,11 @@ from urllib.request import Request, urlopen
 from ji_engine.providers.openai_provider import CAREERS_SEARCH_URL
 from ji_engine.providers.registry import load_providers_config
 from ji_engine.utils.job_id import extract_job_id_from_url
+from ji_engine.utils.time import utc_now_z
 
 
 def _utcnow_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return utc_now_z(seconds_precision=True)
 
 
 def _sha256_bytes(data: bytes) -> str:

@@ -4,11 +4,11 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
 from ji_engine.utils.redaction import scan_text_for_secrets
+from ji_engine.utils.time import utc_now_z
 
 
 @dataclass(frozen=True)
@@ -35,7 +35,7 @@ _SECRET_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
 
 
 def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return utc_now_z(seconds_precision=True)
 
 
 def find_secret_matches(text: str) -> list[SecretMatch]:

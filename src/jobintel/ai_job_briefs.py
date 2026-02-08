@@ -3,13 +3,13 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from ji_engine.config import REPO_ROOT, RUN_METADATA_DIR, STATE_DIR
 from ji_engine.utils.content_fingerprint import content_fingerprint
 from ji_engine.utils.job_identity import job_identity
+from ji_engine.utils.time import utc_now_z
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +18,7 @@ PROMPT_PATH = REPO_ROOT / "docs" / "prompts" / "job_briefs_v1.md"
 
 
 def _utcnow_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return utc_now_z(seconds_precision=True)
 
 
 def _sanitize_run_id(run_id: str) -> str:

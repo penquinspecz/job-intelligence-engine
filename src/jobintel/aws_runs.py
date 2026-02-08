@@ -3,12 +3,14 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 import boto3
 from botocore.exceptions import ClientError
+
+from ji_engine.utils.time import utc_now_z
 
 
 @dataclass
@@ -295,7 +297,7 @@ def parse_pointer(payload: dict) -> Optional[str]:
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return utc_now_z(seconds_precision=True)
 
 
 __all__ = [

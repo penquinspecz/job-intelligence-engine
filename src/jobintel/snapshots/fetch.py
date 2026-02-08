@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Literal, Optional, Tuple
 
 import requests
+
+from ji_engine.utils.time import utc_now_z
 
 FetchMethod = Literal["requests", "playwright"]
 
 
 def _utcnow_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return utc_now_z(seconds_precision=True)
 
 
 def fetch_html(

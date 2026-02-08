@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timezone
 from typing import Any, Dict, Optional
+
+from ji_engine.utils.time import utc_now_z
 
 RUN_ID_REGEX = re.compile(r"JOBINTEL_RUN_ID=([^\s]+)")
 PROVENANCE_REGEX = re.compile(r"\[run_scrape\]\[provenance\]\s+(\{.*\})")
@@ -12,7 +13,7 @@ PUBLISH_POINTER_REGEX = re.compile(r"PUBLISH_CONTRACT .*pointer_global=([a-z_]+)
 
 
 def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return utc_now_z(seconds_precision=True)
 
 
 def extract_run_id(log_text: str) -> Optional[str]:

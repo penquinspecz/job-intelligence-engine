@@ -9,9 +9,10 @@ except ModuleNotFoundError:
 import argparse
 import json
 import shutil
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+
+from ji_engine.utils.time import utc_now_z
 
 
 def _snapshot_dir(provider_id: str, data_dir: Path) -> Path:
@@ -47,7 +48,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     if args.write_metadata:
         payload = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": utc_now_z(seconds_precision=True),
             "source_file": str(src),
         }
         _metadata_path(snapshot_dir).write_text(
