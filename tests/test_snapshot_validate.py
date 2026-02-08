@@ -110,3 +110,22 @@ def test_validate_snapshots_all_skips_missing(tmp_path: Path, monkeypatch) -> No
     assert status_map["alpha"].ok is True
     assert status_map["alpha"].skipped is False
     assert status_map["beta"].skipped is True
+
+
+def test_validate_snapshots_skips_disabled_provider(tmp_path: Path) -> None:
+    providers_cfg = [
+        {
+            "provider_id": "alpha",
+            "careers_urls": ["https://alpha.example/jobs"],
+            "extraction_mode": "jsonld",
+            "snapshot_path": "data/alpha_snapshots/index.html",
+            "snapshot_enabled": False,
+        }
+    ]
+    results = validate_snapshots(
+        providers_cfg,
+        provider_ids=["alpha"],
+        data_dir=tmp_path,
+    )
+    assert results[0].skipped is True
+    assert results[0].reason == "skipped: snapshot_disabled"

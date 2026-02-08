@@ -175,6 +175,27 @@ def test_load_providers_config_rejects_unknown_keys(tmp_path: Path) -> None:
         load_providers_config(config_path)
 
 
+def test_load_providers_config_rejects_missing_extraction_mode(tmp_path: Path) -> None:
+    config_path = tmp_path / "providers.json"
+    config_path.write_text(
+        """
+{
+  "schema_version": 1,
+  "providers": [
+    {
+      "provider_id": "alpha",
+      "careers_urls": ["https://alpha.example/jobs"],
+      "snapshot_path": "data/alpha/index.html"
+    }
+  ]
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="missing extraction_mode/type"):
+        load_providers_config(config_path)
+
+
 def test_load_providers_config_rejects_llm_fallback_temp(tmp_path: Path) -> None:
     config_path = tmp_path / "providers.json"
     config_path.write_text(

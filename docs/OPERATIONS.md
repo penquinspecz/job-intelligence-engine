@@ -137,6 +137,30 @@ python scripts/check_roadmap_discipline.py --strict
 
 Snapshot-only violations fail fast with exit code 2 and a message naming the provider.
 
+## Add Provider Checklist (M5)
+
+1. **Config entry (required):**
+   - `provider_id`, `extraction_mode`, and one of `careers_urls`/`careers_url`/`board_url`.
+   - `snapshot_path` or `snapshot_dir` (defaults to `data/<provider_id>_snapshots/index.html`).
+   - `snapshot_enabled: true` (default) unless intentionally disabled.
+   - `allowed_domains` + `update_cadence` (optional but recommended).
+2. **Fixture requirements (deterministic):**
+   - Commit `data/<provider_id>_snapshots/index.html` (or JSON snapshot for `snapshot_json`).
+   - Add a test fixture under `tests/fixtures/providers/<provider_id>/index.html`.
+3. **Validation commands (offline):**
+   - `python -m src.jobintel.cli snapshots validate --provider <id>`
+   - `python -m src.jobintel.cli snapshots validate --all` (skips missing snapshot dirs)
+4. **Tests to update/add:**
+   - Registry schema rejection test (missing fields / unknown keys).
+   - JSON-LD parsing test (stable ordering + stable `job_id` across runs).
+   - Snapshot validation selection/skip semantics.
+5. **Debug schema failures:**
+   - Errors are fail-closed and name the missing field or bad key.
+   - Check `schemas/providers.schema.v1.json` and `src/ji_engine/providers/registry.py`.
+6. **LLM fallback (cache-only, disabled by default):**
+   - `llm_fallback.enabled` is `false` unless explicitly configured.
+   - If enabled, requires `llm_fallback.cache_dir` and `temperature=0`.
+
 ## Provider failure policy
 
 Live scraping is guarded by deterministic, fail-closed thresholds:

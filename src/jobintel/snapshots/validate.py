@@ -200,7 +200,7 @@ def validate_snapshots(
         snapshot_enabled = bool(entry.get("snapshot_enabled", True))
         extraction_mode = str(entry.get("extraction_mode") or entry.get("type") or "snapshot_json")
         snapshot_path = _resolve_snapshot_path(entry, base_dir)
-        if not snapshot_enabled and validate_all:
+        if not snapshot_enabled:
             results.append(
                 ValidationResult(
                     provider=provider,

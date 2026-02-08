@@ -55,6 +55,8 @@ def _validate_provider_entry_schema(entry: Dict[str, Any], schema: Dict[str, Any
     has_url = any(entry.get(field) for field in ("careers_urls", "careers_url", "board_url"))
     if not has_url:
         raise ValueError("provider entry missing careers_url/careers_urls/board_url")
+    if not (entry.get("extraction_mode") or entry.get("type")):
+        raise ValueError("provider entry missing extraction_mode/type")
     if "careers_urls" in entry and not isinstance(entry.get("careers_urls"), list):
         raise ValueError("careers_urls must be a list when provided")
     if "careers_url" in entry and not isinstance(entry.get("careers_url"), str):
