@@ -39,6 +39,29 @@ Expected receipts:
 - `ops/proof/bundles/m4-<run_id>/onprem/host_storage_evidence.txt`
 - `ops/proof/bundles/m4-<run_id>/onprem/proof_observations.md`
 
+## 1b) Start 72h stability receipt bundle (plan mode)
+
+Copy/paste commands:
+
+```bash
+python scripts/ops/capture_onprem_stability_receipts.py --plan \
+  --run-id 20260207T120000Z \
+  --output-dir ops/proof/bundles \
+  --namespace jobintel \
+  --cluster-context <k3s-context> \
+  --window-hours 72 \
+  --interval-minutes 360
+```
+
+Expected receipts:
+- `ops/proof/bundles/m4-<run_id>/onprem-72h/plan.json`
+- `ops/proof/bundles/m4-<run_id>/onprem-72h/README.md`
+- `ops/proof/bundles/m4-<run_id>/onprem-72h/host_timesync_evidence.txt`
+- `ops/proof/bundles/m4-<run_id>/onprem-72h/host_k3s_service_evidence.txt`
+- `ops/proof/bundles/m4-<run_id>/onprem-72h/host_storage_evidence.txt`
+- `ops/proof/bundles/m4-<run_id>/onprem-72h/ingress_dns_tls_evidence.txt`
+- `ops/proof/bundles/m4-<run_id>/onprem-72h/proof_observations.md`
+
 ## 2) Capture baseline cluster state
 
 Copy/paste commands:
@@ -70,6 +93,27 @@ Additional receipts written:
 - `host_timesync_evidence.txt` (operator fills with host command outputs)
 - `host_storage_evidence.txt` (operator fills with host command outputs)
 - `receipt.json` (includes `started_at`, `finished_at`, `captured_at`, `k8s_context`, and `evidence_paths`)
+
+## 2b) Capture stability checkpoint (trial run)
+
+Copy/paste commands:
+
+```bash
+python scripts/ops/capture_onprem_stability_receipts.py --execute \
+  --run-id 20260207T120000Z \
+  --output-dir ops/proof/bundles \
+  --namespace jobintel \
+  --cluster-context <k3s-context> \
+  --checkpoint-index 0
+```
+
+Success criteria:
+- One checkpoint written under `onprem-72h/checkpoints/checkpoint-000/summary.json`.
+- `receipt.json` shows `status=fail` only if evidence is missing or health is bad.
+
+If it fails:
+- inspect `onprem-72h/receipt.json` fail_reasons
+- ensure kubectl context is correct and nodes are Ready
 
 ## 3) Observe for 72h and append operator notes
 
@@ -138,6 +182,45 @@ kubectl --context <k3s-context> -n jobintel get events --sort-by=.metadata.creat
 ```
 
 Update `proof_observations.md` at each checkpoint (`T+00h`, `T+24h`, `T+48h`, `T+72h`) so the final bundle has an explicit operator narrative linked to raw logs.
+
+## 3b) Run the 72h stability loop (recommended)
+
+Copy/paste commands:
+
+```bash
+python scripts/ops/capture_onprem_stability_receipts.py --execute --loop \
+  --run-id 20260207T120000Z \
+  --output-dir ops/proof/bundles \
+  --namespace jobintel \
+  --cluster-context <k3s-context> \
+  --window-hours 72 \
+  --interval-minutes 360
+```
+
+If SSH access is available, add `--ssh-host` for each node (and optional `--ssh-user`)
+to auto-capture k3s service status, time sync, and storage evidence. Otherwise fill the
+host evidence templates manually and re-run finalize.
+
+Finalize (after host evidence is filled):
+
+```bash
+python scripts/ops/capture_onprem_stability_receipts.py --finalize \
+  --run-id 20260207T120000Z \
+  --output-dir ops/proof/bundles \
+  --namespace jobintel \
+  --cluster-context <k3s-context>
+```
+
+If you must finalize without host evidence (not recommended), pass:
+
+```bash
+python scripts/ops/capture_onprem_stability_receipts.py --finalize \
+  --allow-missing-host-evidence \
+  --run-id 20260207T120000Z \
+  --output-dir ops/proof/bundles \
+  --namespace jobintel \
+  --cluster-context <k3s-context>
+```
 
 ## 4) Failure branches
 
