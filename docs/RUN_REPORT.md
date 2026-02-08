@@ -7,6 +7,11 @@ debugging, and audit trails. They are versioned with `run_report_schema_version`
 ## Schema version
 `run_report_schema_version`: integer. Current version: **1**.
 
+## Timestamp format
+All run report timestamps use UTC ISO 8601 with trailing `Z` and seconds precision
+(no fractional seconds). This includes `run_id`, `timestamps.started_at`,
+`timestamps.ended_at`, and any `*_at`/`*_time` fields in provenance or artifacts.
+
 ## Top-level fields
 - `run_id`: ISO timestamp used to identify the run.
 - `status`: status string (`success`, `short_circuit`, `error`).
@@ -38,7 +43,12 @@ debugging, and audit trails. They are versioned with `run_report_schema_version`
 - `logs`: observability pointers for this run:
   - `schema_version`, `run_id`
   - `local`: `run_dir`, `logs_dir`, `stdout`, and optional `structured_log_jsonl`
+  - `k8s` (best-effort): `namespace`, optional `context`, and command templates:
+    - `pod_list_command`
+    - `job_list_command`
+    - `logs_command_template` (grep by `JOBINTEL_RUN_ID=<run_id>`)
   - `cloud` (best-effort): AWS `region`, `cloudwatch_log_group`, `cloudwatch_log_stream` when available in env.
+    - includes `cloudwatch_filter_pattern` pinned to `JOBINTEL_RUN_ID=<run_id>` for deterministic discovery.
 - `log_retention`: deterministic logs-only retention summary:
   - `keep_runs`, `runs_seen`, `runs_kept`, `log_dirs_pruned`, `pruned_log_dirs`, `reason`
   - pruning only removes `state/runs/<run_id>/logs/` for older runs; it does not delete run artifacts.

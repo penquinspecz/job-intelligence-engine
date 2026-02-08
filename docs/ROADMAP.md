@@ -42,7 +42,7 @@ If a change doesn’t advance a milestone’s Definition of Done (DoD), it’s p
 
 ## Current State (as of this commit)
 
-Last verified: `2026-02-07T04:27:46Z` @ `0d3b694`
+Last verified: `2026-02-07T05:48:59Z` @ `ae6ceba`
 
 ### Completed foundation (verified in repo/tests)
 - [x] Deterministic ranking + tie-breakers
@@ -85,7 +85,7 @@ Last verified: `2026-02-07T04:27:46Z` @ `0d3b694`
 ## Known Sharp Edges / TODO (updated)
 - [x] **Replayability gap closed:** selected scoring inputs are archived per run for regeneration
 - [x] Provider failure surfacing: retries/backoff, explicit unavailable reasons in run report + Discord
-- [ ] Log destination / rotation strategy for AWS runs (stdout + CloudWatch + retention)
+- [x] Log destination / rotation strategy for AWS runs (stdout + CloudWatch + retention). Evidence: `scripts/run_daily.py`, `tests/test_run_daily_observability.py`, `docs/RUN_REPORT.md`, `docs/OPERATIONS.md`.
 - [x] “Replay a run” workflow exists (`scripts/replay_run.py`) with hash verification + optional `--recalc`
 - [x] Dashboard dependency management: core install excludes dashboard deps; dashboard extras + clear runtime guidance are documented and CI guard is warn-only. Evidence: `pyproject.toml`, `src/ji_engine/dashboard/app.py`, `Makefile`, `.github/workflows/ci.yml`, `docs/OPERATIONS.md`.
 - [ ] AI insights scope: currently weekly “pulse”; Phase 2 adds per-job recommendations and profile-aware coaching.
