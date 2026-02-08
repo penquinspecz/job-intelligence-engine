@@ -60,3 +60,9 @@ variable "tag_subnets" {
   type    = bool
   default = true
 }
+
+variable "admin_principal_arn" {
+  type        = string
+  default     = ""
+  description = "IAM principal ARN to grant EKS cluster admin access (user or role). Leave empty to skip."
+}
