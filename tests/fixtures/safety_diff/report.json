@@ -1,0 +1,136 @@
+{
+  "baseline": {
+    "path": "tests/fixtures/safety_diff/baseline.json",
+    "total_jobs": 3
+  },
+  "candidate": {
+    "path": "tests/fixtures/safety_diff/candidate.json",
+    "total_jobs": 3
+  },
+  "changes_top": [
+    {
+      "diff_count": 1,
+      "field_diffs": {
+        "title": {
+          "baseline": "Role A",
+          "candidate": "Role A+"
+        }
+      },
+      "job_id": "job-1"
+    }
+  ],
+  "counts": {
+    "baseline_total": 3,
+    "candidate_total": 3,
+    "changed": 1,
+    "new": 2,
+    "removed": 2
+  },
+  "field_completeness": {
+    "baseline": {
+      "apply_url": {
+        "non_empty": 2.0,
+        "percent": 0.6667,
+        "total": 3.0
+      },
+      "detail_url": {
+        "non_empty": 2.0,
+        "percent": 0.6667,
+        "total": 3.0
+      },
+      "job_id": {
+        "non_empty": 3.0,
+        "percent": 1.0,
+        "total": 3.0
+      },
+      "location": {
+        "non_empty": 2.0,
+        "percent": 0.6667,
+        "total": 3.0
+      },
+      "team": {
+        "non_empty": 3.0,
+        "percent": 1.0,
+        "total": 3.0
+      },
+      "title": {
+        "non_empty": 3.0,
+        "percent": 1.0,
+        "total": 3.0
+      }
+    },
+    "candidate": {
+      "apply_url": {
+        "non_empty": 3.0,
+        "percent": 1.0,
+        "total": 3.0
+      },
+      "detail_url": {
+        "non_empty": 1.0,
+        "percent": 0.3333,
+        "total": 3.0
+      },
+      "job_id": {
+        "non_empty": 3.0,
+        "percent": 1.0,
+        "total": 3.0
+      },
+      "location": {
+        "non_empty": 3.0,
+        "percent": 1.0,
+        "total": 3.0
+      },
+      "team": {
+        "non_empty": 3.0,
+        "percent": 1.0,
+        "total": 3.0
+      },
+      "title": {
+        "non_empty": 3.0,
+        "percent": 1.0,
+        "total": 3.0
+      }
+    },
+    "delta": {
+      "apply_url": 0.3333,
+      "detail_url": -0.3334,
+      "job_id": 0.0,
+      "location": 0.3333,
+      "team": 0.0,
+      "title": 0.0
+    },
+    "fields": [
+      "job_id",
+      "title",
+      "location",
+      "team",
+      "apply_url",
+      "detail_url"
+    ]
+  },
+  "job_id_churn": {
+    "churn_count": 1,
+    "churn_rate": 1.0,
+    "examples": [
+      {
+        "baseline_job_id": "job-3",
+        "candidate_job_id": "job-3b",
+        "fingerprint": "d121d29e6e53098a48a3ec571c054df7a028b9f5ed761c0fda9d3e1092c272ae",
+        "identity_hint": {
+          "location": "sf",
+          "provider": "cohere",
+          "team": "eng",
+          "title": "role c",
+          "url": "https://example.com/c"
+        }
+      }
+    ],
+    "overlap_fingerprints": 1
+  },
+  "risk_reasons": [
+    "job_id_churn>=30%",
+    "field_changes>=50%"
+  ],
+  "risk_score": 40,
+  "schema_version": 1
+}

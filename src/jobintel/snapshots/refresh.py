@@ -41,6 +41,7 @@ def refresh_snapshot(
     min_bytes: int = MIN_BYTES_DEFAULT,
     fetch_method: FetchMethod = "requests",
     headers: Optional[dict[str, str]] = None,
+    extraction_mode: str | None = None,
     logger: Optional[logging.Logger] = None,
 ) -> int:
     if logger is None:
@@ -96,7 +97,11 @@ def refresh_snapshot(
 
     if min_bytes != MIN_BYTES_DEFAULT:
         os.environ["JOBINTEL_SNAPSHOT_MIN_BYTES"] = str(min_bytes)
-    valid, reason = validate_snapshot_bytes(provider_id, html.encode("utf-8"))
+    valid, reason = validate_snapshot_bytes(
+        provider_id,
+        html.encode("utf-8"),
+        extraction_mode=extraction_mode,
+    )
     if not valid and not force:
         message = f"Invalid snapshot for {provider_id} at {out_path}: {reason}"
         logger.error(message)

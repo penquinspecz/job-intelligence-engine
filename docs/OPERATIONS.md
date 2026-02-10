@@ -63,6 +63,7 @@ Provider registry (Milestone 5 foundation):
 
 - Canonical file: `config/providers.json` (schema: `schemas/providers.schema.v1.json`)
 - Registry loader: `src/ji_engine/providers/registry.py`
+- Schema validation is enforced at load time (unknown keys fail closed).
 - Provider selection resolver used by both:
   - `scripts/run_scrape.py`
   - `scripts/run_daily.py`
@@ -77,11 +78,15 @@ How to add a provider (deterministic path):
 1. Add entry in `config/providers.json` under `providers[]`:
    - required: `provider_id`, `extraction_mode`, one of `careers_urls`/`careers_url`/`board_url`
    - scrape mode + snapshots: `mode`, `snapshot_path` or `snapshot_dir`
+   - capability flags: `live_enabled` (optional), `snapshot_enabled` (optional)
    - allowlist + cadence hints: `allowed_domains`, `update_cadence`
    - politeness defaults/overrides:
      - `politeness.defaults` (provider-level defaults)
      - `politeness.host_overrides` (per-host override map)
      - back-compat flat keys still accepted (`min_delay_s`, `max_attempts`, etc.)
+   - optional LLM fallback (cache-only, deterministic):
+     - `llm_fallback.enabled=true` + `llm_fallback.cache_dir` (required)
+     - `llm_fallback.temperature=0` (enforced)
 2. Add/update snapshot fixture under `data/<provider_id>_snapshots/`.
 3. Run scrape in snapshot mode:
 
@@ -96,6 +101,11 @@ python scripts/run_scrape.py --providers <provider_id> --providers-config config
 Proof-of-design provider in-tree:
 - `perplexity` (`jsonld`, snapshot-first)
 - Snapshot fixture: `data/perplexity_snapshots/index.html`
+
+Snapshot validation semantics (no footguns):
+- `jobintel snapshots validate --provider <id>` validates only the requested providers.
+- `jobintel snapshots validate --all` validates only providers with snapshots present on disk,
+  and skips missing snapshot paths to avoid false failures.
 
 Kubernetes CronJob (portable, K8s-first):
 
@@ -126,6 +136,30 @@ python scripts/check_roadmap_discipline.py --strict
 ```
 
 Snapshot-only violations fail fast with exit code 2 and a message naming the provider.
+
+## Add Provider Checklist (M5)
+
+1. **Config entry (required):**
+   - `provider_id`, `extraction_mode`, and one of `careers_urls`/`careers_url`/`board_url`.
+   - `snapshot_path` or `snapshot_dir` (defaults to `data/<provider_id>_snapshots/index.html`).
+   - `snapshot_enabled: true` (default) unless intentionally disabled.
+   - `allowed_domains` + `update_cadence` (optional but recommended).
+2. **Fixture requirements (deterministic):**
+   - Commit `data/<provider_id>_snapshots/index.html` (or JSON snapshot for `snapshot_json`).
+   - Add a test fixture under `tests/fixtures/providers/<provider_id>/index.html`.
+3. **Validation commands (offline):**
+   - `python -m src.jobintel.cli snapshots validate --provider <id>`
+   - `python -m src.jobintel.cli snapshots validate --all` (skips missing snapshot dirs)
+4. **Tests to update/add:**
+   - Registry schema rejection test (missing fields / unknown keys).
+   - JSON-LD parsing test (stable ordering + stable `job_id` across runs).
+   - Snapshot validation selection/skip semantics.
+5. **Debug schema failures:**
+   - Errors are fail-closed and name the missing field or bad key.
+   - Check `schemas/providers.schema.v1.json` and `src/ji_engine/providers/registry.py`.
+6. **LLM fallback (cache-only, disabled by default):**
+   - `llm_fallback.enabled` is `false` unless explicitly configured.
+   - If enabled, requires `llm_fallback.cache_dir` and `temperature=0`.
 
 ## Provider failure policy
 

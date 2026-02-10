@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -40,18 +41,21 @@ class ValidationResult:
     path: Path
     ok: bool
     reason: str
+    skipped: bool = False
 
 
 def _default_data_dir() -> Path:
     return Path(os.environ.get("JOBINTEL_DATA_DIR") or "data")
 
 
-def _snapshot_path_for(provider: str, data_dir: Path) -> Path:
-    if provider == "openai":
-        return data_dir / "openai_snapshots" / "index.html"
-    if provider == "anthropic":
-        return data_dir / "anthropic_snapshots" / "index.html"
-    raise ValueError(f"Unknown provider '{provider}'.")
+def _resolve_snapshot_path(entry: dict, data_dir: Path) -> Path:
+    snapshot_path = Path(entry.get("snapshot_path") or "")
+    if snapshot_path.is_absolute():
+        return snapshot_path
+    parts = snapshot_path.parts
+    if parts and parts[0] == "data":
+        return data_dir / Path(*parts[1:])
+    return data_dir / snapshot_path
 
 
 def _min_bytes_for(provider: str) -> int:
@@ -89,8 +93,14 @@ def _looks_blocked(text: str) -> Tuple[bool, str]:
     return False, "ok"
 
 
-def _requires_ashby_markers(provider: str) -> bool:
-    return provider in {"ashby", "anthropic"}
+def _requires_ashby_markers(extraction_mode: str | None, provider: str) -> bool:
+    if provider in {"ashby", "anthropic"}:
+        return True
+    return False
+
+
+def _requires_jsonld_markers(extraction_mode: str | None) -> bool:
+    return extraction_mode == "jsonld"
 
 
 def _has_ashby_marker(text: str) -> bool:
@@ -104,9 +114,23 @@ def _preview_text(content: bytes, limit: int = 200) -> str:
     return text[:limit]
 
 
-def validate_snapshot_bytes(provider: str, content: bytes) -> Tuple[bool, str]:
+def validate_snapshot_bytes(
+    provider: str,
+    content: bytes,
+    *,
+    extraction_mode: str | None = None,
+) -> Tuple[bool, str]:
     if not content:
         return False, "empty content"
+
+    if extraction_mode == "snapshot_json":
+        try:
+            payload = json.loads(content.decode("utf-8"))
+        except Exception as exc:
+            return False, f"invalid json: {exc}"
+        if not isinstance(payload, list):
+            return False, "snapshot json must be a list"
+        return True, "ok"
 
     min_bytes = _min_bytes_for(provider)
     if len(content) < min_bytes:
@@ -116,8 +140,10 @@ def validate_snapshot_bytes(provider: str, content: bytes) -> Tuple[bool, str]:
     if not text.strip():
         return False, "empty content"
 
-    if _requires_ashby_markers(provider) and not _has_ashby_marker(text):
+    if _requires_ashby_markers(extraction_mode, provider) and not _has_ashby_marker(text):
         return False, "missing ashby markers"
+    if _requires_jsonld_markers(extraction_mode) and "application/ld+json" not in text.lower():
+        return False, "missing jsonld markers"
 
     blocked, reason = _looks_blocked(text)
     if blocked:
@@ -130,7 +156,12 @@ def validate_snapshot_bytes(provider: str, content: bytes) -> Tuple[bool, str]:
     return True, "ok"
 
 
-def validate_snapshot_file(provider: str, path: Path) -> Tuple[bool, str]:
+def validate_snapshot_file(
+    provider: str,
+    path: Path,
+    *,
+    extraction_mode: str | None = None,
+) -> Tuple[bool, str]:
     if not path.exists():
         return False, "missing file"
 
@@ -139,7 +170,7 @@ def validate_snapshot_file(provider: str, path: Path) -> Tuple[bool, str]:
     except Exception as exc:
         return False, f"read failed: {exc}"
 
-    ok, reason = validate_snapshot_bytes(provider, content)
+    ok, reason = validate_snapshot_bytes(provider, content, extraction_mode=extraction_mode)
     if not ok:
         preview = _preview_text(content)
         reason = f"{reason}; bytes={len(content)}; preview={preview}"
@@ -147,14 +178,50 @@ def validate_snapshot_file(provider: str, path: Path) -> Tuple[bool, str]:
 
 
 def validate_snapshots(
-    providers: Iterable[str],
+    providers_cfg: Iterable[dict],
     *,
+    provider_ids: Iterable[str] | None = None,
     data_dir: Path | None = None,
+    validate_all: bool = False,
 ) -> List[ValidationResult]:
     base_dir = data_dir or _default_data_dir()
+    provider_map = {entry["provider_id"]: entry for entry in providers_cfg}
+    requested = [item.strip() for item in (provider_ids or []) if str(item).strip()]
+    if validate_all:
+        requested = sorted(provider_map.keys())
+    if not requested and not validate_all:
+        requested = ["openai"]
+
     results: List[ValidationResult] = []
-    for provider in providers:
-        snapshot_path = _snapshot_path_for(provider, base_dir)
-        ok, reason = validate_snapshot_file(provider, snapshot_path)
+    for provider in requested:
+        if provider not in provider_map:
+            raise ValueError(f"Unknown provider '{provider}'.")
+        entry = provider_map[provider]
+        snapshot_enabled = bool(entry.get("snapshot_enabled", True))
+        extraction_mode = str(entry.get("extraction_mode") or entry.get("type") or "snapshot_json")
+        snapshot_path = _resolve_snapshot_path(entry, base_dir)
+        if not snapshot_enabled:
+            results.append(
+                ValidationResult(
+                    provider=provider,
+                    path=snapshot_path,
+                    ok=True,
+                    reason="skipped: snapshot_disabled",
+                    skipped=True,
+                )
+            )
+            continue
+        if validate_all and not snapshot_path.exists():
+            results.append(
+                ValidationResult(
+                    provider=provider,
+                    path=snapshot_path,
+                    ok=True,
+                    reason="skipped: snapshot_missing",
+                    skipped=True,
+                )
+            )
+            continue
+        ok, reason = validate_snapshot_file(provider, snapshot_path, extraction_mode=extraction_mode)
         results.append(ValidationResult(provider=provider, path=snapshot_path, ok=ok, reason=reason))
     return results

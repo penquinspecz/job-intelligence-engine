@@ -70,6 +70,52 @@
       }
     },
     {
+      "provider_id": "cohere",
+      "name": "Cohere",
+      "careers_urls": [
+        "https://cohere.com/careers"
+      ],
+      "allowed_domains": [
+        "cohere.com"
+      ],
+      "extraction_mode": "jsonld",
+      "mode": "snapshot",
+      "snapshot_dir": "data/cohere_snapshots",
+      "snapshot_path": "data/cohere_snapshots/index.html",
+      "live_enabled": false,
+      "update_cadence": {
+        "min_interval_hours": 24,
+        "priority": "normal"
+      },
+      "politeness": {
+        "min_delay_s": 1.0,
+        "max_attempts": 2
+      }
+    },
+    {
+      "provider_id": "mistral",
+      "name": "Mistral",
+      "careers_urls": [
+        "https://mistral.ai/careers"
+      ],
+      "allowed_domains": [
+        "mistral.ai"
+      ],
+      "extraction_mode": "jsonld",
+      "mode": "snapshot",
+      "snapshot_dir": "data/mistral_snapshots",
+      "snapshot_path": "data/mistral_snapshots/index.html",
+      "live_enabled": false,
+      "update_cadence": {
+        "min_interval_hours": 24,
+        "priority": "normal"
+      },
+      "politeness": {
+        "min_delay_s": 1.0,
+        "max_attempts": 2
+      }
+    },
+    {
       "provider_id": "perplexity",
       "name": "Perplexity",
       "careers_urls": [

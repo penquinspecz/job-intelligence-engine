@@ -10,6 +10,71 @@ SUPPORTED_EXTRACTION_MODES = {"ashby", "jsonld", "snapshot_json", "html_list"}
 SUPPORTED_SCRAPE_MODES = {"snapshot", "live", "auto"}
 SUPPORTED_UPDATE_PRIORITIES = {"low", "normal", "high"}
 _PROVIDER_ID_RE = re.compile(r"^[a-z0-9_-]+$")
+_PROVIDERS_SCHEMA_CACHE: Dict[str, Any] | None = None
+_SCHEMA_PATH = Path(__file__).resolve().parents[3] / "schemas" / "providers.schema.v1.json"
+
+
+def _load_providers_schema() -> Dict[str, Any]:
+    global _PROVIDERS_SCHEMA_CACHE
+    if _PROVIDERS_SCHEMA_CACHE is None:
+        _PROVIDERS_SCHEMA_CACHE = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
+    return _PROVIDERS_SCHEMA_CACHE
+
+
+def _schema_provider_keys(schema: Dict[str, Any]) -> set[str]:
+    provider = schema.get("$defs", {}).get("provider", {})
+    props = provider.get("properties", {})
+    return set(props.keys())
+
+
+def _schema_top_level_keys(schema: Dict[str, Any]) -> set[str]:
+    props = schema.get("properties", {})
+    return set(props.keys())
+
+
+def _validate_top_level_schema(data: Dict[str, Any], schema: Dict[str, Any]) -> None:
+    allowed = _schema_top_level_keys(schema)
+    unknown = sorted(set(data.keys()) - allowed)
+    if unknown:
+        raise ValueError(f"unsupported providers config keys: {', '.join(unknown)}")
+    if "schema_version" not in data:
+        raise ValueError("providers config missing schema_version")
+    if data.get("schema_version") != 1:
+        raise ValueError(f"unsupported providers schema_version '{data.get('schema_version')}'")
+    if "providers" not in data:
+        raise ValueError("providers config missing providers list")
+
+
+def _validate_provider_entry_schema(entry: Dict[str, Any], schema: Dict[str, Any]) -> None:
+    allowed = _schema_provider_keys(schema)
+    unknown = sorted(set(entry.keys()) - allowed)
+    if unknown:
+        raise ValueError(f"unsupported provider keys: {', '.join(unknown)}")
+    if not entry.get("provider_id"):
+        raise ValueError("provider entry missing provider_id")
+    has_url = any(entry.get(field) for field in ("careers_urls", "careers_url", "board_url"))
+    if not has_url:
+        raise ValueError("provider entry missing careers_url/careers_urls/board_url")
+    if not (entry.get("extraction_mode") or entry.get("type")):
+        raise ValueError("provider entry missing extraction_mode/type")
+    if "careers_urls" in entry and not isinstance(entry.get("careers_urls"), list):
+        raise ValueError("careers_urls must be a list when provided")
+    if "careers_url" in entry and not isinstance(entry.get("careers_url"), str):
+        raise ValueError("careers_url must be a string when provided")
+    if "board_url" in entry and not isinstance(entry.get("board_url"), str):
+        raise ValueError("board_url must be a string when provided")
+    if "allowed_domains" in entry and not isinstance(entry.get("allowed_domains"), list):
+        raise ValueError("allowed_domains must be a list when provided")
+    if "update_cadence" in entry and not isinstance(entry.get("update_cadence"), dict):
+        raise ValueError("update_cadence must be an object when provided")
+    if "politeness" in entry and not isinstance(entry.get("politeness"), dict):
+        raise ValueError("politeness must be an object when provided")
+    if "live_enabled" in entry and not isinstance(entry.get("live_enabled"), bool):
+        raise ValueError("live_enabled must be a boolean when provided")
+    if "snapshot_enabled" in entry and not isinstance(entry.get("snapshot_enabled"), bool):
+        raise ValueError("snapshot_enabled must be a boolean when provided")
+    if "llm_fallback" in entry and not isinstance(entry.get("llm_fallback"), dict):
+        raise ValueError("llm_fallback must be an object when provided")
 
 
 def _coerce_extraction_mode(raw_mode: Any, raw_type: Any) -> str:
@@ -102,6 +167,33 @@ def _normalize_update_cadence(entry: Dict[str, Any]) -> Dict[str, Any]:
     if unknown:
         raise ValueError(f"unsupported update_cadence keys: {', '.join(unknown)}")
     return out
+
+
+def _normalize_llm_fallback(entry: Dict[str, Any]) -> Dict[str, Any]:
+    raw = entry.get("llm_fallback")
+    if raw is None:
+        return {"enabled": False}
+    if not isinstance(raw, dict):
+        raise ValueError("llm_fallback must be an object when provided")
+    unknown = sorted(set(raw.keys()) - {"enabled", "cache_dir", "temperature"})
+    if unknown:
+        raise ValueError(f"unsupported llm_fallback keys: {', '.join(unknown)}")
+    enabled = bool(raw.get("enabled", False))
+    cache_dir = str(raw.get("cache_dir") or "").strip()
+    temperature = raw.get("temperature", 0)
+    try:
+        temp_value = float(temperature)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"llm_fallback.temperature must be 0 (got {temperature!r})") from exc
+    if abs(temp_value) > 1e-9:
+        raise ValueError("llm_fallback.temperature must be 0 for deterministic cache usage")
+    if enabled and not cache_dir:
+        raise ValueError("llm_fallback.cache_dir is required when enabled")
+    return {
+        "enabled": enabled,
+        "cache_dir": cache_dir,
+        "temperature": 0.0,
+    }
 
 
 def _cast_float(raw: Any, field: str) -> float:
@@ -317,8 +409,10 @@ def _normalize_provider_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
         "type": extraction_mode,  # back-compat
         "mode": mode,
         "live_enabled": bool(entry.get("live_enabled", True)),
+        "snapshot_enabled": bool(entry.get("snapshot_enabled", True)),
         "snapshot_path": snapshot_path,
         "snapshot_dir": str(Path(snapshot_path).parent),
+        "llm_fallback": _normalize_llm_fallback(entry),
         "update_cadence": update_cadence,
         "politeness": _normalize_politeness(entry),
     }
@@ -327,12 +421,11 @@ def _normalize_provider_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
 
 def load_providers_config(path: Path) -> List[Dict[str, Any]]:
     data = json.loads(path.read_text(encoding="utf-8"))
+    schema = _load_providers_schema()
     if isinstance(data, list):
         entries = data
     elif isinstance(data, dict):
-        schema_version = data.get("schema_version")
-        if schema_version is not None and schema_version != 1:
-            raise ValueError(f"unsupported providers schema_version '{schema_version}'")
+        _validate_top_level_schema(data, schema)
         entries = data.get("providers")
     else:
         raise ValueError("providers config must be a list or object with providers")
@@ -345,6 +438,7 @@ def load_providers_config(path: Path) -> List[Dict[str, Any]]:
     for item in entries:
         if not isinstance(item, dict):
             raise ValueError("provider entry must be a dict")
+        _validate_provider_entry_schema(item, schema)
         normalized = _normalize_provider_entry(item)
         provider_id = normalized["provider_id"]
         if provider_id in seen_ids:

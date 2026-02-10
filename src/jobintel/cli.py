@@ -9,8 +9,9 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from ji_engine.providers.openai_provider import CAREERS_SEARCH_URL
-from ji_engine.providers.registry import load_providers_config
+from ji_engine.providers.registry import load_providers_config, resolve_provider_ids
 
+from .safety.diff import build_safety_diff_report, load_jobs_from_path, render_summary, write_report
 from .snapshots.refresh import refresh_snapshot
 from .snapshots.validate import MIN_BYTES_DEFAULT, validate_snapshots
 
@@ -76,6 +77,7 @@ def _refresh_snapshots(args: argparse.Namespace) -> int:
         url = provider.get("careers_url") or provider.get("board_url") or CAREERS_SEARCH_URL
         out_path = Path(args.out)
         fetch_method = (args.fetch or os.environ.get("JOBINTEL_SNAPSHOT_FETCH") or "requests").lower()
+        extraction_mode = provider.get("extraction_mode") or provider.get("type")
 
         try:
             exit_code = refresh_snapshot(
@@ -87,6 +89,7 @@ def _refresh_snapshots(args: argparse.Namespace) -> int:
                 min_bytes=args.min_bytes,
                 fetch_method=fetch_method,
                 headers={"User-Agent": args.user_agent},
+                extraction_mode=extraction_mode,
             )
         except RuntimeError as exc:
             raise SystemExit(str(exc)) from exc
@@ -97,21 +100,30 @@ def _refresh_snapshots(args: argparse.Namespace) -> int:
 
 def _validate_snapshots(args: argparse.Namespace) -> int:
     providers_config = Path(args.providers_config)
-    provider_map = _load_provider_map(providers_config) if providers_config.exists() else {}
-
+    providers_cfg = load_providers_config(providers_config)
     if args.all:
-        providers = sorted(provider_map.keys())
+        provider_ids: List[str] = []
     else:
-        provider = (args.provider or "openai").lower().strip()
-        providers = [provider]
+        provider_arg = (args.provider or "openai").lower().strip()
+        if provider_arg == "all":
+            raise SystemExit("Use --all to validate discovered snapshots.")
+        try:
+            provider_ids = resolve_provider_ids(provider_arg, providers_cfg, default_provider="openai")
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
 
     results = validate_snapshots(
-        providers,
+        providers_cfg,
+        provider_ids=provider_ids,
+        validate_all=args.all,
         data_dir=Path(args.data_dir) if args.data_dir else None,
     )
     failures = [result for result in results if not result.ok]
     for result in results:
-        status = "OK" if result.ok else "FAIL"
+        if result.skipped:
+            status = "SKIP"
+        else:
+            status = "OK" if result.ok else "FAIL"
         print(f"[snapshots] {status} {result.provider}: {result.path} ({result.reason})")
 
     if failures:
@@ -177,6 +189,33 @@ def _run_daily(args: argparse.Namespace) -> int:
     return result.returncode
 
 
+def _safety_diff(args: argparse.Namespace) -> int:
+    baseline_path = Path(args.baseline)
+    candidate_path = Path(args.candidate)
+    baseline_jobs = load_jobs_from_path(
+        baseline_path,
+        provider=args.provider,
+        profile=args.profile,
+    )
+    candidate_jobs = load_jobs_from_path(
+        candidate_path,
+        provider=args.provider,
+        profile=args.profile,
+    )
+    report = build_safety_diff_report(
+        baseline_jobs,
+        candidate_jobs,
+        baseline_path=str(baseline_path),
+        candidate_path=str(candidate_path),
+        top_n=args.top,
+    )
+    report_path = Path(args.report_out)
+    write_report(report, report_path)
+    print(render_summary(report))
+    print(f"Report written to {report_path}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="jobintel")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -220,6 +259,22 @@ def build_parser() -> argparse.ArgumentParser:
     run_cmd.add_argument("--ai", action="store_true")
     run_cmd.add_argument("--ai_only", action="store_true")
     run_cmd.set_defaults(func=_run_daily)
+
+    safety_cmd = subparsers.add_parser("safety", help="Semantic safety net tooling")
+    safety_sub = safety_cmd.add_subparsers(dest="safety_command", required=True)
+
+    diff_cmd = safety_sub.add_parser("diff", help="Compare baseline vs candidate job outputs")
+    diff_cmd.add_argument("--baseline", required=True, help="Baseline run or jobs JSON path.")
+    diff_cmd.add_argument("--candidate", required=True, help="Candidate run or jobs JSON path.")
+    diff_cmd.add_argument("--provider", help="Provider id when using run reports with multiple providers.")
+    diff_cmd.add_argument("--profile", help="Profile name when using run reports with multiple profiles.")
+    diff_cmd.add_argument("--top", type=int, default=5, help="Top N changed records to include.")
+    diff_cmd.add_argument(
+        "--report-out",
+        default="safety_diff_report.json",
+        help="Output path for JSON report.",
+    )
+    diff_cmd.set_defaults(func=_safety_diff)
 
     return parser
 

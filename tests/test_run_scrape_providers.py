@@ -37,12 +37,14 @@ def test_run_scrape_multiple_providers_snapshot(tmp_path, monkeypatch) -> None:
                 {
                     "provider_id": "alpha",
                     "careers_url": "https://example.com/alpha",
+                    "extraction_mode": "snapshot_json",
                     "mode": "snapshot",
                     "snapshot_path": str(alpha_snapshot),
                 },
                 {
                     "provider_id": "beta",
                     "careers_url": "https://example.com/beta",
+                    "extraction_mode": "snapshot_json",
                     "mode": "snapshot",
                     "snapshot_path": str(beta_snapshot),
                 },

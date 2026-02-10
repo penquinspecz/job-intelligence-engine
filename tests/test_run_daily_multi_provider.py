@@ -45,12 +45,14 @@ def test_run_daily_multi_provider_outputs(tmp_path: Path, monkeypatch: Any) -> N
                 {
                     "provider_id": "alpha",
                     "careers_url": "https://alpha.example",
+                    "extraction_mode": "snapshot_json",
                     "mode": "snapshot",
                     "snapshot_path": str(alpha_snapshot),
                 },
                 {
                     "provider_id": "beta",
                     "careers_url": "https://beta.example",
+                    "extraction_mode": "snapshot_json",
                     "mode": "snapshot",
                     "snapshot_path": str(beta_snapshot),
                 },

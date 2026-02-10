@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup
 
 from ji_engine.models import JobSource, RawJobPosting
 from ji_engine.providers.base import BaseJobProvider
+from ji_engine.providers.llm_fallback import load_cached_llm_fallback
 from ji_engine.providers.retry import fetch_text_with_retry
 from ji_engine.utils.job_identity import job_identity
 from ji_engine.utils.time import utc_now_naive
@@ -26,12 +27,14 @@ class JsonLdProvider(BaseJobProvider):
         *,
         mode: str = "SNAPSHOT",
         snapshot_write_dir: Path | None = None,
+        llm_fallback: dict | None = None,
     ) -> None:
         super().__init__(mode=mode, data_dir=str(snapshot_dir.parent))
         self.provider_id = provider_id
         self.careers_url = careers_url
         self.snapshot_dir = snapshot_dir
         self.snapshot_write_dir = snapshot_write_dir
+        self.llm_fallback = llm_fallback or {"enabled": False}
 
     def _snapshot_file(self) -> Path:
         return self.snapshot_dir / "index.html"
@@ -53,7 +56,7 @@ class JsonLdProvider(BaseJobProvider):
         snapshot_file = self._snapshot_file()
         if not snapshot_file.exists():
             return []
-        ok, reason = validate_snapshot_file(self.provider_id, snapshot_file)
+        ok, reason = validate_snapshot_file(self.provider_id, snapshot_file, extraction_mode="jsonld")
         if not ok:
             raise RuntimeError(f"Invalid snapshot for {self.provider_id} at {snapshot_file}: {reason}")
         html = snapshot_file.read_text(encoding="utf-8")
@@ -105,6 +108,19 @@ class JsonLdProvider(BaseJobProvider):
                 )
             )
         postings.sort(key=lambda item: ((item.apply_url or "").lower(), (item.title or "").lower()))
+        if postings:
+            return postings
+        if self.llm_fallback.get("enabled"):
+            raw_cache_dir = str(self.llm_fallback.get("cache_dir") or "").strip()
+            if not raw_cache_dir:
+                raise RuntimeError("LLM fallback enabled but cache_dir not configured")
+            cache_dir = Path(raw_cache_dir).expanduser()
+            return load_cached_llm_fallback(
+                html,
+                provider_id=self.provider_id,
+                cache_dir=cache_dir,
+                now=now,
+            )
         return postings
 
     def _walk(self, node: Any, sink: list[dict[str, Any]]) -> None:

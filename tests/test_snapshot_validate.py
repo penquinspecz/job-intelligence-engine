@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from jobintel.snapshots.validate import validate_snapshot_bytes, validate_snapshot_file
+from jobintel.snapshots.validate import validate_snapshot_bytes, validate_snapshot_file, validate_snapshots
 
 
 def test_validate_snapshot_missing_file(tmp_path: Path) -> None:
@@ -63,3 +63,69 @@ def test_validate_snapshot_cloudflare_rejected(monkeypatch) -> None:
     ok, reason = validate_snapshot_bytes("openai", payload)
     assert ok is False
     assert "cloudflare" in reason
+
+
+def test_validate_snapshot_json_ok() -> None:
+    ok, reason = validate_snapshot_bytes(
+        "alpha",
+        b'[{"title": "Role", "apply_url": "https://example.com/jobs/1"}]',
+        extraction_mode="snapshot_json",
+    )
+    assert ok is True
+    assert reason == "ok"
+
+
+def test_validate_snapshots_all_skips_missing(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("JOBINTEL_SNAPSHOT_MIN_BYTES", "0")
+    providers_cfg = [
+        {
+            "provider_id": "alpha",
+            "careers_urls": ["https://alpha.example/jobs"],
+            "extraction_mode": "jsonld",
+            "snapshot_path": "data/alpha_snapshots/index.html",
+            "snapshot_enabled": True,
+        },
+        {
+            "provider_id": "beta",
+            "careers_urls": ["https://beta.example/jobs"],
+            "extraction_mode": "jsonld",
+            "snapshot_path": "data/beta_snapshots/index.html",
+            "snapshot_enabled": True,
+        },
+    ]
+    alpha_dir = tmp_path / "alpha_snapshots"
+    alpha_dir.mkdir(parents=True, exist_ok=True)
+    (alpha_dir / "index.html").write_text(
+        "<html><script type='application/ld+json'>[]</script>ok</html>",
+        encoding="utf-8",
+    )
+
+    results = validate_snapshots(
+        providers_cfg,
+        validate_all=True,
+        data_dir=tmp_path,
+    )
+
+    status_map = {result.provider: result for result in results}
+    assert status_map["alpha"].ok is True
+    assert status_map["alpha"].skipped is False
+    assert status_map["beta"].skipped is True
+
+
+def test_validate_snapshots_skips_disabled_provider(tmp_path: Path) -> None:
+    providers_cfg = [
+        {
+            "provider_id": "alpha",
+            "careers_urls": ["https://alpha.example/jobs"],
+            "extraction_mode": "jsonld",
+            "snapshot_path": "data/alpha_snapshots/index.html",
+            "snapshot_enabled": False,
+        }
+    ]
+    results = validate_snapshots(
+        providers_cfg,
+        provider_ids=["alpha"],
+        data_dir=tmp_path,
+    )
+    assert results[0].skipped is True
+    assert results[0].reason == "skipped: snapshot_disabled"

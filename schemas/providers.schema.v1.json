@@ -86,11 +86,17 @@
         "live_enabled": {
           "type": "boolean"
         },
+        "snapshot_enabled": {
+          "type": "boolean"
+        },
         "snapshot_path": {
           "type": "string"
         },
         "snapshot_dir": {
           "type": "string"
+        },
+        "llm_fallback": {
+          "$ref": "#/$defs/llm_fallback"
         },
         "update_cadence": {
           "$ref": "#/$defs/update_cadence"
@@ -156,6 +162,23 @@
         "schedule_hint": {
           "type": "string",
           "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "llm_fallback": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "cache_dir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "temperature": {
+          "type": "number",
+          "const": 0
         }
       },
       "additionalProperties": false

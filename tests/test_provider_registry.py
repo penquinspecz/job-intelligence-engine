@@ -14,6 +14,7 @@ def test_load_providers_config_defaults(tmp_path: Path) -> None:
   {
     "provider_id": "alpha",
     "careers_url": "https://example.com/alpha",
+    "extraction_mode": "snapshot_json",
     "snapshot_path": "data/alpha.json"
   }
 ]
@@ -63,8 +64,8 @@ def test_load_providers_config_rejects_duplicate_provider_ids(tmp_path: Path) ->
     config_path.write_text(
         """
 [
-  {"provider_id":"dup","careers_url":"https://a.example/jobs","snapshot_path":"data/a.json"},
-  {"provider_id":"dup","careers_url":"https://b.example/jobs","snapshot_path":"data/b.json"}
+  {"provider_id":"dup","careers_url":"https://a.example/jobs","snapshot_path":"data/a.json","extraction_mode":"snapshot_json"},
+  {"provider_id":"dup","careers_url":"https://b.example/jobs","snapshot_path":"data/b.json","extraction_mode":"snapshot_json"}
 ]
 """.strip(),
         encoding="utf-8",
@@ -149,3 +150,74 @@ def test_provider_registry_entry_interface_is_stable() -> None:
     assert openai["careers_url"] == openai["careers_urls"][0]
     assert openai["board_url"] == openai["careers_urls"][0]
     assert openai["type"] == openai["extraction_mode"]
+
+
+def test_load_providers_config_rejects_unknown_keys(tmp_path: Path) -> None:
+    config_path = tmp_path / "providers.json"
+    config_path.write_text(
+        """
+{
+  "schema_version": 1,
+  "providers": [
+    {
+      "provider_id": "alpha",
+      "careers_urls": ["https://alpha.example/jobs"],
+      "extraction_mode": "jsonld",
+      "snapshot_path": "data/alpha/index.html",
+      "unknown_key": "nope"
+    }
+  ]
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="unsupported provider keys"):
+        load_providers_config(config_path)
+
+
+def test_load_providers_config_rejects_missing_extraction_mode(tmp_path: Path) -> None:
+    config_path = tmp_path / "providers.json"
+    config_path.write_text(
+        """
+{
+  "schema_version": 1,
+  "providers": [
+    {
+      "provider_id": "alpha",
+      "careers_urls": ["https://alpha.example/jobs"],
+      "snapshot_path": "data/alpha/index.html"
+    }
+  ]
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="missing extraction_mode/type"):
+        load_providers_config(config_path)
+
+
+def test_load_providers_config_rejects_llm_fallback_temp(tmp_path: Path) -> None:
+    config_path = tmp_path / "providers.json"
+    config_path.write_text(
+        """
+{
+  "schema_version": 1,
+  "providers": [
+    {
+      "provider_id": "alpha",
+      "careers_urls": ["https://alpha.example/jobs"],
+      "extraction_mode": "jsonld",
+      "snapshot_path": "data/alpha/index.html",
+      "llm_fallback": {
+        "enabled": true,
+        "cache_dir": "state/llm_cache",
+        "temperature": 0.2
+      }
+    }
+  ]
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="llm_fallback.temperature"):
+        load_providers_config(config_path)
