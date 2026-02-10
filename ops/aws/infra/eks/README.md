@@ -4,9 +4,9 @@ This directory provides a minimal EKS cluster + IRSA role for JobIntel.
 
 ## Prerequisites
 
-- Terraform >= 1.4
-- AWS credentials with EKS + IAM + EC2 permissions
-- Existing VPC subnets suitable for EKS (recommended: private subnets)
+- OpenTofu (or Terraform) >= 1.4
+- AWS CLI configured with EKS + IAM + EC2 permissions
+- Existing EKS cluster `jobintel-eks` and subnets
 
 ## Required variables
 
@@ -25,24 +25,25 @@ This directory provides a minimal EKS cluster + IRSA role for JobIntel.
 - `serviceaccount_name`: default `jobintel`
 - `tag_subnets`: default `true` (adds `kubernetes.io/cluster/<name>=shared`)
 
-## Apply
+## Boring non-interactive flow
+
+Run from repo root:
 
 ```bash
-terraform init
-terraform apply \
-  -var 's3_bucket=<bucket>' \
-  -var 'subnet_ids=["subnet-aaaa","subnet-bbbb"]'
+export AWS_PROFILE=jobintel-deployer AWS_REGION=us-east-1 CLUSTER_NAME=jobintel-eks JOBINTEL_ARTIFACTS_BUCKET=<bucket>
+python scripts/tofu_eks_vars_from_aws.py
+scripts/ops/tofu_eks_guardrails.sh && tofu -chdir=ops/aws/infra/eks plan -input=false -var-file=local.auto.tfvars.json
 ```
 
-## How to find subnet_ids
-
-Use the helper script (AWS CLI required):
+Makefile equivalent:
 
 ```bash
-python scripts/aws_discover_subnets.py
+make tofu-eks-vars
+make tofu-eks-plan
 ```
 
-It prints a deterministic JSON summary and a suggested terraform command snippet.
+`scripts/tofu_eks_vars_from_aws.py` writes `ops/aws/infra/eks/local.auto.tfvars.json` using authoritative AWS cluster data (`aws eks describe-cluster`).  
+`scripts/ops/tofu_eks_guardrails.sh` hard-fails when identity/state checks are unsafe (for example, empty state or mismatched cluster name).
 
 ## EKS control plane AZ restrictions
 
@@ -73,5 +74,6 @@ make aws-discover-subnets EXCLUDE_AZ=us-east-1e
 ## Notes
 
 - This module uses local state by default (no remote backend configured).
+- `ops/aws/infra/eks/local.auto.tfvars.json` is local-only and gitignored.
 - The IRSA role is scoped for runtime publish (PutObject + ListBucket with prefix).
 - Operator verification may require a separate role with `s3:GetObject` and `s3:HeadObject`.
