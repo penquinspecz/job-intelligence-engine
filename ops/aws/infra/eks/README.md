@@ -45,6 +45,23 @@ make tofu-eks-plan
 `scripts/tofu_eks_vars_from_aws.py` writes `ops/aws/infra/eks/local.auto.tfvars.json` using authoritative AWS cluster data (`aws eks describe-cluster`).  
 `scripts/ops/tofu_eks_guardrails.sh` hard-fails when identity/state checks are unsafe (for example, empty state or mismatched cluster name).
 
+## One-command plan bundle (no apply)
+
+Use the operator-safe wrapper to run identity checks, var generation, state alignment checks, `tofu fmt`, `tofu validate`, and `tofu plan -out=...` while capturing evidence:
+
+```bash
+AWS_PROFILE=jobintel-deployer AWS_REGION=us-east-1 RUN_ID=local make ops-eks-plan
+```
+
+Bundle output:
+
+- `ops/proof/bundles/m4-<run_id>/eks_infra/receipt.json`
+- `ops/proof/bundles/m4-<run_id>/eks_infra/manifest.json`
+- `ops/proof/bundles/m4-<run_id>/eks_infra/eks_infra.tfplan`
+- `ops/proof/bundles/m4-<run_id>/eks_infra/tofu_plan_sanitized.txt`
+
+The command is plan-only and fails fast when state is empty while the live cluster exists.
+
 ## EKS control plane AZ restrictions
 
 If EKS reports an `UnsupportedAvailabilityZoneException`, exclude that AZ when discovering subnets:
