@@ -77,3 +77,46 @@ make aws-discover-subnets EXCLUDE_AZ=us-east-1e
 - `ops/aws/infra/eks/local.auto.tfvars.json` is local-only and gitignored.
 - The IRSA role is scoped for runtime publish (PutObject + ListBucket with prefix).
 - Operator verification may require a separate role with `s3:GetObject` and `s3:HeadObject`.
+
+## State alignment (avoid duplicate EKS)
+
+If `tofu plan` shows `aws_eks_cluster.this` and related resources as `to add` while `jobintel-eks` already exists, the usual root cause is state alignment, not missing variables.
+
+`var.s3_bucket` is for runtime artifacts written by JobIntel workloads.  
+Backend state bucket (if configured) is where OpenTofu stores `.tfstate`.  
+These are different concerns and can have different bucket names.
+
+### Checklist before any plan/apply
+
+1. Confirm backend source: local vs remote backend in `ops/aws/infra/eks/*.tf`.
+2. Confirm workspace: `tofu -chdir=ops/aws/infra/eks workspace show`.
+3. Confirm state has resources: `tofu -chdir=ops/aws/infra/eks state list`.
+4. Confirm live cluster exists: `aws eks describe-cluster --name jobintel-eks --region us-east-1`.
+5. If cluster exists but state is empty, import first, then plan.
+
+Use the helper:
+
+```bash
+AWS_PROFILE=jobintel-deployer AWS_REGION=us-east-1 CLUSTER_NAME=jobintel-eks scripts/ops/tofu_state_check.sh
+```
+
+### Deterministic import plan (preview only by default)
+
+This repo currently uses local backend by default. If `state list` is empty but cluster exists, preview imports:
+
+```bash
+AWS_PROFILE=jobintel-deployer AWS_REGION=us-east-1 CLUSTER_NAME=jobintel-eks scripts/ops/tofu_state_check.sh --print-imports
+```
+
+Execute imports only when explicitly gated:
+
+```bash
+DO_IMPORT=1 AWS_PROFILE=jobintel-deployer AWS_REGION=us-east-1 CLUSTER_NAME=jobintel-eks scripts/ops/tofu_state_check.sh --print-imports
+```
+
+After imports:
+
+```bash
+tofu -chdir=ops/aws/infra/eks state list
+tofu -chdir=ops/aws/infra/eks plan -input=false -var-file=local.auto.tfvars.json
+```
