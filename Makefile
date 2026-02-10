@@ -1,4 +1,4 @@
-.PHONY: test lint format-check gates gate gate-fast gate-truth gate-ci docker-build docker-run-local report snapshot snapshot-openai smoke image smoke-fast smoke-ci image-ci ci ci-local docker-ok daily debug-snapshots explain-smoke dashboard weekly publish-last aws-env-check aws-deploy aws-smoke aws-first-run aws-schedule-status aws-oneoff-run aws-bootstrap aws-bootstrap-help deps deps-sync deps-check snapshot-guard verify-snapshots install-hooks replay gate-replay verify-publish verify-publish-live cronjob-smoke k8s-render k8s-validate k8s-commands k8s-run-once preflight eks-proof-run-help proof-run-vars tf-eks-apply-vars eks-proof-run aws-discover-subnets dr-plan dr-apply dr-validate dr-destroy dr-restore-check
+.PHONY: test lint format-check gates gate gate-fast gate-truth gate-ci docker-build docker-run-local report snapshot snapshot-openai smoke image smoke-fast smoke-ci image-ci ci ci-local docker-ok daily debug-snapshots explain-smoke dashboard weekly publish-last aws-env-check aws-deploy aws-smoke aws-first-run aws-schedule-status aws-oneoff-run aws-bootstrap aws-bootstrap-help deps deps-sync deps-check snapshot-guard verify-snapshots install-hooks replay gate-replay verify-publish verify-publish-live cronjob-smoke k8s-render k8s-validate k8s-commands k8s-run-once preflight eks-proof-run-help proof-run-vars tf-eks-apply-vars eks-proof-run aws-discover-subnets dr-plan dr-apply dr-validate dr-destroy dr-restore-check tofu-eks-vars tofu-eks-guardrails tofu-eks-plan ops-eks-plan
 
 # Prefer repo venv if present; fall back to system python3.
 PY ?= .venv/bin/python
@@ -398,6 +398,20 @@ aws-env-check:
 	@if [ -z "$${JOBINTEL_S3_BUCKET:-}" ]; then \
 		echo "Missing JOBINTEL_S3_BUCKET"; exit 2; \
 	fi
+
+tofu-eks-vars:
+	$(PY) scripts/tofu_eks_vars_from_aws.py
+
+tofu-eks-guardrails:
+	scripts/ops/tofu_eks_guardrails.sh
+
+tofu-eks-plan: tofu-eks-guardrails
+	@tf_bin="$${TF_BIN:-$$(command -v tofu >/dev/null 2>&1 && echo tofu || echo terraform)}"; \
+	"$$tf_bin" -chdir=ops/aws/infra/eks plan -input=false -var-file=local.auto.tfvars.json
+
+ops-eks-plan:
+	@run_id="$${RUN_ID:-local}"; \
+	$(PY) scripts/ops/eks_infra_plan_bundle.py --run-id "$$run_id"
 
 preflight:
 	$(PY) scripts/preflight_env.py
