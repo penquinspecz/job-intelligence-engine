@@ -6,6 +6,13 @@ from pathlib import Path
 import scripts.ops.capture_eks_connectivity_receipts as capture
 
 
+class _Result:
+    def __init__(self, stdout: str, returncode: int = 0):
+        self.stdout = stdout
+        self.stderr = ""
+        self.returncode = returncode
+
+
 def test_plan_mode_is_deterministic_and_no_kubectl_calls(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(capture, "REPO_ROOT", tmp_path)
 
@@ -82,3 +89,47 @@ def test_manifest_ignores_stale_files_from_previous_invocation(tmp_path: Path, m
     manifest = json.loads((bundle_dir / "manifest.json").read_text(encoding="utf-8"))
     paths = [item["path"] for item in manifest["files"]]
     assert "stale.log" not in paths
+
+
+def test_execute_mode_manifest_ignores_stale_files(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(capture, "REPO_ROOT", tmp_path)
+
+    def fake_run(cmd):  # type: ignore[no-untyped-def]
+        if cmd[-2:] == ["--raw", "/version"]:
+            return _Result('{"major":"1","minor":"29"}\n')
+        if cmd[-3:] == ["get", "nodes", "-o"] or "nodes" in cmd:
+            return _Result("node-a Ready\n")
+        if "pods" in cmd:
+            return _Result("pod-a Running\n")
+        if "events" in cmd:
+            return _Result("Normal Started\n")
+        raise AssertionError(f"unexpected command: {cmd}")
+
+    monkeypatch.setattr(capture, "_run", fake_run)
+
+    args = [
+        "--execute",
+        "--run-id",
+        "stable-exec",
+        "--output-dir",
+        "ops/proof/bundles",
+        "--captured-at",
+        "2026-02-08T07:25:00Z",
+        "--started-at",
+        "2026-02-08T07:20:00Z",
+        "--finished-at",
+        "2026-02-08T07:20:01Z",
+    ]
+    assert capture.main(args) == 0
+
+    bundle_dir = tmp_path / "ops" / "proof" / "bundles" / "m4-stable-exec" / "eks"
+    (bundle_dir / "stale.log").write_text("leftover\n", encoding="utf-8")
+
+    assert capture.main(args) == 0
+    manifest = json.loads((bundle_dir / "manifest.json").read_text(encoding="utf-8"))
+    paths = [item["path"] for item in manifest["files"]]
+    assert "stale.log" not in paths
+    assert "version.json" in paths
+    assert "nodes_wide.log" in paths
+    assert "pods.log" in paths
+    assert "events.log" in paths
