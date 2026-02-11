@@ -32,6 +32,10 @@
           "type": "string",
           "minLength": 1
         },
+        "display_name": {
+          "type": "string",
+          "minLength": 1
+        },
         "careers_urls": {
           "type": "array",
           "minItems": 1,
@@ -58,8 +62,11 @@
         "extraction_mode": {
           "type": "string",
           "enum": [
+            "ashby_api",
             "ashby",
             "jsonld",
+            "html_rules",
+            "llm_fallback",
             "snapshot_json",
             "html_list"
           ]
@@ -83,6 +90,9 @@
             "auto"
           ]
         },
+        "enabled": {
+          "type": "boolean"
+        },
         "live_enabled": {
           "type": "boolean"
         },
@@ -99,7 +109,15 @@
           "$ref": "#/$defs/llm_fallback"
         },
         "update_cadence": {
-          "$ref": "#/$defs/update_cadence"
+          "oneOf": [
+            {
+              "$ref": "#/$defs/update_cadence"
+            },
+            {
+              "type": "string",
+              "minLength": 1
+            }
+          ]
         },
         "politeness": {
           "$ref": "#/$defs/politeness"

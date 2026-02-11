@@ -7,6 +7,17 @@ from typing import Any, Dict, List
 from urllib.parse import urlparse
 
 SUPPORTED_EXTRACTION_MODES = {"ashby", "jsonld", "snapshot_json", "html_list"}
+_EXTRACTION_MODE_ALIASES = {
+    "ashby_api": "ashby",
+    "ashby": "ashby",
+    "openai": "ashby",
+    "jsonld": "jsonld",
+    "llm_fallback": "jsonld",
+    "snapshot_json": "snapshot_json",
+    "snapshot": "snapshot_json",
+    "html_rules": "html_list",
+    "html_list": "html_list",
+}
 SUPPORTED_SCRAPE_MODES = {"snapshot", "live", "auto"}
 SUPPORTED_UPDATE_PRIORITIES = {"low", "normal", "high"}
 _PROVIDER_ID_RE = re.compile(r"^[a-z0-9_-]+$")
@@ -63,12 +74,16 @@ def _validate_provider_entry_schema(entry: Dict[str, Any], schema: Dict[str, Any
         raise ValueError("careers_url must be a string when provided")
     if "board_url" in entry and not isinstance(entry.get("board_url"), str):
         raise ValueError("board_url must be a string when provided")
+    if "display_name" in entry and not isinstance(entry.get("display_name"), str):
+        raise ValueError("display_name must be a string when provided")
     if "allowed_domains" in entry and not isinstance(entry.get("allowed_domains"), list):
         raise ValueError("allowed_domains must be a list when provided")
-    if "update_cadence" in entry and not isinstance(entry.get("update_cadence"), dict):
-        raise ValueError("update_cadence must be an object when provided")
+    if "update_cadence" in entry and not isinstance(entry.get("update_cadence"), (dict, str)):
+        raise ValueError("update_cadence must be an object or string when provided")
     if "politeness" in entry and not isinstance(entry.get("politeness"), dict):
         raise ValueError("politeness must be an object when provided")
+    if "enabled" in entry and not isinstance(entry.get("enabled"), bool):
+        raise ValueError("enabled must be a boolean when provided")
     if "live_enabled" in entry and not isinstance(entry.get("live_enabled"), bool):
         raise ValueError("live_enabled must be a boolean when provided")
     if "snapshot_enabled" in entry and not isinstance(entry.get("snapshot_enabled"), bool):
@@ -79,10 +94,7 @@ def _validate_provider_entry_schema(entry: Dict[str, Any], schema: Dict[str, Any
 
 def _coerce_extraction_mode(raw_mode: Any, raw_type: Any) -> str:
     candidate = str(raw_mode or raw_type or "snapshot_json").strip().lower()
-    if candidate == "snapshot":
-        candidate = "snapshot_json"
-    if candidate == "openai":
-        candidate = "ashby"
+    candidate = _EXTRACTION_MODE_ALIASES.get(candidate, candidate)
     if candidate not in SUPPORTED_EXTRACTION_MODES:
         raise ValueError(f"unsupported extraction_mode '{candidate}'")
     return candidate
@@ -130,12 +142,17 @@ def _allowed_domains(urls: List[str], configured: Any) -> List[str]:
     return sorted(set(parsed))
 
 
-def _normalize_update_cadence(entry: Dict[str, Any]) -> Dict[str, Any]:
+def _normalize_update_cadence(entry: Dict[str, Any]) -> Dict[str, Any] | str:
     raw = entry.get("update_cadence")
     if raw is None:
         return {}
+    if isinstance(raw, str):
+        value = raw.strip()
+        if not value:
+            raise ValueError("update_cadence must be non-empty when provided")
+        return value
     if not isinstance(raw, dict):
-        raise ValueError("update_cadence must be an object when provided")
+        raise ValueError("update_cadence must be an object or string when provided")
     out: Dict[str, Any] = {}
     if "min_interval_hours" in raw:
         try:
@@ -382,6 +399,7 @@ def _normalize_provider_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
     if not _PROVIDER_ID_RE.fullmatch(provider_id):
         raise ValueError(f"invalid provider_id '{provider_id}'")
     urls = _normalized_url_list(entry)
+    raw_extraction_mode = str(entry.get("extraction_mode") or entry.get("type") or "").strip().lower()
     extraction_mode = _coerce_extraction_mode(entry.get("extraction_mode"), entry.get("type"))
     mode = _coerce_mode(entry.get("mode"))
 
@@ -397,10 +415,18 @@ def _normalize_provider_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
         snapshot_path = str(Path("data") / f"{provider_id}_snapshots" / "jobs.json")
 
     update_cadence = _normalize_update_cadence(entry)
+    display_name = str(entry.get("display_name") or entry.get("name") or provider_id).strip()
+    if not display_name:
+        raise ValueError("provider entry display_name/name must be non-empty")
+    llm_fallback = _normalize_llm_fallback(entry)
+    if raw_extraction_mode == "llm_fallback" and not llm_fallback.get("enabled"):
+        raise ValueError("extraction_mode 'llm_fallback' requires llm_fallback.enabled=true")
     normalized: Dict[str, Any] = {
         "provider_id": provider_id,
-        "name": str(entry.get("name") or provider_id),
+        "display_name": display_name,
+        "name": display_name,  # back-compat for existing callers
         "schema_version": 1,
+        "enabled": bool(entry.get("enabled", True)),
         "careers_urls": urls,
         "careers_url": urls[0],
         "board_url": urls[0],  # back-compat for existing callers
@@ -412,7 +438,7 @@ def _normalize_provider_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
         "snapshot_enabled": bool(entry.get("snapshot_enabled", True)),
         "snapshot_path": snapshot_path,
         "snapshot_dir": str(Path(snapshot_path).parent),
-        "llm_fallback": _normalize_llm_fallback(entry),
+        "llm_fallback": llm_fallback,
         "update_cadence": update_cadence,
         "politeness": _normalize_politeness(entry),
     }
@@ -455,11 +481,14 @@ def resolve_provider_ids(
     *,
     default_provider: str = "openai",
 ) -> List[str]:
+    enabled_map = {entry["provider_id"]: bool(entry.get("enabled", True)) for entry in providers_cfg}
     requested = (providers_arg or "").strip()
     if requested.lower() == "all":
-        providers = [entry["provider_id"] for entry in providers_cfg]
+        providers = [entry["provider_id"] for entry in providers_cfg if enabled_map.get(entry["provider_id"], True)]
     else:
         providers = [p.strip() for p in requested.split(",") if p.strip()]
+    if requested.lower() == "all" and not providers:
+        raise ValueError("No enabled providers configured")
     if not providers:
         providers = [default_provider]
 
@@ -475,4 +504,8 @@ def resolve_provider_ids(
     if unknown:
         unknown_list = ", ".join(unknown)
         raise ValueError(f"Unknown provider_id(s): {unknown_list}")
+    disabled = [provider for provider in out if not enabled_map.get(provider, True)]
+    if disabled:
+        disabled_list = ", ".join(disabled)
+        raise ValueError(f"Provider(s) disabled in config: {disabled_list}")
     return out

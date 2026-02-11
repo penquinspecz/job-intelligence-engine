@@ -21,7 +21,9 @@
       "politeness": {
         "min_delay_s": 1.0,
         "max_attempts": 3
-      }
+      },
+      "display_name": "Anthropic",
+      "enabled": true
     },
     {
       "provider_id": "openai",
@@ -44,7 +46,9 @@
       "politeness": {
         "min_delay_s": 1.0,
         "max_attempts": 3
-      }
+      },
+      "display_name": "OpenAI",
+      "enabled": true
     },
     {
       "provider_id": "xai",
@@ -67,7 +71,9 @@
       "politeness": {
         "min_delay_s": 1.0,
         "max_attempts": 2
-      }
+      },
+      "display_name": "xAI",
+      "enabled": true
     },
     {
       "provider_id": "cohere",
@@ -90,7 +96,9 @@
       "politeness": {
         "min_delay_s": 1.0,
         "max_attempts": 2
-      }
+      },
+      "display_name": "Cohere",
+      "enabled": true
     },
     {
       "provider_id": "mistral",
@@ -113,7 +121,9 @@
       "politeness": {
         "min_delay_s": 1.0,
         "max_attempts": 2
-      }
+      },
+      "display_name": "Mistral",
+      "enabled": true
     },
     {
       "provider_id": "perplexity",
@@ -147,7 +157,9 @@
             "max_inflight_per_host": 1
           }
         }
-      }
+      },
+      "display_name": "Perplexity",
+      "enabled": true
     }
   ]
 }

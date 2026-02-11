@@ -87,3 +87,35 @@ def test_resolve_providers_unknown_fails_closed_with_exit_2(tmp_path: Path) -> N
     with pytest.raises(SystemExit) as exc:
         run_daily._resolve_providers(args)
     assert exc.value.code == 2
+
+
+def test_resolve_providers_all_excludes_disabled(tmp_path: Path) -> None:
+    providers_path = tmp_path / "providers.json"
+    providers_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "providers": [
+                    {
+                        "provider_id": "alpha",
+                        "display_name": "Alpha",
+                        "enabled": True,
+                        "careers_urls": ["https://alpha.example/jobs"],
+                        "extraction_mode": "snapshot_json",
+                        "snapshot_path": "data/alpha.json",
+                    },
+                    {
+                        "provider_id": "beta",
+                        "display_name": "Beta",
+                        "enabled": False,
+                        "careers_urls": ["https://beta.example/jobs"],
+                        "extraction_mode": "snapshot_json",
+                        "snapshot_path": "data/beta.json",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    args = argparse.Namespace(providers="all", providers_config=str(providers_path))
+    assert run_daily._resolve_providers(args) == ["alpha"]

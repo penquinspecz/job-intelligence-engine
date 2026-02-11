@@ -67,19 +67,21 @@ Provider registry (Milestone 5 foundation):
 - Provider selection resolver used by both:
   - `scripts/run_scrape.py`
   - `scripts/run_daily.py`
+- `providers=all` resolves only providers with `enabled=true` (deterministic sort by `provider_id`).
 - Supported extraction modes:
-  - `ashby` (existing Ashby parser)
+  - `ashby_api` (canonical config alias, normalized to runtime `ashby`)
   - `jsonld` (structured JobPosting JSON-LD parser)
-  - `snapshot_json` (static JSON snapshot list)
-  - `html_list` (reserved; treated as snapshot parser until implemented)
+  - `html_rules` (canonical config alias, normalized to runtime `html_list`)
+  - `llm_fallback` (optional; requires `llm_fallback.enabled=true`)
+  - Back-compat inputs (`ashby`, `snapshot_json`, `html_list`) remain accepted.
 
 How to add a provider (deterministic path):
 
 1. Add entry in `config/providers.json` under `providers[]`:
-   - required: `provider_id`, `extraction_mode`, one of `careers_urls`/`careers_url`/`board_url`
+   - required: `provider_id`, `display_name`, `enabled`, `extraction_mode`, `careers_urls`
    - scrape mode + snapshots: `mode`, `snapshot_path` or `snapshot_dir`
    - capability flags: `live_enabled` (optional), `snapshot_enabled` (optional)
-   - allowlist + cadence hints: `allowed_domains`, `update_cadence`
+   - allowlist + cadence hints: `allowed_domains`, `update_cadence` (informational string or structured object)
    - politeness defaults/overrides:
      - `politeness.defaults` (provider-level defaults)
      - `politeness.host_overrides` (per-host override map)
