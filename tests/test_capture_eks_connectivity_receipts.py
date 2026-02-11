@@ -56,3 +56,29 @@ def test_plan_mode_is_deterministic_and_no_kubectl_calls(tmp_path: Path, monkeyp
             "receipt.json",
         ]
     )
+
+
+def test_manifest_ignores_stale_files_from_previous_invocation(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(capture, "REPO_ROOT", tmp_path)
+    args = [
+        "--plan",
+        "--run-id",
+        "stable-run",
+        "--output-dir",
+        "ops/proof/bundles",
+        "--captured-at",
+        "2026-02-08T07:25:00Z",
+        "--started-at",
+        "2026-02-08T07:20:00Z",
+        "--finished-at",
+        "2026-02-08T07:20:01Z",
+    ]
+    assert capture.main(args) == 0
+
+    bundle_dir = tmp_path / "ops" / "proof" / "bundles" / "m4-stable-run" / "eks"
+    (bundle_dir / "stale.log").write_text("old run output\n", encoding="utf-8")
+
+    assert capture.main(args) == 0
+    manifest = json.loads((bundle_dir / "manifest.json").read_text(encoding="utf-8"))
+    paths = [item["path"] for item in manifest["files"]]
+    assert "stale.log" not in paths

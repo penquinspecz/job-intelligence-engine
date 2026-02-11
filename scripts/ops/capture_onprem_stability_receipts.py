@@ -67,10 +67,33 @@ def _write_text(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+def _write_if_missing(path: Path, text: str) -> None:
+    if path.exists():
+        return
+    _write_text(path, text)
+
+
+_EVIDENCE_TEMPLATE_COMMANDS = {
+    "timedatectl status",
+    "chronyc tracking || true",
+    "chronyc sources -v || true",
+    "systemctl status k3s || systemctl status k3s-agent || true",
+    "journalctl -u k3s -n 80 --no-pager || true",
+    "journalctl -u k3s-agent -n 80 --no-pager || true",
+    "lsblk -o NAME,MODEL,SIZE,TYPE,MOUNTPOINT,FSTYPE",
+    "findmnt -o TARGET,SOURCE,FSTYPE,OPTIONS | grep -E '/var/lib/rancher|/app|/srv|/mnt' || true",
+    "mount | grep -E 'mmcblk|sd[a-z]|nvme' || true",
+    "getent hosts jobintel.internal || true",
+    "dig +short jobintel.internal || true",
+    "curl -vk https://jobintel.internal/healthz || true",
+    "openssl s_client -connect jobintel.internal:443 -servername jobintel.internal < /dev/null || true",
+}
+
+
 def _write_templates(bundle_dir: Path) -> list[str]:
     files: list[str] = []
     host_timesync = bundle_dir / "host_timesync_evidence.txt"
-    _write_text(
+    _write_if_missing(
         host_timesync,
         "\n".join(
             [
@@ -85,7 +108,7 @@ def _write_templates(bundle_dir: Path) -> list[str]:
     files.append(host_timesync.name)
 
     host_k3s = bundle_dir / "host_k3s_service_evidence.txt"
-    _write_text(
+    _write_if_missing(
         host_k3s,
         "\n".join(
             [
@@ -100,7 +123,7 @@ def _write_templates(bundle_dir: Path) -> list[str]:
     files.append(host_k3s.name)
 
     host_storage = bundle_dir / "host_storage_evidence.txt"
-    _write_text(
+    _write_if_missing(
         host_storage,
         "\n".join(
             [
@@ -115,7 +138,7 @@ def _write_templates(bundle_dir: Path) -> list[str]:
     files.append(host_storage.name)
 
     ingress = bundle_dir / "ingress_dns_tls_evidence.txt"
-    _write_text(
+    _write_if_missing(
         ingress,
         "\n".join(
             [
@@ -131,7 +154,7 @@ def _write_templates(bundle_dir: Path) -> list[str]:
     files.append(ingress.name)
 
     observations = bundle_dir / "proof_observations.md"
-    _write_text(
+    _write_if_missing(
         observations,
         "\n".join(
             [
@@ -471,7 +494,7 @@ def _evidence_filled(path: Path) -> bool:
         return False
     content = path.read_text(encoding="utf-8")
     lines = [line.strip() for line in content.splitlines()]
-    return any(line and not line.startswith("#") for line in lines)
+    return any(line and not line.startswith("#") and line not in _EVIDENCE_TEMPLATE_COMMANDS for line in lines)
 
 
 def _capture_host_evidence(

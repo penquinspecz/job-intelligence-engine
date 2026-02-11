@@ -6,6 +6,7 @@ try:
 except ModuleNotFoundError:
     from scripts import _bootstrap  # noqa: F401
 
+import argparse
 import json
 import os
 import subprocess
@@ -51,11 +52,15 @@ def _bucket_name(cluster_name: str) -> tuple[str, str]:
     return f"{cluster_name}-artifacts", "derived default <cluster>-artifacts"
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     try:
+        parser = argparse.ArgumentParser(description="Generate deterministic EKS tfvars from AWS.")
+        parser.add_argument("--cluster-name", default="", help="Explicit EKS cluster name override.")
+        args = parser.parse_args(argv or [])
+
         _require_env("AWS_PROFILE")
         region = _env_or_default("AWS_REGION", _env_or_default("AWS_DEFAULT_REGION", "us-east-1"))
-        cluster_name = _env_or_default("CLUSTER_NAME", "jobintel-eks")
+        cluster_name = args.cluster_name.strip() or _env_or_default("CLUSTER_NAME", "jobintel-eks")
 
         payload = _run_aws(
             [
@@ -110,4 +115,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

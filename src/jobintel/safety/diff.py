@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -119,14 +120,24 @@ def _normalize_jobs(jobs: Iterable[Dict[str, Any]]) -> List[NormalizedJob]:
 
 def _resolve_ranked_json_path(run_report: Dict[str, Any], report_path: Path, provider: str, profile: str) -> Path:
     outputs_by_provider = run_report.get("outputs_by_provider")
-    if not isinstance(outputs_by_provider, dict):
-        raise ValueError("run report missing outputs_by_provider")
-    provider_outputs = outputs_by_provider.get(provider)
-    if not isinstance(provider_outputs, dict):
-        raise ValueError(f"run report missing provider outputs for '{provider}'")
-    profile_outputs = provider_outputs.get(profile)
-    if not isinstance(profile_outputs, dict):
-        raise ValueError(f"run report missing profile outputs for '{provider}:{profile}'")
+    profile_outputs: Dict[str, Any] | None = None
+    if isinstance(outputs_by_provider, dict):
+        provider_outputs = outputs_by_provider.get(provider)
+        if isinstance(provider_outputs, dict):
+            maybe_profile = provider_outputs.get(profile)
+            if isinstance(maybe_profile, dict):
+                profile_outputs = maybe_profile
+
+    if profile_outputs is None:
+        outputs_by_profile = run_report.get("outputs_by_profile")
+        if isinstance(outputs_by_profile, dict):
+            maybe_profile = outputs_by_profile.get(profile)
+            if isinstance(maybe_profile, dict):
+                profile_outputs = maybe_profile
+
+    if profile_outputs is None:
+        raise ValueError(f"run report missing outputs for '{provider}:{profile}'")
+
     ranked_json = profile_outputs.get("ranked_json")
     if not isinstance(ranked_json, dict):
         raise ValueError("run report missing ranked_json output")
@@ -194,13 +205,20 @@ def load_jobs_from_path(
     raise ValueError(f"unsupported payload at {path}; expected list of jobs or run report")
 
 
-def _index_jobs(jobs: Iterable[NormalizedJob]) -> Dict[str, NormalizedJob]:
-    indexed: Dict[str, NormalizedJob] = {}
+def _group_jobs_by_id(jobs: Iterable[NormalizedJob]) -> Dict[str, List[NormalizedJob]]:
+    grouped: Dict[str, List[NormalizedJob]] = defaultdict(list)
     for job in jobs:
-        if job.job_id in indexed:
-            continue
-        indexed[job.job_id] = job
-    return indexed
+        grouped[job.job_id].append(job)
+    for job_id, items in grouped.items():
+        items.sort(
+            key=lambda item: (
+                item.fingerprint,
+                _normalize_value("apply_url", item.payload.get("apply_url")),
+                _normalize_value("detail_url", item.payload.get("detail_url")),
+            )
+        )
+        grouped[job_id] = items
+    return grouped
 
 
 def _field_diff(baseline: Dict[str, Any], candidate: Dict[str, Any]) -> Dict[str, Dict[str, str]]:
@@ -321,35 +339,40 @@ def build_safety_diff_report(
     candidate_norm = _normalize_jobs(candidate_jobs)
     baseline_total = len(baseline_norm)
     candidate_total = len(candidate_norm)
-    baseline_index = _index_jobs(baseline_norm)
-    candidate_index = _index_jobs(candidate_norm)
-
-    baseline_ids = set(baseline_index.keys())
-    candidate_ids = set(candidate_index.keys())
-    new_ids = sorted(candidate_ids - baseline_ids)
-    removed_ids = sorted(baseline_ids - candidate_ids)
-    common_ids = sorted(baseline_ids & candidate_ids)
+    baseline_grouped = _group_jobs_by_id(baseline_norm)
+    candidate_grouped = _group_jobs_by_id(candidate_norm)
+    baseline_counts = Counter(job.job_id for job in baseline_norm)
+    candidate_counts = Counter(job.job_id for job in candidate_norm)
+    all_ids = sorted(set(baseline_counts) | set(candidate_counts))
+    common_ids = sorted(set(baseline_grouped.keys()) & set(candidate_grouped.keys()))
 
     changes: List[Dict[str, Any]] = []
     for job_id in common_ids:
-        baseline_job = baseline_index[job_id]
-        candidate_job = candidate_index[job_id]
-        diffs = _field_diff(baseline_job.payload, candidate_job.payload)
-        if diffs:
-            changes.append(
-                {
-                    "job_id": job_id,
-                    "diff_count": len(diffs),
-                    "field_diffs": {field: diffs[field] for field in sorted(diffs)},
-                }
-            )
+        baseline_jobs_for_id = baseline_grouped[job_id]
+        candidate_jobs_for_id = candidate_grouped[job_id]
+        pair_count = min(len(baseline_jobs_for_id), len(candidate_jobs_for_id))
+        for idx in range(pair_count):
+            baseline_job = baseline_jobs_for_id[idx]
+            candidate_job = candidate_jobs_for_id[idx]
+            diffs = _field_diff(baseline_job.payload, candidate_job.payload)
+            if diffs:
+                changes.append(
+                    {
+                        "job_id": job_id,
+                        "diff_count": len(diffs),
+                        "field_diffs": {field: diffs[field] for field in sorted(diffs)},
+                    }
+                )
     changes.sort(key=lambda item: (-item["diff_count"], item["job_id"]))
 
     churn = _job_id_churn(baseline_norm, candidate_norm, limit=top_n)
     baseline_completeness = _field_completeness(baseline_norm, baseline_total)
     candidate_completeness = _field_completeness(candidate_norm, candidate_total)
     delta_completeness = _delta_completeness(baseline_completeness, candidate_completeness)
-    changed_ratio = round(len(changes) / len(common_ids), 4) if common_ids else 0.0
+    common_occurrence_count = sum(min(baseline_counts[job_id], candidate_counts[job_id]) for job_id in all_ids)
+    changed_ratio = round(len(changes) / common_occurrence_count, 4) if common_occurrence_count else 0.0
+    new_count = sum(max(candidate_counts[job_id] - baseline_counts[job_id], 0) for job_id in all_ids)
+    removed_count = sum(max(baseline_counts[job_id] - candidate_counts[job_id], 0) for job_id in all_ids)
 
     apply_url_delta = delta_completeness["apply_url"]
     candidate_apply_url_percent = candidate_completeness["apply_url"]["percent"]
@@ -369,8 +392,8 @@ def build_safety_diff_report(
         "counts": {
             "baseline_total": baseline_total,
             "candidate_total": candidate_total,
-            "new": len(new_ids),
-            "removed": len(removed_ids),
+            "new": new_count,
+            "removed": removed_count,
             "changed": len(changes),
         },
         "job_id_churn": churn,
