@@ -91,9 +91,14 @@ def _write_capture_script(bundle_dir: Path, *, context: str, namespace: str) -> 
     return capture.name
 
 
-def _write_manifest(bundle_dir: Path, *, run_id: str) -> Path:
+def _write_manifest(bundle_dir: Path, *, run_id: str, evidence_files: list[str]) -> Path:
     files = sorted(
-        [path for path in bundle_dir.rglob("*") if path.is_file() and path.name != "manifest.json"],
+        {
+            path
+            for rel_path in evidence_files
+            for path in [bundle_dir / rel_path]
+            if path.is_file() and path.name != "manifest.json"
+        },
         key=lambda p: p.as_posix(),
     )
     payload = {
@@ -190,7 +195,8 @@ def main(argv: list[str] | None = None) -> int:
         "evidence_files": sorted(files),
     }
     _write_json(bundle_dir / "receipt.json", receipt)
-    _write_manifest(bundle_dir, run_id=run_id)
+    files.append("receipt.json")
+    _write_manifest(bundle_dir, run_id=run_id, evidence_files=files)
 
     print(f"eks_connectivity_mode={mode}")
     print(f"eks_connectivity_run_id={run_id}")

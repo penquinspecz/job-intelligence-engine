@@ -161,3 +161,59 @@ def test_manifest_hashing_is_stable(tmp_path: Path) -> None:
 
     assert items["a.txt"]["sha256"] == sha256_file(file_a)
     assert items["b.txt"]["sha256"] == sha256_file(file_b)
+
+
+def test_untouched_template_is_not_counted_as_evidence(tmp_path: Path) -> None:
+    path = tmp_path / "host_timesync_evidence.txt"
+    path.write_text(
+        "\n".join(
+            [
+                "# template header",
+                "timedatectl status",
+                "chronyc tracking || true",
+                "chronyc sources -v || true",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    assert capture._evidence_filled(path) is False
+
+    path.write_text(
+        path.read_text(encoding="utf-8") + "\nSystem clock synchronized: yes\n",
+        encoding="utf-8",
+    )
+    assert capture._evidence_filled(path) is True
+
+
+def test_finalize_preserves_existing_evidence_templates(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(capture, "REPO_ROOT", tmp_path)
+    run_id = "20260207T120000Z"
+    base_args = [
+        "--run-id",
+        run_id,
+        "--output-dir",
+        "ops/proof/bundles",
+        "--namespace",
+        "jobintel",
+        "--cluster-context",
+        "does-not-exist",
+        "--window-hours",
+        "72",
+        "--interval-minutes",
+        "360",
+        "--captured-at",
+        "2026-02-07T12:05:00Z",
+        "--started-at",
+        "2026-02-07T12:00:00Z",
+        "--finished-at",
+        "2026-02-07T12:00:01Z",
+    ]
+    assert capture.main(["--plan", *base_args]) == 0
+
+    bundle_dir = tmp_path / "ops" / "proof" / "bundles" / f"m4-{run_id}" / "onprem-72h"
+    evidence = bundle_dir / "host_timesync_evidence.txt"
+    evidence.write_text("# manual notes\noffset=0.01ms\n", encoding="utf-8")
+
+    assert capture.main(["--finalize", *base_args]) == 0
+    assert evidence.read_text(encoding="utf-8") == "# manual notes\noffset=0.01ms\n"

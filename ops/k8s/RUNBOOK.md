@@ -78,8 +78,9 @@ Apply base + AWS overlay (includes dashboard deployment + service):
 
 ```bash
 export JOBINTEL_IMAGE="<acct>.dkr.ecr.<region>.amazonaws.com/jobintel:<tag>"
-JOBINTEL_IRSA_ROLE_ARN="$JOBINTEL_IRSA_ROLE_ARN" \
-  python scripts/k8s_render.py --overlay aws-eks --image "$JOBINTEL_IMAGE" > /tmp/jobintel.yaml
+export JOBINTEL_IRSA_ROLE_ARN="<arn:aws:iam::<account_id>:role/<irsa_role_name>>"
+: "${JOBINTEL_IRSA_ROLE_ARN:?set JOBINTEL_IRSA_ROLE_ARN to a non-empty IRSA role ARN}"
+python scripts/k8s_render.py --overlay eks --image "$JOBINTEL_IMAGE" > /tmp/jobintel.yaml
 kubectl --context "$KUBE_CONTEXT" apply -f /tmp/jobintel.yaml
 kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" get deploy jobintel-dashboard
 ```

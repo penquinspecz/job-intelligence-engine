@@ -38,7 +38,8 @@ def test_plan_bundle_deterministic_and_kubectl_free(tmp_path: Path, monkeypatch)
                 }
             }
             return _Result(json.dumps(payload))
-        if cmd[:2] == [sys.executable, "scripts/tofu_eks_vars_from_aws.py"]:
+        if len(cmd) >= 4 and cmd[:2] == [sys.executable, "scripts/tofu_eks_vars_from_aws.py"]:
+            assert cmd[2:] == ["--cluster-name", "jobintel-eks"]
             out_file = tmp_path / "ops" / "aws" / "infra" / "eks" / "local.auto.tfvars.json"
             out_file.parent.mkdir(parents=True, exist_ok=True)
             out_file.write_text(
@@ -120,7 +121,8 @@ def test_plan_bundle_fails_fast_when_cluster_exists_and_state_empty(tmp_path: Pa
             return _Result(
                 '{"cluster":{"name":"jobintel-eks","resourcesVpcConfig":{"subnetIds":["subnet-a"],"vpcId":"vpc-123"}}}'
             )
-        if cmd[:2] == [sys.executable, "scripts/tofu_eks_vars_from_aws.py"]:
+        if len(cmd) >= 4 and cmd[:2] == [sys.executable, "scripts/tofu_eks_vars_from_aws.py"]:
+            assert cmd[2:] == ["--cluster-name", "jobintel-eks"]
             return _Result("ok\n")
         if cmd[-2:] == ["state", "list"]:
             return _Result("", "No state file was found", 1)
@@ -148,3 +150,71 @@ def test_plan_bundle_fails_fast_when_cluster_exists_and_state_empty(tmp_path: Pa
     )
     assert receipt["status"] == "failed"
     assert "state is empty while EKS cluster exists" in receipt["error"]
+
+
+def test_plan_bundle_fails_on_aws_describe_errors(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(eks_infra_plan_bundle, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(eks_infra_plan_bundle.shutil, "which", lambda name: "/usr/bin/tofu" if name == "tofu" else None)
+    monkeypatch.setenv("AWS_PROFILE", "jobintel-deployer")
+    monkeypatch.setenv("AWS_REGION", "us-east-1")
+
+    def fake_run(cmd, *, env, cwd=None):  # type: ignore[no-untyped-def]
+        if cmd[:3] == ["aws", "sts", "get-caller-identity"]:
+            return _Result('{"Arn":"arn:aws:iam::123456789012:role/jobintel-deployer"}')
+        if cmd[:3] == ["aws", "eks", "describe-cluster"]:
+            return _Result("", "AccessDeniedException", 254)
+        raise AssertionError(f"unexpected command: {cmd}")
+
+    monkeypatch.setattr(eks_infra_plan_bundle, "_run", fake_run)
+
+    rc = eks_infra_plan_bundle.main(["--run-id", "unit-denied", "--captured-at", "2026-02-10T12:00:00Z"])
+    assert rc == 2
+
+    receipt = json.loads(
+        (tmp_path / "ops" / "proof" / "bundles" / "m4-unit-denied" / "eks_infra" / "receipt.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert receipt["status"] == "failed"
+    assert "describe-cluster failed" in receipt["error"]
+
+
+def test_plan_bundle_forwards_cluster_name_to_var_generation(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(eks_infra_plan_bundle, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(eks_infra_plan_bundle.shutil, "which", lambda name: "/usr/bin/tofu" if name == "tofu" else None)
+    monkeypatch.setenv("AWS_PROFILE", "jobintel-deployer")
+    monkeypatch.setenv("AWS_REGION", "us-east-1")
+
+    seen_vars_cmd: list[str] = []
+
+    def fake_run(cmd, *, env, cwd=None):  # type: ignore[no-untyped-def]
+        nonlocal seen_vars_cmd
+        if cmd[:3] == ["aws", "sts", "get-caller-identity"]:
+            return _Result('{"Arn":"arn:aws:iam::123456789012:role/jobintel-deployer"}')
+        if cmd[:3] == ["aws", "eks", "describe-cluster"]:
+            return _Result('{"cluster":{"name":"custom-eks","resourcesVpcConfig":{"subnetIds":["subnet-a"]}}}')
+        if cmd[:2] == [sys.executable, "scripts/tofu_eks_vars_from_aws.py"]:
+            seen_vars_cmd = cmd
+            return _Result("ok\n")
+        if cmd[-2:] == ["state", "list"]:
+            return _Result("aws_eks_cluster.this\n")
+        if cmd[-1] in {"version", "providers", "validate"} or cmd[-2:] == ["workspace", "show"]:
+            return _Result("ok\n")
+        if cmd[-2:] == ["fmt", "-check"]:
+            return _Result("")
+        if "plan" in cmd:
+            out_arg = next(part for part in cmd if part.startswith("-out="))
+            plan_path = Path(out_arg.split("=", 1)[1])
+            plan_path.parent.mkdir(parents=True, exist_ok=True)
+            plan_path.write_bytes(b"fake-plan")
+            return _Result("Plan: 0 to add, 0 to change, 0 to destroy.\n")
+        if "show" in cmd:
+            return _Result("No changes. Your infrastructure matches the configuration.\n")
+        raise AssertionError(f"unexpected command: {cmd}")
+
+    monkeypatch.setattr(eks_infra_plan_bundle, "_run", fake_run)
+    rc = eks_infra_plan_bundle.main(
+        ["--run-id", "unit-cluster", "--cluster-name", "custom-eks", "--captured-at", "2026-02-10T12:00:00Z"]
+    )
+    assert rc == 0
+    assert seen_vars_cmd == [sys.executable, "scripts/tofu_eks_vars_from_aws.py", "--cluster-name", "custom-eks"]

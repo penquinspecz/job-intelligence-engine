@@ -86,7 +86,7 @@ def _substitute_placeholders(content: str, source_path: Path) -> str:
     def _replace(match: re.Match[str]) -> str:
         key = match.group(1)
         value = os.getenv(key)
-        if value is None:
+        if value is None or value.strip() == "":
             missing.add(key)
             return match.group(0)
         return value
@@ -107,7 +107,7 @@ def _render_with_overlays(overlays: list[str], image_override_arg: str | None = 
     if not patch_paths:
         return _render_manifest(BASE_DIR)
 
-    require_image = "aws-eks" in overlays
+    require_image = any(name in {"aws-eks", "eks"} for name in overlays)
     image_override = image_override_arg or (os.getenv("JOBINTEL_IMAGE") if require_image else None)
     if require_image and not image_override:
         raise RuntimeError("JOBINTEL_IMAGE is required when rendering aws-eks overlay")

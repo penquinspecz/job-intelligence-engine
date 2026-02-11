@@ -93,3 +93,25 @@ def test_fails_without_aws_profile(monkeypatch):
     monkeypatch.delenv("AWS_PROFILE", raising=False)
     exit_code = tofu_eks_vars_from_aws.main()
     assert exit_code == 2
+
+
+def test_cli_cluster_name_overrides_env(monkeypatch, tmp_path):
+    out_file = tmp_path / "local.auto.tfvars.json"
+    monkeypatch.setattr(tofu_eks_vars_from_aws, "OUT_FILE", out_file)
+    monkeypatch.setenv("AWS_PROFILE", "jobintel-deployer")
+    monkeypatch.setenv("AWS_REGION", "us-east-1")
+    monkeypatch.setenv("CLUSTER_NAME", "env-cluster")
+
+    seen_cmd: list[str] = []
+
+    def _fake_run(cmd, check=False, capture_output=False, text=False):
+        nonlocal seen_cmd
+        seen_cmd = cmd
+        return _Result('{"cluster":{"resourcesVpcConfig":{"subnetIds":["subnet-a"],"vpcId":"vpc-1"}}}')
+
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+
+    exit_code = tofu_eks_vars_from_aws.main(["--cluster-name", "arg-cluster"])
+    assert exit_code == 0
+    assert "--name" in seen_cmd
+    assert "arg-cluster" in seen_cmd

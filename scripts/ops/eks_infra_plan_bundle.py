@@ -104,12 +104,17 @@ def _cluster_exists(*, cluster_name: str, aws_region: str, env: dict[str, str], 
     result = _run(cmd, env=env)
     _record_command(out_path, cmd=cmd, result=result, redact=True)
     if result.returncode != 0:
-        return False
+        detail = ((result.stderr or "") + "\n" + (result.stdout or "")).lower()
+        if "resourcenotfoundexception" in detail or "resource not found" in detail:
+            return False
+        raise RuntimeError(
+            f"aws eks describe-cluster failed: {(result.stderr or result.stdout).strip() or 'unknown error'}"
+        )
 
     try:
         payload = json.loads(result.stdout)
     except json.JSONDecodeError:
-        return False
+        raise RuntimeError("aws eks describe-cluster returned non-json output")
 
     _write_json(bundle_dir / "aws_eks_describe_cluster.json", payload)
     return True
@@ -197,7 +202,7 @@ def main(argv: list[str] | None = None) -> int:
             bundle_dir=bundle_dir,
         )
 
-        vars_cmd = [sys.executable, "scripts/tofu_eks_vars_from_aws.py"]
+        vars_cmd = [sys.executable, "scripts/tofu_eks_vars_from_aws.py", "--cluster-name", args.cluster_name]
         vars_result = _run(vars_cmd, env=env)
         _record_command(bundle_dir / "tofu_eks_vars_from_aws.log", cmd=vars_cmd, result=vars_result, redact=True)
         if cluster_exists and vars_result.returncode != 0:
