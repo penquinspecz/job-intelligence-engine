@@ -161,7 +161,17 @@ def validate_snapshot_file(
     path: Path,
     *,
     extraction_mode: str | None = None,
+    **kwargs: object,
 ) -> Tuple[bool, str]:
+    # Back-compat for older call sites that pass provider mode as `type=...`.
+    if extraction_mode is None and "type" in kwargs:
+        alias_mode = kwargs.pop("type")
+        if isinstance(alias_mode, str):
+            extraction_mode = alias_mode
+    if kwargs:
+        bad = ", ".join(sorted(str(key) for key in kwargs))
+        raise TypeError(f"validate_snapshot_file() got unexpected keyword argument(s): {bad}")
+
     if not path.exists():
         return False, "missing file"
 

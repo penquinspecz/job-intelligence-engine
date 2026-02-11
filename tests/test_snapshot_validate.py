@@ -75,6 +75,31 @@ def test_validate_snapshot_json_ok() -> None:
     assert reason == "ok"
 
 
+def test_validate_snapshot_file_accepts_type_alias(tmp_path: Path) -> None:
+    path = tmp_path / "index.json"
+    path.write_text(
+        '[{"title": "Role", "apply_url": "https://example.com/jobs/1"}]',
+        encoding="utf-8",
+    )
+    ok, reason = validate_snapshot_file("alpha", path, type="snapshot_json")
+    assert ok is True
+    assert reason == "ok"
+
+
+def test_validate_snapshot_file_rejects_unknown_kwargs(tmp_path: Path) -> None:
+    path = tmp_path / "index.json"
+    path.write_text(
+        '[{"title": "Role", "apply_url": "https://example.com/jobs/1"}]',
+        encoding="utf-8",
+    )
+    try:
+        validate_snapshot_file("alpha", path, bogus="value")
+    except TypeError as exc:
+        assert "unexpected keyword argument" in str(exc)
+    else:
+        raise AssertionError("expected TypeError for unknown keyword args")
+
+
 def test_validate_snapshots_all_skips_missing(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("JOBINTEL_SNAPSHOT_MIN_BYTES", "0")
     providers_cfg = [
