@@ -508,6 +508,7 @@ Milestone 4 is DONE when the above is rehearsed once end-to-end and you can repe
 - [ ] Artifacts include similarity evidence
 
 ### Work Items
+- [x] Scaffold deterministic semantic sidecar (offline hash backend + cache under `state/embeddings/` + `semantic_summary.json` evidence artifact; no ranking impact yet)
 - [ ] Embedding cache + cost controls (max jobs embedded per run)
 - [ ] Tests for deterministic similarity behavior + threshold boundaries
 

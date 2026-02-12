@@ -60,6 +60,8 @@ from ji_engine.config import (
 )
 from ji_engine.history_retention import update_history_retention, write_history_run_artifacts
 from ji_engine.providers.registry import load_providers_config, resolve_provider_ids
+from ji_engine.semantic.core import DEFAULT_SEMANTIC_MODEL_ID
+from ji_engine.semantic.step import run_semantic_sidecar
 from ji_engine.utils.atomic_write import atomic_write_text
 from ji_engine.utils.content_fingerprint import content_fingerprint
 from ji_engine.utils.diff_report import build_diff_markdown, build_diff_report
@@ -2757,6 +2759,19 @@ def _resolve_log_file_enabled(args: argparse.Namespace) -> bool:
     return env_value in {"1", "true", "yes", "on"}
 
 
+def _resolve_semantic_settings() -> Dict[str, Any]:
+    enabled = os.environ.get("SEMANTIC_ENABLED", "").strip() == "1"
+    model_id = (os.environ.get("SEMANTIC_MODEL_ID") or DEFAULT_SEMANTIC_MODEL_ID).strip() or DEFAULT_SEMANTIC_MODEL_ID
+    max_jobs_raw = (os.environ.get("SEMANTIC_MAX_JOBS") or "200").strip()
+    try:
+        max_jobs = int(max_jobs_raw)
+    except ValueError:
+        max_jobs = 200
+    if max_jobs < 1:
+        max_jobs = 1
+    return {"enabled": enabled, "model_id": model_id, "max_jobs": max_jobs}
+
+
 def main() -> int:
     ensure_dirs()
     ap = argparse.ArgumentParser()
@@ -3011,6 +3026,24 @@ def main() -> int:
                     "provider_profile": diff_report_by_provider_profile,
                 },
             )
+        semantic_settings = _resolve_semantic_settings()
+        semantic_summary, semantic_summary_path = run_semantic_sidecar(
+            run_id=run_id,
+            provider_outputs=provider_outputs,
+            state_dir=STATE_DIR,
+            run_metadata_dir=RUN_METADATA_DIR,
+            candidate_profile_path=DATA_DIR / "candidate_profile.json",
+            enabled=bool(semantic_settings["enabled"]),
+            model_id=str(semantic_settings["model_id"]),
+            max_jobs=int(semantic_settings["max_jobs"]),
+        )
+        telemetry["semantic"] = {
+            "enabled": semantic_summary.get("enabled"),
+            "model_id": semantic_summary.get("model_id"),
+            "embedded_job_count": semantic_summary.get("embedded_job_count"),
+            "skipped_reason": semantic_summary.get("skipped_reason"),
+            "summary_path": str(semantic_summary_path),
+        }
         run_metadata_path = _persist_run_metadata(
             run_id,
             telemetry,

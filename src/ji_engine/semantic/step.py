@@ -1,0 +1,232 @@
+from __future__ import annotations
+
+import hashlib
+import json
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+from .cache import (
+    build_cache_entry,
+    build_embedding_cache_key,
+    embedding_cache_path,
+    load_cache_entry,
+    save_cache_entry,
+)
+from .core import DEFAULT_SEMANTIC_MODEL_ID, SEMANTIC_NORM_VERSION, embed_texts, normalize_text_for_embedding
+
+
+def _sanitize_run_id(run_id: str) -> str:
+    return run_id.replace(":", "").replace("-", "").replace(".", "")
+
+
+def _sha256_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _canonical_profile_text(profile_data: Any) -> str:
+    return json.dumps(profile_data, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def _load_json(path: Path) -> Any:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _load_ranked_jobs(path: Path) -> List[Dict[str, Any]]:
+    try:
+        payload = _load_json(path)
+    except Exception:
+        return []
+    if not isinstance(payload, list):
+        return []
+    return [item for item in payload if isinstance(item, dict)]
+
+
+def _job_id(job: Dict[str, Any]) -> str:
+    job_id = str(job.get("job_id") or "").strip()
+    if job_id:
+        return job_id
+    fallback = str(job.get("apply_url") or job.get("detail_url") or job.get("title") or "").strip()
+    if fallback:
+        return f"missing:{_sha256_text(fallback)[:16]}"
+    return "missing:unknown"
+
+
+def _job_embedding_text(job: Dict[str, Any]) -> str:
+    fields = (
+        "title",
+        "location",
+        "team",
+        "company",
+        "apply_url",
+        "detail_url",
+        "summary",
+        "description",
+        "raw_text",
+    )
+    values = [str(job.get(field) or "") for field in fields]
+    return " ".join(values)
+
+
+def _collect_ranked_records(
+    provider_outputs: Dict[str, Dict[str, Dict[str, Dict[str, Optional[str]]]]],
+    max_jobs: int,
+) -> List[Dict[str, Any]]:
+    records: List[Dict[str, Any]] = []
+    for provider in sorted(provider_outputs.keys()):
+        by_profile = provider_outputs.get(provider) or {}
+        for profile in sorted(by_profile.keys()):
+            ranked_meta = (by_profile.get(profile) or {}).get("ranked_json") or {}
+            ranked_path_raw = ranked_meta.get("path")
+            if not ranked_path_raw:
+                continue
+            ranked_path = Path(ranked_path_raw)
+            jobs = _load_ranked_jobs(ranked_path)
+            jobs.sort(
+                key=lambda job: (
+                    _job_id(job),
+                    str(job.get("apply_url") or "").lower(),
+                    str(job.get("title") or "").lower(),
+                )
+            )
+            for job in jobs:
+                records.append({"provider": provider, "profile": profile, "job": job})
+                if len(records) >= max_jobs:
+                    return records
+    return records
+
+
+def _write_summary(summary_path: Path, payload: Dict[str, Any]) -> None:
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+    summary_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def run_semantic_sidecar(
+    *,
+    run_id: str,
+    provider_outputs: Dict[str, Dict[str, Dict[str, Dict[str, Optional[str]]]]],
+    state_dir: Path,
+    run_metadata_dir: Path,
+    candidate_profile_path: Path,
+    enabled: bool,
+    model_id: str,
+    max_jobs: int,
+) -> Tuple[Dict[str, Any], Path]:
+    run_dir = run_metadata_dir / _sanitize_run_id(run_id)
+    summary_path = run_dir / "semantic" / "semantic_summary.json"
+    summary: Dict[str, Any] = {
+        "enabled": bool(enabled),
+        "model_id": model_id,
+        "norm_version": SEMANTIC_NORM_VERSION,
+        "cache_hit_counts": {"hit": 0, "miss": 0, "write": 0},
+        "embedded_job_count": 0,
+        "entries": [],
+        "skipped_reason": None,
+    }
+
+    if not enabled:
+        summary["skipped_reason"] = "semantic_disabled"
+        _write_summary(summary_path, summary)
+        return summary, summary_path
+
+    if model_id != DEFAULT_SEMANTIC_MODEL_ID:
+        summary["skipped_reason"] = f"unsupported_model_id:{model_id}"
+        _write_summary(summary_path, summary)
+        return summary, summary_path
+
+    if max_jobs < 1:
+        summary["skipped_reason"] = "invalid_max_jobs"
+        _write_summary(summary_path, summary)
+        return summary, summary_path
+
+    if not candidate_profile_path.exists():
+        summary["skipped_reason"] = "candidate_profile_missing"
+        _write_summary(summary_path, summary)
+        return summary, summary_path
+
+    try:
+        profile_data = _load_json(candidate_profile_path)
+    except Exception:
+        summary["skipped_reason"] = "candidate_profile_invalid_json"
+        _write_summary(summary_path, summary)
+        return summary, summary_path
+
+    profile_text = normalize_text_for_embedding(_canonical_profile_text(profile_data))
+    candidate_profile_hash = _sha256_text(profile_text)
+
+    records = _collect_ranked_records(provider_outputs, max_jobs)
+    if not records:
+        summary["skipped_reason"] = "no_ranked_jobs"
+        _write_summary(summary_path, summary)
+        return summary, summary_path
+
+    misses: List[Dict[str, Any]] = []
+    for record in records:
+        provider = record["provider"]
+        profile = record["profile"]
+        job = record["job"]
+        job_id = _job_id(job)
+        job_text = normalize_text_for_embedding(_job_embedding_text(job))
+        job_content_hash = _sha256_text(job_text)
+        cache_key = build_embedding_cache_key(
+            job_id=job_id,
+            job_content_hash=job_content_hash,
+            candidate_profile_hash=candidate_profile_hash,
+        )
+        cache_path = embedding_cache_path(state_dir, model_id, cache_key)
+        cache_entry = load_cache_entry(cache_path)
+
+        cache_hit = False
+        if isinstance(cache_entry, dict):
+            input_hashes = cache_entry.get("input_hashes") if isinstance(cache_entry.get("input_hashes"), dict) else {}
+            cache_hit = (
+                cache_entry.get("model_id") == model_id
+                and input_hashes.get("job_id") == job_id
+                and input_hashes.get("job_content_hash") == job_content_hash
+                and input_hashes.get("candidate_profile_hash") == candidate_profile_hash
+                and input_hashes.get("norm_version") == SEMANTIC_NORM_VERSION
+                and isinstance(cache_entry.get("vector"), list)
+            )
+
+        summary["entries"].append(
+            {
+                "provider": provider,
+                "profile": profile,
+                "job_id": job_id,
+                "job_content_hash": job_content_hash,
+                "candidate_profile_hash": candidate_profile_hash,
+                "cache_key": cache_key,
+                "cache_hit": cache_hit,
+            }
+        )
+        if cache_hit:
+            summary["cache_hit_counts"]["hit"] += 1
+        else:
+            summary["cache_hit_counts"]["miss"] += 1
+            misses.append(
+                {
+                    "cache_key": cache_key,
+                    "cache_path": cache_path,
+                    "job_id": job_id,
+                    "job_content_hash": job_content_hash,
+                    "candidate_profile_hash": candidate_profile_hash,
+                    "text": job_text,
+                }
+            )
+
+    if misses:
+        vectors = embed_texts([item["text"] for item in misses], model_id)
+        for miss, vector in zip(misses, vectors, strict=True):
+            entry = build_cache_entry(
+                model_id=model_id,
+                job_id=miss["job_id"],
+                job_content_hash=miss["job_content_hash"],
+                candidate_profile_hash=miss["candidate_profile_hash"],
+                vector=vector,
+                cache_key=miss["cache_key"],
+            )
+            save_cache_entry(miss["cache_path"], entry)
+            summary["cache_hit_counts"]["write"] += 1
+
+    summary["embedded_job_count"] = len(summary["entries"])
+    _write_summary(summary_path, summary)
+    return summary, summary_path

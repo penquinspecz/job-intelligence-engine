@@ -239,6 +239,36 @@ Scoring input resolution is handled by `scripts/run_daily.py`:
 - `--ai_only`: requires `data/openai_enriched_jobs_ai.json` and fails if missing.
 - `--prefer_ai`: passed to `score_jobs.py` only when `--ai` or `--ai_only` is set by `run_daily.py`.
 
+## Semantic Scaffold (M7, no scoring impact)
+
+`scripts/run_daily.py` now writes a deterministic semantic sidecar artifact after scoring/output stages.
+This does not change ranked output content or scoring behavior yet.
+
+Environment flags:
+- `SEMANTIC_ENABLED=1` enables semantic embedding/cache sidecar (default off).
+- `SEMANTIC_MODEL_ID` selects model id (default `deterministic-hash-v1`).
+- `SEMANTIC_MAX_JOBS` bounds per-run embedding workload (default `200`).
+
+Determinism contract:
+- Text normalization is deterministic (`semantic_norm_v1`) before embedding/hash.
+- Default backend is offline and deterministic (hash-based vectors, no network calls).
+- Cache keys include `job_id`, `job_content_hash`, `candidate_profile_hash`, and `semantic_norm_v1`.
+- Cache location: `state/embeddings/<model_id>/<cache_key>.json`.
+- Cache entries store only model id, deterministic metadata, input hashes, and vector values.
+
+Run artifact:
+- Every run writes `state/runs/<run_id-sanitized>/semantic/semantic_summary.json` even when disabled.
+- Summary includes:
+  - `enabled`
+  - `model_id`
+  - `cache_hit_counts`
+  - `embedded_job_count`
+  - `skipped_reason` (when disabled/unavailable/fail-closed)
+
+Privacy boundary:
+- Semantic artifacts do not store raw job description text.
+- Only hashes, job ids, cache keys, and minimal provider/profile metadata are persisted.
+
 ## Artifacts and where they live
 
 Data outputs (`./data`):
