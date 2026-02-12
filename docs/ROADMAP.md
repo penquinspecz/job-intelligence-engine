@@ -470,9 +470,11 @@ Milestone 4 is DONE when the above is rehearsed once end-to-end and you can repe
 
 ### Milestone 5 Receipt (2026-02-11)
 - Run id: `m5-proof-2026-02-11T23:59:15Z`
+- Providers: `openai`, `scaleai`, `replit` (stable deterministic order by provider_id)
+- Mode: offline + snapshot-only (no live network scraping)
 - Proof artifacts: `state/runs/m5proof20260211T235915Z/`
 - Run report: `state/runs/m5proof20260211T235915Z/run_report.json`
-- Proof bundle note: `docs/proof/m5-offline-multi-provider-2026-02-11.md`
+- Proof bundle note: `docs/proof/m5-offline-multi-provider-2026-02-11.md` (SignalCraft receipt for JIE internals)
 
 ---
 
