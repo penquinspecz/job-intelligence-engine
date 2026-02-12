@@ -62,6 +62,8 @@ def test_semantic_step_disabled_writes_summary(tmp_path: Path) -> None:
     assert summary["enabled"] is False
     assert summary["embedded_job_count"] == 0
     assert summary["skipped_reason"] == "semantic_disabled"
+    assert "normalized_text_hash" in summary
+    assert "embedding_cache_key" in summary
 
 
 def test_semantic_step_cache_hit_miss_contract(tmp_path: Path) -> None:
@@ -101,6 +103,8 @@ def test_semantic_step_cache_hit_miss_contract(tmp_path: Path) -> None:
     assert second["embedded_job_count"] == 2
     assert second["cache_hit_counts"]["hit"] == 2
     assert second["cache_hit_counts"]["miss"] == 0
+    assert isinstance(second["normalized_text_hash"], str) and second["normalized_text_hash"]
+    assert isinstance(second["embedding_cache_key"], str) and second["embedding_cache_key"]
 
     # Profile hash change => deterministic cache miss.
     profile_path.write_text(json.dumps({"roles": ["cs"], "skills": ["go"]}), encoding="utf-8")

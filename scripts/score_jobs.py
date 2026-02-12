@@ -53,7 +53,7 @@ from ji_engine.config import (
 )
 from ji_engine.profile_loader import load_candidate_profile
 from ji_engine.semantic.boost import SemanticPolicy, apply_bounded_semantic_boost
-from ji_engine.semantic.core import DEFAULT_SEMANTIC_MODEL_ID
+from ji_engine.semantic.core import DEFAULT_SEMANTIC_MODEL_ID, EMBEDDING_BACKEND_VERSION
 from ji_engine.utils.atomic_write import atomic_write_text, atomic_write_with
 from ji_engine.utils.content_fingerprint import content_fingerprint
 from ji_engine.utils.job_identity import job_identity
@@ -248,11 +248,10 @@ def _print_family_counts(scored: List[Dict[str, Any]]) -> None:
 
 
 def _resolve_semantic_policy_from_env() -> SemanticPolicy:
-    semantic_enabled = os.environ.get("SEMANTIC_ENABLED", "").strip() == "1"
-    semantic_mode = (os.environ.get("SEMANTIC_MODE") or "sidecar").strip().lower()
+    enabled = os.environ.get("SEMANTIC_ENABLED", "").strip() == "1"
+    semantic_mode = (os.environ.get("SEMANTIC_MODE") or "boost").strip().lower()
     if semantic_mode not in {"sidecar", "boost"}:
-        semantic_mode = "sidecar"
-    enabled = semantic_enabled and semantic_mode == "boost"
+        semantic_mode = "boost"
     model_id = (os.environ.get("SEMANTIC_MODEL_ID") or DEFAULT_SEMANTIC_MODEL_ID).strip() or DEFAULT_SEMANTIC_MODEL_ID
     try:
         max_jobs = int((os.environ.get("SEMANTIC_MAX_JOBS") or "200").strip())
@@ -271,7 +270,7 @@ def _resolve_semantic_policy_from_env() -> SemanticPolicy:
     except ValueError:
         min_similarity = 0.72
     return SemanticPolicy(
-        enabled=enabled,
+        enabled=enabled and semantic_mode == "boost",
         model_id=model_id,
         max_jobs=max(1, max_jobs),
         top_k=max(1, top_k),
@@ -1698,6 +1697,9 @@ def main() -> int:
             semantic_evidence = {
                 "enabled": True,
                 "model_id": semantic_policy.model_id,
+                "embedding_backend_version": EMBEDDING_BACKEND_VERSION,
+                "normalized_text_hash": None,
+                "embedding_cache_key": None,
                 "policy": {
                     "max_boost": semantic_policy.max_boost,
                     "min_similarity": semantic_policy.min_similarity,
@@ -1712,6 +1714,9 @@ def main() -> int:
         semantic_evidence = {
             "enabled": False,
             "model_id": semantic_policy.model_id,
+            "embedding_backend_version": EMBEDDING_BACKEND_VERSION,
+            "normalized_text_hash": None,
+            "embedding_cache_key": None,
             "policy": {
                 "max_boost": semantic_policy.max_boost,
                 "min_similarity": semantic_policy.min_similarity,

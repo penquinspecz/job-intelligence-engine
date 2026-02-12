@@ -6,6 +6,7 @@ import re
 from typing import List, Protocol, Sequence
 
 DEFAULT_SEMANTIC_MODEL_ID = "deterministic-hash-v1"
+EMBEDDING_BACKEND_VERSION = "deterministic-hash-backend-v1"
 SEMANTIC_NORM_VERSION = "semantic_norm_v1"
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 

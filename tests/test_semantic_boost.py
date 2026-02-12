@@ -112,3 +112,27 @@ def test_semantic_boost_respects_bounds_and_thresholds(tmp_path: Path) -> None:
         assert float(job.get("semantic_boost", 0.0) or 0.0) == 0.0
     for entry in threshold_evidence["entries"]:
         assert float(entry["semantic_boost"]) == 0.0
+
+
+def test_semantic_threshold_change_invalidates_cache_keys(tmp_path: Path) -> None:
+    state_dir = tmp_path / "state"
+    base_policy = SemanticPolicy(enabled=True, top_k=3, max_jobs=3, max_boost=5.0, min_similarity=0.0)
+    _, first = apply_bounded_semantic_boost(
+        scored_jobs=_jobs(),
+        profile_payload=_profile(),
+        state_dir=state_dir,
+        policy=base_policy,
+    )
+    assert first["cache_hit_counts"]["miss"] == 3
+    assert first["cache_hit_counts"]["write"] == 3
+
+    threshold_changed = SemanticPolicy(enabled=True, top_k=3, max_jobs=3, max_boost=5.0, min_similarity=0.2)
+    _, second = apply_bounded_semantic_boost(
+        scored_jobs=_jobs(),
+        profile_payload=_profile(),
+        state_dir=state_dir,
+        policy=threshold_changed,
+    )
+    assert second["cache_hit_counts"]["hit"] == 0
+    assert second["cache_hit_counts"]["miss"] == 3
+    assert second["cache_hit_counts"]["write"] == 3

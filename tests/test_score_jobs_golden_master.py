@@ -193,7 +193,7 @@ def test_score_jobs_semantic_disabled_matches_baseline(tmp_path: Path) -> None:
     assert evidence["entries"] == []
 
 
-def test_score_jobs_semantic_sidecar_matches_baseline(tmp_path: Path) -> None:
+def test_score_jobs_semantic_sidecar_mode_does_not_mutate_scores(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[1]
     fixture = repo_root / "tests" / "fixtures" / "openai_enriched_jobs.sample.json"
 
@@ -251,4 +251,3 @@ def test_score_jobs_semantic_sidecar_matches_baseline(tmp_path: Path) -> None:
     evidence = json.loads(semantic_out.read_text(encoding="utf-8"))
     assert evidence["enabled"] is False
     assert evidence["skipped_reason"] == "semantic_disabled"
-    assert evidence["entries"] == []

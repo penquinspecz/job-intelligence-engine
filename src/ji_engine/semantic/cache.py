@@ -31,12 +31,15 @@ def build_embedding_cache_key(
     job_content_hash: str,
     candidate_profile_hash: str,
     norm_version: str = SEMANTIC_NORM_VERSION,
+    semantic_threshold: float | None = None,
 ) -> str:
+    threshold_token = None if semantic_threshold is None else f"{round(float(semantic_threshold), 6):.6f}"
     payload = {
         "job_id": job_id,
         "job_content_hash": job_content_hash,
         "candidate_profile_hash": candidate_profile_hash,
         "norm_version": norm_version,
+        "semantic_threshold": threshold_token,
     }
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
@@ -57,7 +60,9 @@ def build_cache_entry(
     vector: List[float],
     norm_version: str = SEMANTIC_NORM_VERSION,
     cache_key: str,
+    semantic_threshold: float | None = None,
 ) -> Dict[str, Any]:
+    threshold_token = None if semantic_threshold is None else f"{round(float(semantic_threshold), 6):.6f}"
     return {
         "model_id": model_id,
         "created_at": _deterministic_created_at(cache_key),
@@ -66,6 +71,7 @@ def build_cache_entry(
             "job_content_hash": job_content_hash,
             "candidate_profile_hash": candidate_profile_hash,
             "norm_version": norm_version,
+            "semantic_threshold": threshold_token,
         },
         "vector": [round(float(v), 8) for v in vector],
     }

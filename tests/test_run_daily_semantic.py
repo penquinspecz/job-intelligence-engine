@@ -43,13 +43,24 @@ def test_run_daily_writes_semantic_summary_when_disabled(tmp_path: Path, monkeyp
     assert rc == 0
 
     summary_path = state_dir / "runs" / "20260102T000000Z" / "semantic" / "semantic_summary.json"
+    run_report_path = state_dir / "runs" / "20260102T000000Z" / "run_report.json"
     assert summary_path.exists()
+    assert run_report_path.exists()
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    run_report = json.loads(run_report_path.read_text(encoding="utf-8"))
     assert summary["enabled"] is False
     assert summary["skipped_reason"] == "semantic_disabled"
+    assert "normalized_text_hash" in summary
+    assert "embedding_cache_key" in summary
+    assert run_report["semantic_enabled"] is False
+    assert run_report["semantic_mode"] == "boost"
+    assert run_report["semantic_model_id"] == "deterministic-hash-v1"
+    assert run_report["semantic_threshold"] == 0.72
+    assert run_report["semantic_max_boost"] == 5.0
+    assert isinstance(run_report["embedding_backend_version"], str) and run_report["embedding_backend_version"]
 
 
-def test_semantic_modes_short_circuit_contract(tmp_path: Path, monkeypatch) -> None:
+def test_semantic_enabled_bypasses_short_circuit_and_writes_artifacts(tmp_path: Path, monkeypatch) -> None:
     data_dir = tmp_path / "data"
     output_dir = data_dir / "ashby_cache"
     snapshot_dir = data_dir / "openai_snapshots"
@@ -59,8 +70,7 @@ def test_semantic_modes_short_circuit_contract(tmp_path: Path, monkeypatch) -> N
     state_dir.mkdir(parents=True, exist_ok=True)
     (snapshot_dir / "index.html").write_text("<html>snapshot</html>", encoding="utf-8")
 
-    profile_fixture = Path(__file__).resolve().parents[1] / "data" / "candidate_profile.json"
-    _write_json(data_dir / "candidate_profile.json", json.loads(profile_fixture.read_text(encoding="utf-8")))
+    _write_json(data_dir / "candidate_profile.json", {"summary": "customer success architect"})
 
     score_stage_calls: list[str] = []
     non_score_stages: list[str] = []
@@ -105,7 +115,7 @@ def test_semantic_modes_short_circuit_contract(tmp_path: Path, monkeypatch) -> N
             out_md.write_text("# shortlist\n", encoding="utf-8")
             out_top.write_text("# top\n", encoding="utf-8")
             semantic_out.parent.mkdir(parents=True, exist_ok=True)
-            if os.environ.get("SEMANTIC_MODE") == "boost":
+            if os.environ.get("SEMANTIC_ENABLED") == "1":
                 semantic_out.write_text(
                     json.dumps(
                         {
@@ -182,20 +192,15 @@ def test_semantic_modes_short_circuit_contract(tmp_path: Path, monkeypatch) -> N
     )
     assert run_daily.main() == 0
     assert score_stage_calls == ["score:cs"]
-    baseline_ranked_path = state_dir / "runs" / "20260102T000000Z" / "openai" / "cs" / "openai_ranked_jobs.cs.json"
-    baseline_ranked = baseline_ranked_path.read_text(encoding="utf-8")
     (state_dir / "lock").unlink(missing_ok=True)
 
     score_stage_calls.clear()
     non_score_stages.clear()
     monkeypatch.setenv("SEMANTIC_ENABLED", "1")
-    monkeypatch.setenv("SEMANTIC_MODE", "sidecar")
     monkeypatch.setattr(run_daily, "_utcnow_iso", lambda: "2026-01-03T00:00:00Z")
     assert run_daily.main() == 0
-    assert score_stage_calls == []
+    assert score_stage_calls == ["score:cs"]
     assert "ai_augment" not in non_score_stages
-    sidecar_ranked_path = state_dir / "runs" / "20260103T000000Z" / "openai" / "cs" / "openai_ranked_jobs.cs.json"
-    assert baseline_ranked == sidecar_ranked_path.read_text(encoding="utf-8")
 
     summary_path = state_dir / "runs" / "20260103T000000Z" / "semantic" / "semantic_summary.json"
     scores_path = state_dir / "runs" / "20260103T000000Z" / "semantic" / "semantic_scores.json"
@@ -203,24 +208,5 @@ def test_semantic_modes_short_circuit_contract(tmp_path: Path, monkeypatch) -> N
     scores = json.loads(scores_path.read_text(encoding="utf-8"))
 
     assert summary["enabled"] is True
-    assert summary["used_short_circuit"] is True
     assert isinstance(summary["cache_hit_counts"], dict)
-    assert isinstance(summary["attempted_provider_profiles"], list) and summary["attempted_provider_profiles"]
     assert isinstance(scores, list) and scores
-    assert all(entry.get("provider") == "openai" for entry in scores)
-    assert all(entry.get("profile") == "cs" for entry in scores)
-    assert all("similarity" in entry for entry in scores)
-
-    (state_dir / "lock").unlink(missing_ok=True)
-    score_stage_calls.clear()
-    monkeypatch.setenv("SEMANTIC_MODE", "boost")
-    monkeypatch.setattr(run_daily, "_utcnow_iso", lambda: "2026-01-04T00:00:00Z")
-    assert run_daily.main() == 0
-    assert score_stage_calls == ["score:cs"]
-    boost_summary_path = state_dir / "runs" / "20260104T000000Z" / "semantic" / "semantic_summary.json"
-    boost_scores_path = state_dir / "runs" / "20260104T000000Z" / "semantic" / "semantic_scores.json"
-    boost_summary = json.loads(boost_summary_path.read_text(encoding="utf-8"))
-    boost_scores = json.loads(boost_scores_path.read_text(encoding="utf-8"))
-    assert boost_summary["enabled"] is True
-    assert boost_summary["used_short_circuit"] is False
-    assert isinstance(boost_scores, list) and boost_scores

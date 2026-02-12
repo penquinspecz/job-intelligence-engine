@@ -14,6 +14,7 @@ from .cache import (
 )
 from .core import (
     DEFAULT_SEMANTIC_MODEL_ID,
+    EMBEDDING_BACKEND_VERSION,
     SEMANTIC_NORM_VERSION,
     cosine_similarity,
     embed_texts,
@@ -92,13 +93,15 @@ def _resolve_profile_vector(
     profile_payload: Any,
     state_dir: Path,
     model_id: str,
-) -> Tuple[List[float], str, bool]:
+    semantic_threshold: float,
+) -> Tuple[List[float], str, str, bool]:
     profile_text = _profile_text(profile_payload)
     profile_hash = _sha256(profile_text)
     cache_key = build_embedding_cache_key(
         job_id="__candidate_profile__",
         job_content_hash=profile_hash,
         candidate_profile_hash=profile_hash,
+        semantic_threshold=semantic_threshold,
     )
     cache_path = embedding_cache_path(state_dir, model_id, cache_key)
     entry = load_cache_entry(cache_path)
@@ -110,8 +113,9 @@ def _resolve_profile_vector(
             and hashes.get("job_content_hash") == profile_hash
             and hashes.get("candidate_profile_hash") == profile_hash
             and hashes.get("norm_version") == SEMANTIC_NORM_VERSION
+            and hashes.get("semantic_threshold") == f"{round(float(semantic_threshold), 6):.6f}"
         ):
-            return [float(v) for v in entry["vector"]], profile_hash, True
+            return [float(v) for v in entry["vector"]], profile_hash, cache_key, True
 
     vector = embed_texts([profile_text], model_id)[0]
     save_cache_entry(
@@ -123,9 +127,10 @@ def _resolve_profile_vector(
             candidate_profile_hash=profile_hash,
             vector=vector,
             cache_key=cache_key,
+            semantic_threshold=semantic_threshold,
         ),
     )
-    return vector, profile_hash, False
+    return vector, profile_hash, cache_key, False
 
 
 def apply_bounded_semantic_boost(
@@ -139,6 +144,9 @@ def apply_bounded_semantic_boost(
         return scored_jobs, {
             "enabled": False,
             "model_id": policy.model_id,
+            "embedding_backend_version": EMBEDDING_BACKEND_VERSION,
+            "normalized_text_hash": None,
+            "embedding_cache_key": None,
             "policy": {
                 "max_boost": policy.max_boost,
                 "min_similarity": policy.min_similarity,
@@ -154,6 +162,9 @@ def apply_bounded_semantic_boost(
         return scored_jobs, {
             "enabled": True,
             "model_id": policy.model_id,
+            "embedding_backend_version": EMBEDDING_BACKEND_VERSION,
+            "normalized_text_hash": None,
+            "embedding_cache_key": None,
             "policy": {
                 "max_boost": policy.max_boost,
                 "min_similarity": policy.min_similarity,
@@ -168,10 +179,11 @@ def apply_bounded_semantic_boost(
     ranked = sorted([dict(job) for job in scored_jobs], key=_ranking_key)
     evaluate_n = min(len(ranked), max(1, policy.max_jobs), max(1, policy.top_k))
 
-    profile_vec, profile_hash, profile_hit = _resolve_profile_vector(
+    profile_vec, profile_hash, profile_cache_key, profile_hit = _resolve_profile_vector(
         profile_payload=profile_payload,
         state_dir=state_dir,
         model_id=policy.model_id,
+        semantic_threshold=policy.min_similarity,
     )
     cache_counts = {
         "hit": 0,
@@ -206,6 +218,7 @@ def apply_bounded_semantic_boost(
             job_id=jid,
             job_content_hash=job_hash,
             candidate_profile_hash=profile_hash,
+            semantic_threshold=policy.min_similarity,
         )
         cache_path = embedding_cache_path(state_dir, policy.model_id, cache_key)
         cache_entry = load_cache_entry(cache_path)
@@ -218,6 +231,7 @@ def apply_bounded_semantic_boost(
                 and input_hashes.get("job_content_hash") == job_hash
                 and input_hashes.get("candidate_profile_hash") == profile_hash
                 and input_hashes.get("norm_version") == SEMANTIC_NORM_VERSION
+                and input_hashes.get("semantic_threshold") == f"{round(float(policy.min_similarity), 6):.6f}"
             ):
                 vector = [float(v) for v in cache_entry["vector"]]
                 cache_counts["hit"] += 1
@@ -259,6 +273,7 @@ def apply_bounded_semantic_boost(
                     candidate_profile_hash=profile_hash,
                     vector=list(vector),
                     cache_key=cache_key,
+                    semantic_threshold=policy.min_similarity,
                 ),
             )
             cache_counts["write"] += 1
@@ -288,6 +303,9 @@ def apply_bounded_semantic_boost(
     evidence_payload = {
         "enabled": True,
         "model_id": policy.model_id,
+        "embedding_backend_version": EMBEDDING_BACKEND_VERSION,
+        "normalized_text_hash": profile_hash,
+        "embedding_cache_key": profile_cache_key,
         "policy": {
             "max_boost": policy.max_boost,
             "min_similarity": policy.min_similarity,

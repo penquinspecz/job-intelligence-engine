@@ -9,6 +9,7 @@ from .cache import (
 )
 from .core import (
     DEFAULT_SEMANTIC_MODEL_ID,
+    EMBEDDING_BACKEND_VERSION,
     SEMANTIC_NORM_VERSION,
     DeterministicHashEmbeddingBackend,
     cosine_similarity,
@@ -19,6 +20,7 @@ from .step import finalize_semantic_artifacts, run_semantic_sidecar, semantic_sc
 
 __all__ = [
     "DEFAULT_SEMANTIC_MODEL_ID",
+    "EMBEDDING_BACKEND_VERSION",
     "SEMANTIC_NORM_VERSION",
     "DeterministicHashEmbeddingBackend",
     "normalize_text_for_embedding",

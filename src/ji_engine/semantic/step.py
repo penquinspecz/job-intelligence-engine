@@ -12,7 +12,13 @@ from .cache import (
     load_cache_entry,
     save_cache_entry,
 )
-from .core import DEFAULT_SEMANTIC_MODEL_ID, SEMANTIC_NORM_VERSION, embed_texts, normalize_text_for_embedding
+from .core import (
+    DEFAULT_SEMANTIC_MODEL_ID,
+    EMBEDDING_BACKEND_VERSION,
+    SEMANTIC_NORM_VERSION,
+    embed_texts,
+    normalize_text_for_embedding,
+)
 
 
 def _sanitize_run_id(run_id: str) -> str:
@@ -110,13 +116,17 @@ def run_semantic_sidecar(
     enabled: bool,
     model_id: str,
     max_jobs: int,
+    semantic_threshold: float = 0.72,
 ) -> Tuple[Dict[str, Any], Path]:
     run_dir = run_metadata_dir / _sanitize_run_id(run_id)
     summary_path = run_dir / "semantic" / "semantic_summary.json"
     summary: Dict[str, Any] = {
         "enabled": bool(enabled),
         "model_id": model_id,
+        "embedding_backend_version": EMBEDDING_BACKEND_VERSION,
         "norm_version": SEMANTIC_NORM_VERSION,
+        "normalized_text_hash": None,
+        "embedding_cache_key": None,
         "cache_hit_counts": {"hit": 0, "miss": 0, "write": 0},
         "embedded_job_count": 0,
         "entries": [],
@@ -152,6 +162,14 @@ def run_semantic_sidecar(
 
     profile_text = normalize_text_for_embedding(_canonical_profile_text(profile_data))
     candidate_profile_hash = _sha256_text(profile_text)
+    profile_cache_key = build_embedding_cache_key(
+        job_id="__candidate_profile__",
+        job_content_hash=candidate_profile_hash,
+        candidate_profile_hash=candidate_profile_hash,
+        semantic_threshold=semantic_threshold,
+    )
+    summary["normalized_text_hash"] = candidate_profile_hash
+    summary["embedding_cache_key"] = profile_cache_key
 
     records = _collect_ranked_records(provider_outputs, max_jobs)
     if not records:
@@ -171,6 +189,7 @@ def run_semantic_sidecar(
             job_id=job_id,
             job_content_hash=job_content_hash,
             candidate_profile_hash=candidate_profile_hash,
+            semantic_threshold=semantic_threshold,
         )
         cache_path = embedding_cache_path(state_dir, model_id, cache_key)
         cache_entry = load_cache_entry(cache_path)
@@ -184,6 +203,7 @@ def run_semantic_sidecar(
                 and input_hashes.get("job_content_hash") == job_content_hash
                 and input_hashes.get("candidate_profile_hash") == candidate_profile_hash
                 and input_hashes.get("norm_version") == SEMANTIC_NORM_VERSION
+                and input_hashes.get("semantic_threshold") == f"{round(float(semantic_threshold), 6):.6f}"
                 and isinstance(cache_entry.get("vector"), list)
             )
 
@@ -223,6 +243,7 @@ def run_semantic_sidecar(
                 candidate_profile_hash=miss["candidate_profile_hash"],
                 vector=vector,
                 cache_key=miss["cache_key"],
+                semantic_threshold=semantic_threshold,
             )
             save_cache_entry(miss["cache_path"], entry)
             summary["cache_hit_counts"]["write"] += 1
@@ -250,7 +271,6 @@ def finalize_semantic_artifacts(
     enabled: bool,
     model_id: str,
     policy: Dict[str, Any],
-    used_short_circuit: bool = False,
 ) -> tuple[Dict[str, Any], Path, Path]:
     run_dir = run_metadata_dir / _sanitize_run_id(run_id)
     semantic_dir = run_dir / "semantic"
@@ -262,7 +282,9 @@ def finalize_semantic_artifacts(
     entries: List[Dict[str, Any]] = []
     cache_totals = {"hit": 0, "miss": 0, "write": 0, "profile_hit": 0, "profile_miss": 0}
     skipped: List[str] = []
-    attempted_provider_profiles: set[tuple[str, str]] = set()
+    normalized_text_hash: Optional[str] = None
+    embedding_cache_key: Optional[str] = None
+    embedding_backend_version = EMBEDDING_BACKEND_VERSION
 
     for path in per_profile_paths:
         try:
@@ -273,12 +295,6 @@ def finalize_semantic_artifacts(
         if not isinstance(payload, dict):
             skipped.append(f"invalid_shape:{path.name}")
             continue
-        stem = path.stem
-        if stem.startswith("scores_"):
-            provider_profile = stem[len("scores_") :]
-            provider, _, profile = provider_profile.rpartition("_")
-            if provider and profile:
-                attempted_provider_profiles.add((provider, profile))
         for key in cache_totals:
             try:
                 cache_totals[key] += int(((payload.get("cache_hit_counts") or {}).get(key, 0)) or 0)
@@ -287,6 +303,15 @@ def finalize_semantic_artifacts(
         reason = payload.get("skipped_reason")
         if reason:
             skipped.append(str(reason))
+        candidate_hash = payload.get("normalized_text_hash")
+        if normalized_text_hash is None and isinstance(candidate_hash, str) and candidate_hash:
+            normalized_text_hash = candidate_hash
+        candidate_cache_key = payload.get("embedding_cache_key")
+        if embedding_cache_key is None and isinstance(candidate_cache_key, str) and candidate_cache_key:
+            embedding_cache_key = candidate_cache_key
+        backend_version = payload.get("embedding_backend_version")
+        if isinstance(backend_version, str) and backend_version:
+            embedding_backend_version = backend_version
         payload_entries = payload.get("entries")
         if isinstance(payload_entries, list):
             for item in payload_entries:
@@ -305,12 +330,10 @@ def finalize_semantic_artifacts(
     summary: Dict[str, Any] = {
         "enabled": bool(enabled),
         "model_id": model_id,
+        "embedding_backend_version": embedding_backend_version,
         "policy": dict(policy),
-        "used_short_circuit": bool(used_short_circuit),
-        "attempted_provider_profiles": [
-            {"provider": provider, "profile": profile}
-            for provider, profile in sorted(attempted_provider_profiles, key=lambda item: (item[0], item[1]))
-        ],
+        "normalized_text_hash": normalized_text_hash,
+        "embedding_cache_key": embedding_cache_key,
         "cache_hit_counts": cache_totals,
         "embedded_job_count": len(entries),
         "skipped_reason": None,
