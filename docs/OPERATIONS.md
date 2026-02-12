@@ -324,6 +324,15 @@ State (`./state`):
 - `last_run.json` last run telemetry snapshot
 - `user_state/` reserved for user-scoped state files
 
+Weekly insights inputs (deterministic):
+- `state/runs/<run_id-sanitized>/ai/insights_input.<profile>.json`
+- Built before weekly AI insights generation from deterministic artifacts only:
+  - diffs (`new/changed/removed` counts + top titles)
+  - top families
+  - score bucket distribution
+  - deterministic skill keyword trends
+- No raw JD text is written into `insights_input.<profile>.json`; payload is summary-only.
+
 Run reports:
 - `state/runs/<run_id>.json` (run metadata)
 - Includes `run_report_schema_version`, inputs, outputs, scoring inputs, and selection reasons per profile.
