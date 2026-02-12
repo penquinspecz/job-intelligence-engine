@@ -3598,7 +3598,7 @@ def main() -> int:
                 return 0
 
             # We still want AI and/or scoring to run, but we can skip scrape/classify/enrich.
-            if (not ai_path.exists()) or (not prev_ai_ran) or (not ai_fresh):
+            if ai_required and ((not ai_path.exists()) or (not prev_ai_ran) or (not ai_fresh)):
                 current_stage = "ai_augment"
                 telemetry["ai_ran"] = True
                 record_stage(
@@ -3645,8 +3645,8 @@ def main() -> int:
                     REPO_ROOT / "config" / "profiles.json",
                 )
 
-                need_score = semantic_enabled or not ranked_json.exists()
-                if not semantic_enabled:
+                need_score = semantic_enabled or (not ai_required) or not ranked_json.exists()
+                if not semantic_enabled and ai_required:
                     if ai_mtime is not None:
                         need_score = need_score or ((_file_mtime(ranked_json) or 0) < ai_mtime)
                     else:
@@ -3688,13 +3688,14 @@ def main() -> int:
                 ] + us_only_flag
                 if args.ai or args.ai_only:
                     cmd.append("--prefer_ai")
-                record_stage(current_stage, lambda cmd=cmd: _run(cmd, stage=current_stage))
+                if need_score:
+                    record_stage(current_stage, lambda cmd=cmd: _run(cmd, stage=current_stage))
 
-                state_path = state_last_ranked(profile)
-                curr = _read_json(ranked_json)
-                prev = _read_json(state_path) if state_path.exists() else []
-                _write_json(state_path, curr)
-                # (diff/alerts handled in full path only; for freshness runs, we just persist state)
+                    state_path = state_last_ranked(profile)
+                    curr = _read_json(ranked_json)
+                    prev = _read_json(state_path) if state_path.exists() else []
+                    _write_json(state_path, curr)
+                    # (diff/alerts handled in full path only; for freshness runs, we just persist state)
 
             _finalize("success")
             return 0

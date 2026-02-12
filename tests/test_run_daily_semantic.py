@@ -62,11 +62,13 @@ def test_semantic_enabled_bypasses_short_circuit_and_writes_artifacts(tmp_path: 
     _write_json(data_dir / "candidate_profile.json", {"summary": "customer success architect"})
 
     score_stage_calls: list[str] = []
+    non_score_stages: list[str] = []
 
     def _arg_value(cmd: list[str], flag: str) -> str:
         return cmd[cmd.index(flag) + 1]
 
     def fake_run(cmd, *, stage):
+        non_score_stages.append(stage)
         if stage == "scrape":
             _write_json(
                 output_dir / "openai_raw_jobs.json",
@@ -182,10 +184,12 @@ def test_semantic_enabled_bypasses_short_circuit_and_writes_artifacts(tmp_path: 
     (state_dir / "lock").unlink(missing_ok=True)
 
     score_stage_calls.clear()
+    non_score_stages.clear()
     monkeypatch.setenv("SEMANTIC_ENABLED", "1")
     monkeypatch.setattr(run_daily, "_utcnow_iso", lambda: "2026-01-03T00:00:00Z")
     assert run_daily.main() == 0
     assert score_stage_calls == ["score:cs"]
+    assert "ai_augment" not in non_score_stages
 
     summary_path = state_dir / "runs" / "20260103T000000Z" / "semantic" / "semantic_summary.json"
     scores_path = state_dir / "runs" / "20260103T000000Z" / "semantic" / "semantic_scores.json"
