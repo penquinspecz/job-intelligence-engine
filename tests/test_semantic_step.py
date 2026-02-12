@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from ji_engine.semantic.core import DEFAULT_SEMANTIC_MODEL_ID
-from ji_engine.semantic.step import run_semantic_sidecar
+from ji_engine.semantic.step import finalize_semantic_artifacts, run_semantic_sidecar, semantic_score_artifact_path
 
 
 def _write_ranked(path: Path, title_suffix: str = "") -> None:
@@ -133,3 +133,59 @@ def test_semantic_step_cache_hit_miss_contract(tmp_path: Path) -> None:
     raw_summary = summary_path.read_text(encoding="utf-8")
     assert "Role One" not in raw_summary
     assert "Role Two" not in raw_summary
+
+
+def test_finalize_semantic_artifacts_writes_aggregate_scores(tmp_path: Path) -> None:
+    run_metadata_dir = tmp_path / "runs"
+    run_id = "2026-02-12T00:00:00Z"
+    score_one = semantic_score_artifact_path(
+        run_id=run_id,
+        provider="openai",
+        profile="cs",
+        run_metadata_dir=run_metadata_dir,
+    )
+    score_two = semantic_score_artifact_path(
+        run_id=run_id,
+        provider="huggingface",
+        profile="se",
+        run_metadata_dir=run_metadata_dir,
+    )
+    score_one.parent.mkdir(parents=True, exist_ok=True)
+    score_one.write_text(
+        json.dumps(
+            {
+                "cache_hit_counts": {"hit": 1, "miss": 2, "write": 2, "profile_hit": 0, "profile_miss": 1},
+                "entries": [
+                    {"provider": "openai", "profile": "cs", "job_id": "job-001"},
+                    {"provider": "openai", "profile": "cs", "job_id": "job-002"},
+                ],
+                "skipped_reason": None,
+            }
+        ),
+        encoding="utf-8",
+    )
+    score_two.write_text(
+        json.dumps(
+            {
+                "cache_hit_counts": {"hit": 3, "miss": 0, "write": 0, "profile_hit": 1, "profile_miss": 0},
+                "entries": [{"provider": "huggingface", "profile": "se", "job_id": "job-900"}],
+                "skipped_reason": None,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    summary, summary_path, scores_path = finalize_semantic_artifacts(
+        run_id=run_id,
+        run_metadata_dir=run_metadata_dir,
+        enabled=True,
+        model_id=DEFAULT_SEMANTIC_MODEL_ID,
+        policy={"max_jobs": 200, "top_k": 50, "max_boost": 5.0, "min_similarity": 0.72},
+    )
+
+    assert summary_path.exists()
+    assert scores_path.exists()
+    scores_payload = json.loads(scores_path.read_text(encoding="utf-8"))
+    assert [item["job_id"] for item in scores_payload] == ["job-900", "job-001", "job-002"]
+    assert summary["embedded_job_count"] == 3
+    assert summary["cache_hit_counts"] == {"hit": 4, "miss": 2, "write": 2, "profile_hit": 1, "profile_miss": 1}

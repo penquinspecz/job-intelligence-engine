@@ -230,3 +230,83 @@ def run_semantic_sidecar(
     summary["embedded_job_count"] = len(summary["entries"])
     _write_summary(summary_path, summary)
     return summary, summary_path
+
+
+def semantic_score_artifact_path(
+    *,
+    run_id: str,
+    provider: str,
+    profile: str,
+    run_metadata_dir: Path,
+) -> Path:
+    run_dir = run_metadata_dir / _sanitize_run_id(run_id)
+    return run_dir / "semantic" / f"scores_{provider}_{profile}.json"
+
+
+def finalize_semantic_artifacts(
+    *,
+    run_id: str,
+    run_metadata_dir: Path,
+    enabled: bool,
+    model_id: str,
+    policy: Dict[str, Any],
+) -> tuple[Dict[str, Any], Path, Path]:
+    run_dir = run_metadata_dir / _sanitize_run_id(run_id)
+    semantic_dir = run_dir / "semantic"
+    scores_path = semantic_dir / "semantic_scores.json"
+    summary_path = semantic_dir / "semantic_summary.json"
+    semantic_dir.mkdir(parents=True, exist_ok=True)
+
+    per_profile_paths = sorted(semantic_dir.glob("scores_*.json"), key=lambda p: p.name)
+    entries: List[Dict[str, Any]] = []
+    cache_totals = {"hit": 0, "miss": 0, "write": 0, "profile_hit": 0, "profile_miss": 0}
+    skipped: List[str] = []
+
+    for path in per_profile_paths:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            skipped.append(f"invalid_json:{path.name}")
+            continue
+        if not isinstance(payload, dict):
+            skipped.append(f"invalid_shape:{path.name}")
+            continue
+        for key in cache_totals:
+            try:
+                cache_totals[key] += int(((payload.get("cache_hit_counts") or {}).get(key, 0)) or 0)
+            except Exception:
+                pass
+        reason = payload.get("skipped_reason")
+        if reason:
+            skipped.append(str(reason))
+        payload_entries = payload.get("entries")
+        if isinstance(payload_entries, list):
+            for item in payload_entries:
+                if isinstance(item, dict):
+                    entries.append(item)
+
+    entries.sort(
+        key=lambda item: (
+            str(item.get("provider") or ""),
+            str(item.get("profile") or ""),
+            str(item.get("job_id") or ""),
+        )
+    )
+    scores_path.write_text(json.dumps(entries, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    summary: Dict[str, Any] = {
+        "enabled": bool(enabled),
+        "model_id": model_id,
+        "policy": dict(policy),
+        "cache_hit_counts": cache_totals,
+        "embedded_job_count": len(entries),
+        "skipped_reason": None,
+    }
+    if not enabled:
+        summary["skipped_reason"] = "semantic_disabled"
+    elif not per_profile_paths:
+        summary["skipped_reason"] = "no_semantic_score_artifacts"
+    elif skipped and not entries:
+        summary["skipped_reason"] = skipped[0]
+    summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return summary, summary_path, scores_path

@@ -239,35 +239,57 @@ Scoring input resolution is handled by `scripts/run_daily.py`:
 - `--ai_only`: requires `data/openai_enriched_jobs_ai.json` and fails if missing.
 - `--prefer_ai`: passed to `score_jobs.py` only when `--ai` or `--ai_only` is set by `run_daily.py`.
 
-## Semantic Scaffold (M7, no scoring impact)
+## Semantic Safety Net (M7, bounded and deterministic)
 
-`scripts/run_daily.py` now writes a deterministic semantic sidecar artifact after scoring/output stages.
-This does not change ranked output content or scoring behavior yet.
+Semantic is a bounded safety-net booster. It does not replace deterministic base scoring.
+Final score contract:
+- `final_score = clamp(base_score + semantic_boost, 0, 100)`
+- `semantic_boost` is bounded in `[0, SEMANTIC_MAX_BOOST]`
+- If semantic is disabled or unavailable, ranked outputs must match pre-semantic behavior exactly.
 
 Environment flags:
 - `SEMANTIC_ENABLED=1` enables semantic embedding/cache sidecar (default off).
 - `SEMANTIC_MODEL_ID` selects model id (default `deterministic-hash-v1`).
 - `SEMANTIC_MAX_JOBS` bounds per-run embedding workload (default `200`).
+- `SEMANTIC_TOP_K` only evaluates semantic similarity for the top-K base-scored jobs (default `50`).
+- `SEMANTIC_MAX_BOOST` caps semantic contribution per job (default `5`).
+- `SEMANTIC_MIN_SIMILARITY` minimum rounded similarity required for non-zero boost (default `0.72`).
 
 Determinism contract:
 - Text normalization is deterministic (`semantic_norm_v1`) before embedding/hash.
 - Default backend is offline and deterministic (hash-based vectors, no network calls).
+- Similarity is rounded to 6 decimals before threshold checks and boost math.
 - Cache keys include `job_id`, `job_content_hash`, `candidate_profile_hash`, and `semantic_norm_v1`.
 - Cache location: `state/embeddings/<model_id>/<cache_key>.json`.
 - Cache entries store only model id, deterministic metadata, input hashes, and vector values.
 
 Run artifact:
 - Every run writes `state/runs/<run_id-sanitized>/semantic/semantic_summary.json` even when disabled.
+- Every run writes `state/runs/<run_id-sanitized>/semantic/semantic_scores.json` (possibly empty when disabled).
 - Summary includes:
   - `enabled`
   - `model_id`
+  - `policy` (`max_jobs`, `top_k`, `max_boost`, `min_similarity`)
   - `cache_hit_counts`
   - `embedded_job_count`
   - `skipped_reason` (when disabled/unavailable/fail-closed)
+- Scores artifact includes:
+  - `job_id`
+  - `base_score`
+  - `similarity` (rounded, optional when not evaluated)
+  - `semantic_boost`
+  - `final_score`
+  - `reasons` (for threshold/boost decisions)
 
 Privacy boundary:
 - Semantic artifacts do not store raw job description text.
 - Only hashes, job ids, cache keys, and minimal provider/profile metadata are persisted.
+
+Debug checklist:
+- Confirm semantic config in env (`SEMANTIC_ENABLED`, `SEMANTIC_MODEL_ID`, `SEMANTIC_TOP_K`, `SEMANTIC_MAX_BOOST`, `SEMANTIC_MIN_SIMILARITY`).
+- Inspect `state/runs/<run_id-sanitized>/semantic/semantic_summary.json` for `skipped_reason` and cache counters.
+- Inspect `state/runs/<run_id-sanitized>/semantic/semantic_scores.json` for per-job similarity/boost decisions.
+- Compare ranked output hashes with `SEMANTIC_ENABLED=0` when validating no-semantic parity behavior.
 
 ## Artifacts and where they live
 

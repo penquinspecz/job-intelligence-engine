@@ -52,6 +52,8 @@ from ji_engine.config import (
     shortlist_md,
 )
 from ji_engine.profile_loader import load_candidate_profile
+from ji_engine.semantic.boost import SemanticPolicy, apply_bounded_semantic_boost
+from ji_engine.semantic.core import DEFAULT_SEMANTIC_MODEL_ID
 from ji_engine.utils.atomic_write import atomic_write_text, atomic_write_with
 from ji_engine.utils.content_fingerprint import content_fingerprint
 from ji_engine.utils.job_identity import job_identity
@@ -243,6 +245,35 @@ def _print_family_counts(scored: List[Dict[str, Any]]) -> None:
     print("\t".join(["role_family", "count"]))
     for k in order:
         print(f"{k}\t{counts[k]}")
+
+
+def _resolve_semantic_policy_from_env() -> SemanticPolicy:
+    enabled = os.environ.get("SEMANTIC_ENABLED", "").strip() == "1"
+    model_id = (os.environ.get("SEMANTIC_MODEL_ID") or DEFAULT_SEMANTIC_MODEL_ID).strip() or DEFAULT_SEMANTIC_MODEL_ID
+    try:
+        max_jobs = int((os.environ.get("SEMANTIC_MAX_JOBS") or "200").strip())
+    except ValueError:
+        max_jobs = 200
+    try:
+        top_k = int((os.environ.get("SEMANTIC_TOP_K") or "50").strip())
+    except ValueError:
+        top_k = 50
+    try:
+        max_boost = float((os.environ.get("SEMANTIC_MAX_BOOST") or "5").strip())
+    except ValueError:
+        max_boost = 5.0
+    try:
+        min_similarity = float((os.environ.get("SEMANTIC_MIN_SIMILARITY") or "0.72").strip())
+    except ValueError:
+        min_similarity = 0.72
+    return SemanticPolicy(
+        enabled=enabled,
+        model_id=model_id,
+        max_jobs=max(1, max_jobs),
+        top_k=max(1, top_k),
+        max_boost=max(0.0, max_boost),
+        min_similarity=max(0.0, min(1.0, min_similarity)),
+    )
 
 
 def _candidate_skill_set() -> set[str]:
@@ -1467,6 +1498,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
 
     ap.add_argument("--profile", default="cs")
+    ap.add_argument("--provider_id", default="openai")
     ap.add_argument("--profiles", default="config/profiles.json")
     ap.add_argument("--in_path", default=str(ENRICHED_JOBS_JSON))
     ap.add_argument(
@@ -1494,6 +1526,11 @@ def main() -> int:
         "--out_app_kit",
         default=str(shortlist_md("cs").with_name("openai_application_kit.cs.md")),
         help="Application kit markdown output",
+    )
+    ap.add_argument(
+        "--semantic_scores_out",
+        default="",
+        help="Optional path for semantic evidence JSON (job_id, similarity, boost, decisions).",
     )
 
     ap.add_argument("--min_score", type=int, default=40)
@@ -1635,6 +1672,56 @@ def main() -> int:
     for j in scored:
         j["explanation"] = _build_explanation(j, candidate_skills)
         j["content_fingerprint"] = content_fingerprint(j)
+    semantic_policy = _resolve_semantic_policy_from_env()
+    if semantic_policy.enabled:
+        try:
+            profile_obj = load_candidate_profile()
+            if hasattr(profile_obj, "model_dump"):
+                profile_payload = profile_obj.model_dump()
+            elif hasattr(profile_obj, "dict"):
+                profile_payload = profile_obj.dict()
+            else:
+                profile_payload = profile_obj
+            state_dir = Path(os.environ.get("JOBINTEL_STATE_DIR") or "state")
+            scored, semantic_evidence = apply_bounded_semantic_boost(
+                scored_jobs=scored,
+                profile_payload=profile_payload,
+                state_dir=state_dir,
+                policy=semantic_policy,
+            )
+        except Exception as exc:
+            logger.warning("Semantic boost skipped due to deterministic fail-closed error: %s", exc)
+            semantic_evidence = {
+                "enabled": True,
+                "model_id": semantic_policy.model_id,
+                "policy": {
+                    "max_boost": semantic_policy.max_boost,
+                    "min_similarity": semantic_policy.min_similarity,
+                    "top_k": semantic_policy.top_k,
+                    "max_jobs": semantic_policy.max_jobs,
+                },
+                "cache_hit_counts": {"hit": 0, "miss": 0, "write": 0, "profile_hit": 0, "profile_miss": 0},
+                "entries": [],
+                "skipped_reason": "semantic_unavailable",
+            }
+    else:
+        semantic_evidence = {
+            "enabled": False,
+            "model_id": semantic_policy.model_id,
+            "policy": {
+                "max_boost": semantic_policy.max_boost,
+                "min_similarity": semantic_policy.min_similarity,
+                "top_k": semantic_policy.top_k,
+                "max_jobs": semantic_policy.max_jobs,
+            },
+            "cache_hit_counts": {"hit": 0, "miss": 0, "write": 0, "profile_hit": 0, "profile_miss": 0},
+            "entries": [],
+            "skipped_reason": "semantic_disabled",
+        }
+    for entry in semantic_evidence.get("entries", []):
+        if isinstance(entry, dict):
+            entry["provider"] = args.provider_id
+            entry["profile"] = args.profile
     # Stable sort: primary by score desc, secondary by job identity (apply_url/detail_url/title/location)
     scored.sort(key=lambda x: (-x.get("score", 0), x.get("job_id") or job_identity(x)))
     _print_explain_top(scored, int(args.explain_top or 0))
@@ -1677,6 +1764,10 @@ def main() -> int:
     if us_only_fallback:
         meta_payload = {"us_only_fallback": us_only_fallback}
         atomic_write_text(_score_meta_path(out_json), _serialize_json(meta_payload))
+    if args.semantic_scores_out:
+        semantic_out = Path(args.semantic_scores_out)
+        semantic_out.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(semantic_out, _serialize_json(semantic_evidence))
 
     rows = to_csv_rows(ranked_scored)
 

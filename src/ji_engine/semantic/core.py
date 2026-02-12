@@ -65,4 +65,4 @@ def cosine_similarity(vec_a: Sequence[float], vec_b: Sequence[float]) -> float:
     norm_b = math.sqrt(sum(float(b) * float(b) for b in vec_b))
     if norm_a == 0.0 or norm_b == 0.0:
         return 0.0
-    return round(dot / (norm_a * norm_b), 8)
+    return round(dot / (norm_a * norm_b), 6)

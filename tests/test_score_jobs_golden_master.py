@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -130,3 +131,63 @@ def test_families_json_deterministic(tmp_path: Path) -> None:
     hash1 = hashlib.sha256(first_families.read_bytes()).hexdigest()
     hash2 = hashlib.sha256(second_families.read_bytes()).hexdigest()
     assert hash1 == hash2, "Families JSON should be deterministic across identical runs"
+
+
+def test_score_jobs_semantic_disabled_matches_baseline(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    fixture = repo_root / "tests" / "fixtures" / "openai_enriched_jobs.sample.json"
+
+    baseline_dir = tmp_path / "baseline"
+    baseline_dir.mkdir(parents=True, exist_ok=True)
+    baseline_json = baseline_dir / "ranked.json"
+
+    disabled_dir = tmp_path / "disabled"
+    disabled_dir.mkdir(parents=True, exist_ok=True)
+    disabled_json = disabled_dir / "ranked.json"
+    semantic_out = disabled_dir / "semantic_scores.json"
+
+    base_cmd = [
+        sys.executable,
+        "scripts/score_jobs.py",
+        "--profile",
+        "cs",
+        "--in_path",
+        str(fixture),
+        "--out_json",
+        str(baseline_json),
+        "--out_csv",
+        str(baseline_dir / "ranked.csv"),
+        "--out_families",
+        str(baseline_dir / "families.json"),
+        "--out_md",
+        str(baseline_dir / "shortlist.md"),
+    ]
+    subprocess.run(base_cmd, cwd=repo_root, check=True)
+
+    disabled_cmd = [
+        sys.executable,
+        "scripts/score_jobs.py",
+        "--profile",
+        "cs",
+        "--in_path",
+        str(fixture),
+        "--out_json",
+        str(disabled_json),
+        "--out_csv",
+        str(disabled_dir / "ranked.csv"),
+        "--out_families",
+        str(disabled_dir / "families.json"),
+        "--out_md",
+        str(disabled_dir / "shortlist.md"),
+        "--semantic_scores_out",
+        str(semantic_out),
+    ]
+    env = dict(os.environ)
+    env["SEMANTIC_ENABLED"] = "0"
+    subprocess.run(disabled_cmd, cwd=repo_root, check=True, env=env)
+
+    assert baseline_json.read_text(encoding="utf-8") == disabled_json.read_text(encoding="utf-8")
+    evidence = json.loads(semantic_out.read_text(encoding="utf-8"))
+    assert evidence["enabled"] is False
+    assert evidence["skipped_reason"] == "semantic_disabled"
+    assert evidence["entries"] == []
