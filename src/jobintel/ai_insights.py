@@ -1,18 +1,18 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
+from ji_engine.ai.insights_input import build_weekly_insights_input
 from ji_engine.config import REPO_ROOT, RUN_METADATA_DIR
 from ji_engine.utils.time import utc_now_z
 
 logger = logging.getLogger(__name__)
 
-PROMPT_VERSION = "weekly_insights_v1"
-PROMPT_PATH = REPO_ROOT / "docs" / "prompts" / "weekly_insights_v1.md"
+PROMPT_VERSION = "weekly_insights_v3"
+PROMPT_PATH = REPO_ROOT / "docs" / "prompts" / "weekly_insights_v3.md"
 
 
 def _utcnow_iso() -> str:
@@ -28,13 +28,9 @@ def _run_dir(run_id: str) -> Path:
 
 
 def _sha256_bytes(data: bytes) -> str:
+    import hashlib
+
     return hashlib.sha256(data).hexdigest()
-
-
-def _sha256_path(path: Path) -> Optional[str]:
-    if not path.exists():
-        return None
-    return _sha256_bytes(path.read_bytes())
 
 
 def _load_prompt(path: Path) -> Tuple[str, str]:
@@ -44,45 +40,8 @@ def _load_prompt(path: Path) -> Tuple[str, str]:
     return text, _sha256_bytes(text.encode("utf-8"))
 
 
-def _load_ranked(path: Path) -> List[Dict[str, Any]]:
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return []
-    if isinstance(data, list):
-        return data
-    return []
-
-
-def _top_roles(jobs: List[Dict[str, Any]], limit: int = 5) -> List[Dict[str, Any]]:
-    out: List[Dict[str, Any]] = []
-    for job in jobs[:limit]:
-        out.append(
-            {
-                "title": job.get("title") or "Untitled",
-                "score": int(job.get("score", 0) or 0),
-                "apply_url": job.get("apply_url") or "",
-            }
-        )
-    return out
-
-
-def _count_signals(jobs: List[Dict[str, Any]], field: str) -> List[Tuple[str, int]]:
-    counts: Dict[str, int] = {}
-    for job in jobs:
-        signals = job.get(field) or []
-        if not isinstance(signals, list):
-            continue
-        for sig in signals:
-            key = str(sig).strip()
-            if not key:
-                continue
-            counts[key] = counts.get(key, 0) + 1
-    return sorted(counts.items(), key=lambda item: (-item[1], item[0]))
-
-
 def _build_insights_payload(
-    jobs: List[Dict[str, Any]],
+    insights_input: Dict[str, Any],
     *,
     provider: str,
     profile: str,
@@ -90,13 +49,21 @@ def _build_insights_payload(
     reason: str,
     metadata: Dict[str, Any],
 ) -> Dict[str, Any]:
-    top = _top_roles(jobs, limit=5)
-    themes_counts = _count_signals(jobs, "fit_signals")
-    risks_counts = _count_signals(jobs, "risk_signals")
-    themes = [name for name, _ in themes_counts[:5]]
-    risks = [name for name, _ in risks_counts[:3]]
+    diff_counts = ((insights_input.get("diffs") or {}).get("counts") or {}) if isinstance(insights_input, dict) else {}
+    top_families = insights_input.get("top_families") or []
+    skill_keywords = insights_input.get("skill_keywords") or []
+    score_distribution = insights_input.get("score_distribution") or {}
+    themes = [str(item.get("family")) for item in top_families[:5] if isinstance(item, dict) and item.get("family")]
+    risks = [str(item.get("keyword")) for item in skill_keywords[:3] if isinstance(item, dict) and item.get("keyword")]
 
     recommended_actions = []
+    if int(diff_counts.get("new", 0) or 0) > 0:
+        recommended_actions.append("Prioritize outreach on newly added roles from this week.")
+    if int(diff_counts.get("changed", 0) or 0) > 0:
+        recommended_actions.append("Re-check changed roles for updated scope, level, or location signals.")
+    gte80 = int(((score_distribution.get("buckets") or {}).get("gte80", 0)) or 0)
+    if gte80 > 0:
+        recommended_actions.append("Focus on score >= 80 opportunities for immediate applications.")
     if themes:
         for theme in themes[:3]:
             recommended_actions.append(f"Prioritize roles matching {theme}.")
@@ -114,8 +81,14 @@ def _build_insights_payload(
         "profile": profile,
         "themes": themes,
         "recommended_actions": recommended_actions[:5],
-        "top_roles": top,
+        "top_roles": insights_input.get("top_roles") or [],
         "risks": risks,
+        "structured_inputs": {
+            "diffs": insights_input.get("diffs") or {},
+            "top_families": top_families,
+            "score_distribution": score_distribution,
+            "skill_keywords": skill_keywords,
+        },
         "metadata": metadata,
     }
 
@@ -182,7 +155,7 @@ def _should_use_cache(existing: Dict[str, Any], metadata: Dict[str, Any]) -> boo
     existing_meta = existing.get("metadata")
     if not isinstance(existing_meta, dict):
         return False
-    for key in ("input_hashes", "prompt_sha256", "prompt_version", "model", "provider"):
+    for key in ("cache_key", "structured_input_hash", "prompt_sha256", "prompt_version", "model", "provider"):
         if existing_meta.get(key) != metadata.get(key):
             return False
     return True
@@ -202,8 +175,40 @@ def generate_insights(
 ) -> Tuple[Path, Path, Dict[str, Any]]:
     prompt_text, prompt_sha = _load_prompt(prompt_path)
     prompt_text = prompt_text.strip()
+    ranked_families_path = ranked_path.parent / ranked_path.name.replace("ranked_jobs", "ranked_families")
+    insights_input_path, insights_input_payload = build_weekly_insights_input(
+        provider=provider,
+        profile=profile,
+        ranked_path=ranked_path,
+        prev_path=prev_path,
+        ranked_families_path=ranked_families_path if ranked_families_path.exists() else None,
+        run_id=run_id,
+        run_metadata_dir=RUN_METADATA_DIR,
+    )
 
-    input_hashes = {"ranked": _sha256_path(ranked_path), "previous": _sha256_path(prev_path) if prev_path else None}
+    structured_input_hash = _sha256_bytes(insights_input_path.read_bytes())
+    input_hashes = {
+        "insights_input": _sha256_bytes(insights_input_path.read_bytes()),
+        "ranked": (insights_input_payload.get("input_hashes") or {}).get("ranked"),
+        "previous": (insights_input_payload.get("input_hashes") or {}).get("previous"),
+        "ranked_families": (insights_input_payload.get("input_hashes") or {}).get("ranked_families"),
+    }
+    cache_key = _sha256_bytes(
+        json.dumps(
+            {
+                "prompt_version": PROMPT_VERSION,
+                "prompt_sha256": prompt_sha,
+                "model": model_name,
+                "provider": provider,
+                "profile": profile,
+                "input_hashes": input_hashes,
+                "structured_input_hash": structured_input_hash,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    )
     metadata = {
         "prompt_version": PROMPT_VERSION,
         "prompt_sha256": prompt_sha,
@@ -212,6 +217,8 @@ def generate_insights(
         "profile": profile,
         "timestamp": _utcnow_iso(),
         "input_hashes": input_hashes,
+        "structured_input_hash": structured_input_hash,
+        "cache_key": cache_key,
     }
 
     run_dir = _run_dir(run_id)
@@ -228,10 +235,9 @@ def generate_insights(
             logger.info("AI insights cache hit (%s/%s).", provider, profile)
             return md_path, json_path, existing
 
-    jobs = _load_ranked(ranked_path)
     if not ai_enabled:
         payload = _build_insights_payload(
-            jobs,
+            insights_input_payload,
             provider=provider,
             profile=profile,
             status="disabled",
@@ -240,7 +246,7 @@ def generate_insights(
         )
     else:
         payload = _build_insights_payload(
-            jobs,
+            insights_input_payload,
             provider=provider,
             profile=profile,
             status="ok",
