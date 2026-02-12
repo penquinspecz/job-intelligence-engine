@@ -337,6 +337,30 @@ Weekly insights inputs (deterministic):
 - Cache key includes structured input hash + prompt version/hash (deterministic).
 - No raw JD text is written into `insights_input.<profile>.json`; payload is summary-only.
 
+## AI + Embedding Budget Guardrails
+
+Deterministic per-run cost artifact:
+- `state/runs/<run_id>/costs.json`
+- fields:
+  - `embeddings_count`
+  - `embeddings_estimated_tokens`
+  - `ai_calls`
+  - `ai_estimated_tokens`
+  - `total_estimated_tokens`
+
+Guardrail env vars:
+- `MAX_AI_TOKENS_PER_RUN` (default `0`, disabled)
+- `MAX_EMBEDDINGS_PER_RUN` (default `0`, disabled)
+
+Fail-closed behavior:
+- If `ai_estimated_tokens > MAX_AI_TOKENS_PER_RUN`, run fails closed with validation-style exit code `2`.
+- If `embeddings_count > MAX_EMBEDDINGS_PER_RUN`, run fails closed with validation-style exit code `2`.
+- Failure is recorded in run report with `failed_stage=cost_guardrails`.
+
+Notes:
+- Estimation is deterministic and local only; no billing/provider APIs are called.
+- AI model selection and temperature are unchanged by budget controls.
+
 Run reports:
 - `state/runs/<run_id>.json` (run metadata)
 - Includes `run_report_schema_version`, inputs, outputs, scoring inputs, and selection reasons per profile.
