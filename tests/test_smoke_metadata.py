@@ -1,4 +1,4 @@
-from scripts.smoke_metadata import build_metadata
+from scripts.smoke_metadata import RUN_REPORT_SCHEMA_VERSION, build_metadata
 
 
 def test_build_metadata_defaults() -> None:
@@ -6,5 +6,5 @@ def test_build_metadata_defaults() -> None:
 
     assert payload["providers"] == ["openai"]
     assert payload["profiles"] == ["cs"]
-    assert payload["run_report_schema_version"] == 1
+    assert payload["run_report_schema_version"] == RUN_REPORT_SCHEMA_VERSION
     assert payload["smoke_contract_version"] == 1

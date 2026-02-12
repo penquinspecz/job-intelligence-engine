@@ -45,6 +45,8 @@ COPY schemas /app/schemas
 # Copy committed snapshot fixtures (deterministic/offline)
 COPY --chown=app:app data/openai_snapshots/ /app/data/openai_snapshots/
 COPY --chown=app:app data/anthropic_snapshots/ /app/data/anthropic_snapshots/
+COPY --chown=app:app data/scaleai_snapshots/ /app/data/scaleai_snapshots/
+COPY --chown=app:app data/replit_snapshots/ /app/data/replit_snapshots/
 COPY --chown=app:app data/candidate_profile.json /app/data/candidate_profile.json
 
 # Install dev/test extras only when running tests in CI (moto, pytest, etc.)
