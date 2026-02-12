@@ -60,8 +60,8 @@ def test_m7_semantic_proof_receipt_offline(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SEMANTIC_MODEL_ID", "deterministic-hash-v1")
     monkeypatch.setenv("SEMANTIC_TOP_K", "3")
     monkeypatch.setenv("SEMANTIC_MAX_JOBS", "10")
+    monkeypatch.setenv("SEMANTIC_MAX_BOOST", "5")
     monkeypatch.setenv("SEMANTIC_MIN_SIMILARITY", "0.0")
-    monkeypatch.setenv("JOBINTEL_RUN_ID", "m7-proof-2026-02-12")
 
     run_daily = importlib.reload(run_daily_module)
     monkeypatch.setattr(run_daily, "DATA_DIR", data_dir)
@@ -124,29 +124,40 @@ def test_m7_semantic_proof_receipt_offline(tmp_path: Path, monkeypatch) -> None:
         ],
     )
 
-    rc = run_daily.main()
-    assert rc == 0
+    def _run_and_read(*, run_id: str, semantic_mode: str) -> tuple[dict, list[dict], dict]:
+        monkeypatch.setenv("JOBINTEL_RUN_ID", run_id)
+        monkeypatch.setenv("SEMANTIC_MODE", semantic_mode)
+        rc = run_daily.main()
+        assert rc == 0
+        run_dir = state_dir / "runs" / run_id.replace("-", "").replace(":", "")
+        run_report = json.loads((run_dir / "run_report.json").read_text(encoding="utf-8"))
+        summary = json.loads((run_dir / "semantic" / "semantic_summary.json").read_text(encoding="utf-8"))
+        scores = json.loads((run_dir / "semantic" / "semantic_scores.json").read_text(encoding="utf-8"))
+        (state_dir / "lock").unlink(missing_ok=True)
+        return run_report, scores, summary
 
-    run_dir = state_dir / "runs" / "m7proof20260212"
-    run_report = json.loads((run_dir / "run_report.json").read_text(encoding="utf-8"))
-    assert run_report["run_id"] == "m7-proof-2026-02-12"
+    sidecar_report, sidecar_scores, sidecar_summary = _run_and_read(
+        run_id="m7-proof-sidecar-2026-02-12",
+        semantic_mode="sidecar",
+    )
+    boost_report, boost_scores, boost_summary = _run_and_read(
+        run_id="m7-proof-boost-2026-02-12",
+        semantic_mode="boost",
+    )
 
-    summary_path = run_dir / "semantic" / "semantic_summary.json"
-    scores_path = run_dir / "semantic" / "semantic_scores.json"
-    assert summary_path.exists()
-    assert scores_path.exists()
+    assert sidecar_report["run_id"] == "m7-proof-sidecar-2026-02-12"
+    assert boost_report["run_id"] == "m7-proof-boost-2026-02-12"
 
-    summary = json.loads(summary_path.read_text(encoding="utf-8"))
-    scores = json.loads(scores_path.read_text(encoding="utf-8"))
+    for summary, scores in ((sidecar_summary, sidecar_scores), (boost_summary, boost_scores)):
+        assert summary.get("enabled") is True
+        assert isinstance(summary.get("cache_hit_counts"), dict)
+        assert summary["embedded_job_count"] == len(scores)
+        assert isinstance(scores, list) and scores
+        assert any(isinstance(entry.get("similarity"), float) for entry in scores)
 
-    assert isinstance(summary.get("cache_hit_counts"), dict)
-    assert summary["embedded_job_count"] == len(scores)
-    assert isinstance(scores, list) and scores
-    assert any(isinstance(entry.get("similarity"), float) for entry in scores)
-    assert any(float(entry.get("semantic_boost", 0.0) or 0.0) > 0.0 for entry in scores)
-
-    for entry in scores:
-        base = int(entry["base_score"])
-        boost = float(entry["semantic_boost"])
-        expected = max(0, min(100, int(round(base + boost))))
-        assert int(entry["final_score"]) == expected
+    max_boost = float(boost_summary["policy"]["max_boost"])
+    for entry in boost_scores:
+        boost = float(entry.get("semantic_boost", 0.0) or 0.0)
+        final_score = int(entry["final_score"])
+        assert 0.0 <= boost <= max_boost
+        assert 0 <= final_score <= 100

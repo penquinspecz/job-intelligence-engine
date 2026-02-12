@@ -2761,6 +2761,9 @@ def _resolve_log_file_enabled(args: argparse.Namespace) -> bool:
 
 def _resolve_semantic_settings() -> Dict[str, Any]:
     enabled = os.environ.get("SEMANTIC_ENABLED", "").strip() == "1"
+    mode = (os.environ.get("SEMANTIC_MODE") or "boost").strip().lower()
+    if mode not in {"sidecar", "boost"}:
+        mode = "boost"
     model_id = (os.environ.get("SEMANTIC_MODEL_ID") or DEFAULT_SEMANTIC_MODEL_ID).strip() or DEFAULT_SEMANTIC_MODEL_ID
     max_jobs_raw = (os.environ.get("SEMANTIC_MAX_JOBS") or "200").strip()
     try:
@@ -2785,6 +2788,7 @@ def _resolve_semantic_settings() -> Dict[str, Any]:
         top_k = 1
     return {
         "enabled": enabled,
+        "mode": mode,
         "model_id": model_id,
         "max_jobs": max_jobs,
         "max_boost": max(0.0, max_boost),
@@ -3061,6 +3065,7 @@ def main() -> int:
             enabled=bool(semantic_settings["enabled"]),
             model_id=str(semantic_settings["model_id"]),
             policy={
+                "mode": str(semantic_settings["mode"]),
                 "max_jobs": int(semantic_settings["max_jobs"]),
                 "top_k": int(semantic_settings["top_k"]),
                 "max_boost": float(semantic_settings["max_boost"]),

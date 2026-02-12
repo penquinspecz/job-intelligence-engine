@@ -276,6 +276,11 @@ def _resolve_semantic_policy_from_env() -> SemanticPolicy:
     )
 
 
+def _resolve_semantic_mode_from_env() -> str:
+    mode = (os.environ.get("SEMANTIC_MODE") or "boost").strip().lower()
+    return mode if mode in {"sidecar", "boost"} else "boost"
+
+
 def _candidate_skill_set() -> set[str]:
     """
     Best-effort load of candidate_profile.json for explanation-only overlap/gap reporting.
@@ -1673,6 +1678,7 @@ def main() -> int:
         j["explanation"] = _build_explanation(j, candidate_skills)
         j["content_fingerprint"] = content_fingerprint(j)
     semantic_policy = _resolve_semantic_policy_from_env()
+    semantic_mode = _resolve_semantic_mode_from_env()
     if semantic_policy.enabled:
         try:
             profile_obj = load_candidate_profile()
@@ -1683,18 +1689,28 @@ def main() -> int:
             else:
                 profile_payload = profile_obj
             state_dir = Path(os.environ.get("JOBINTEL_STATE_DIR") or "state")
-            scored, semantic_evidence = apply_bounded_semantic_boost(
-                scored_jobs=scored,
-                profile_payload=profile_payload,
-                state_dir=state_dir,
-                policy=semantic_policy,
-            )
+            if semantic_mode == "boost":
+                scored, semantic_evidence = apply_bounded_semantic_boost(
+                    scored_jobs=scored,
+                    profile_payload=profile_payload,
+                    state_dir=state_dir,
+                    policy=semantic_policy,
+                )
+            else:
+                _unused_ranked, semantic_evidence = apply_bounded_semantic_boost(
+                    scored_jobs=scored,
+                    profile_payload=profile_payload,
+                    state_dir=state_dir,
+                    policy=semantic_policy,
+                )
+                semantic_evidence["applied_to_scores"] = False
         except Exception as exc:
             logger.warning("Semantic boost skipped due to deterministic fail-closed error: %s", exc)
             semantic_evidence = {
                 "enabled": True,
                 "model_id": semantic_policy.model_id,
                 "policy": {
+                    "mode": semantic_mode,
                     "max_boost": semantic_policy.max_boost,
                     "min_similarity": semantic_policy.min_similarity,
                     "top_k": semantic_policy.top_k,
@@ -1703,12 +1719,14 @@ def main() -> int:
                 "cache_hit_counts": {"hit": 0, "miss": 0, "write": 0, "profile_hit": 0, "profile_miss": 0},
                 "entries": [],
                 "skipped_reason": "semantic_unavailable",
+                "applied_to_scores": semantic_mode == "boost",
             }
     else:
         semantic_evidence = {
             "enabled": False,
             "model_id": semantic_policy.model_id,
             "policy": {
+                "mode": semantic_mode,
                 "max_boost": semantic_policy.max_boost,
                 "min_similarity": semantic_policy.min_similarity,
                 "top_k": semantic_policy.top_k,
@@ -1717,7 +1735,13 @@ def main() -> int:
             "cache_hit_counts": {"hit": 0, "miss": 0, "write": 0, "profile_hit": 0, "profile_miss": 0},
             "entries": [],
             "skipped_reason": "semantic_disabled",
+            "applied_to_scores": False,
         }
+    if isinstance(semantic_evidence, dict):
+        policy = semantic_evidence.get("policy")
+        if isinstance(policy, dict):
+            policy.setdefault("mode", semantic_mode)
+        semantic_evidence.setdefault("applied_to_scores", semantic_mode == "boost" and semantic_policy.enabled)
     for entry in semantic_evidence.get("entries", []):
         if isinstance(entry, dict):
             entry["provider"] = args.provider_id
