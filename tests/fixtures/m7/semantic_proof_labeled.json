@@ -1,0 +1,35 @@
+[
+  {
+    "job_id": "proof-a",
+    "title": "Customer Success Architect",
+    "location": "Remote",
+    "team": "CS",
+    "department": "Field",
+    "apply_url": "https://example.com/jobs/proof-a",
+    "detail_url": "https://example.com/jobs/proof-a",
+    "jd_text": "Drive adoption onboarding customer outcomes and renewals.",
+    "role_band": "CS_CORE"
+  },
+  {
+    "job_id": "proof-b",
+    "title": "Customer Success Architect",
+    "location": "Remote",
+    "team": "CS",
+    "department": "Field",
+    "apply_url": "https://example.com/jobs/proof-b",
+    "detail_url": "https://example.com/jobs/proof-b",
+    "jd_text": "Drive adoption onboarding customer outcomes and renewals.",
+    "role_band": "CS_CORE"
+  },
+  {
+    "job_id": "proof-c",
+    "title": "Research Scientist",
+    "location": "Remote",
+    "team": "AI",
+    "department": "Research",
+    "apply_url": "https://example.com/jobs/proof-c",
+    "detail_url": "https://example.com/jobs/proof-c",
+    "jd_text": "Develop novel theoretical models and pretraining systems.",
+    "role_band": "OTHER"
+  }
+]
