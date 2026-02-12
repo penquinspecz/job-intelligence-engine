@@ -1,7 +1,9 @@
-# EKS Proof Run (Golden Path)
+# SignalCraft EKS Proof Run (Golden Path)
 
 This is the single, copy/paste path to produce proof receipts for Milestone 2.
 It assumes you have valid AWS credentials and a target S3 bucket.
+
+Note: SignalCraft is the product name. Some env vars/paths in commands still use legacy `JOBINTEL_*` naming because that is current runtime truth.
 
 ## 0) Prereqs
 

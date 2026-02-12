@@ -3,6 +3,8 @@
 This document is the operational contract for CI smoke gates.
 It describes exactly what CI runs, what each step proves, and how to debug failures quickly.
 
+Note: SignalCraft is the product name. Some env vars/paths in commands still use legacy `JOBINTEL_*` naming because that is current runtime truth.
+
 ## CI Step Order
 
 1. `actions/checkout@v4`

@@ -1,8 +1,10 @@
-# Proof Run Checklist (Milestone 2)
+# SignalCraft Proof Run Checklist (Milestone 2)
 
 This checklist is for a **one-time, real in-cluster run** (Kubernetes/EKS) that proves
 the pipeline runs end-to-end and publishes deterministic artifacts. It is
 **copy/pasteable** and designed to produce proof artifacts for the PR.
+
+Note: SignalCraft is the product name. Some env vars/paths in commands still use legacy `JOBINTEL_*` naming because that is current runtime truth.
 
 ## Prereqs
 - `kubectl` context points at the target cluster (`kubectl config current-context`).

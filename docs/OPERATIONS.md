@@ -1,5 +1,15 @@
 # Operations
 
+SignalCraft is the product name. Some env vars/paths and CLI module paths in commands still use legacy `JOBINTEL_*`/`jobintel` naming because that is current runtime truth.
+
+## Start Here / Related Contracts
+
+- Run report contract: `RUN_REPORT.md`
+- CI smoke gate contract: `CI_SMOKE_GATE.md`
+- Release process: `RELEASE_PROCESS.md`
+- Legality and ethics guardrails: `LEGALITY_AND_ETHICS.md`
+- Roadmap (current milestone truth): `ROADMAP.md`
+
 ## How to run
 
 Local (recommended for debugging):

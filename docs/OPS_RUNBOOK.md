@@ -1,4 +1,6 @@
-# Ops Runbook (ECS + S3)
+# SignalCraft Ops Runbook (ECS + S3)
+
+Note: SignalCraft is the product name. Some env vars/paths in commands still use legacy `JOBINTEL_*` naming because that is current runtime truth.
 
 ## Happy path
 ```bash

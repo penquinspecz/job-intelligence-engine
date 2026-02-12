@@ -2,6 +2,8 @@
 
 This runbook documents how to run SignalCraft as a scheduled ECS task with deterministic outputs and verifiable publish artifacts. It does **not** perform any AWS actions; it only defines the steps and the proof you should capture.
 
+Note: SignalCraft is the product name. Some env vars/paths in commands still use legacy `JOBINTEL_*` naming because that is current runtime truth.
+
 ## Prerequisites
 
 - AWS account with VPC + private subnets (or public subnets with NAT/IGW if needed)
