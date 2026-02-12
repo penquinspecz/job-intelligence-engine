@@ -42,7 +42,7 @@ If a change doesn’t advance a milestone’s Definition of Done (DoD), it’s p
 
 ## Current State (as of this commit)
 
-Last verified: `2026-02-07T05:48:59Z` @ `ae6ceba`
+Last verified: `2026-02-12T14:43:14Z` @ `d33b22d`
 
 ### Completed foundation (verified in repo/tests)
 - [x] Deterministic ranking + tie-breakers
