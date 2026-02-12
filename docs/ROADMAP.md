@@ -501,6 +501,10 @@ Milestone 4 is DONE when the above is rehearsed once end-to-end and you can repe
 
 **Rule:** Semantic similarity is a bounded booster / classifier safety net, not a replacement for explainable rules.
 
+Status: In progress
+Receipts:
+- `docs/proof/m7-semantic-safety-net-offline-2026-02-12.md`
+
 ### Definition of Done (DoD)
 - [ ] Deterministic embedding path (fixed model + stable text normalization)
 - [ ] Similarity used as bounded adjustment or relevance floor
@@ -509,8 +513,9 @@ Milestone 4 is DONE when the above is rehearsed once end-to-end and you can repe
 
 ### Work Items
 - [x] Scaffold deterministic semantic sidecar (offline hash backend + cache under `state/embeddings/` + `semantic_summary.json` evidence artifact; no ranking impact yet)
-- [ ] Embedding cache + cost controls (max jobs embedded per run)
-- [ ] Tests for deterministic similarity behavior + threshold boundaries
+- [x] Embedding cache + cost controls (max jobs embedded per run)
+- [x] Tests for deterministic similarity behavior + threshold boundaries
+- [x] Offline proof receipt test for semantic safety net artifacts (`tests/test_m7_semantic_proof_receipt.py`)
 
 ---
 

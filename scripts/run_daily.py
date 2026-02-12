@@ -2793,6 +2793,13 @@ def _resolve_semantic_settings() -> Dict[str, Any]:
     }
 
 
+def _resolve_run_id() -> str:
+    override = (os.environ.get("JOBINTEL_RUN_ID") or "").strip()
+    if override:
+        return override
+    return _utcnow_iso()
+
+
 def main() -> int:
     ensure_dirs()
     ap = argparse.ArgumentParser(description="Run the SignalCraft daily pipeline (JIE engine).")
@@ -2877,7 +2884,7 @@ def main() -> int:
         ENRICHED_JOBS_JSON = OUTPUT_DIR / ENRICHED_JOBS_JSON.name
     providers = _resolve_providers(args)
     openai_only = providers == ["openai"]
-    run_id = _utcnow_iso()
+    run_id = _resolve_run_id()
     print(f"JOBINTEL_RUN_ID={run_id}", flush=True)
     global USE_SUBPROCESS
     USE_SUBPROCESS = not args.no_subprocess
