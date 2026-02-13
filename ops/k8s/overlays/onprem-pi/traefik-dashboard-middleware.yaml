@@ -1,0 +1,36 @@
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: dashboard-rate-limit
+  namespace: jobintel
+spec:
+  rateLimit:
+    average: 20
+    burst: 40
+    period: 1s
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: dashboard-secure-headers
+  namespace: jobintel
+spec:
+  headers:
+    frameDeny: true
+    browserXssFilter: true
+    contentTypeNosniff: true
+    referrerPolicy: same-origin
+    customResponseHeaders:
+      Permissions-Policy: "interest-cohort=()"
+      X-Robots-Tag: "noindex, nofollow, noarchive"
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: dashboard-security-chain
+  namespace: jobintel
+spec:
+  chain:
+    middlewares:
+      - name: dashboard-rate-limit
+      - name: dashboard-secure-headers

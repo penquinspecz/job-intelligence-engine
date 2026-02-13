@@ -97,6 +97,38 @@ def test_dashboard_runs_populated(tmp_path: Path, monkeypatch) -> None:
     assert artifact.headers["content-type"].startswith("application/json")
 
 
+def test_dashboard_artifact_exfil_guard_rejects_invalid_mapping(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("JOBINTEL_STATE_DIR", str(tmp_path / "state"))
+
+    import importlib
+
+    import ji_engine.config as config
+    import ji_engine.dashboard.app as dashboard
+
+    importlib.reload(config)
+    dashboard = importlib.reload(dashboard)
+
+    run_id = "2026-01-22T00:00:00Z"
+    run_dir = config.RUN_METADATA_DIR / _sanitize(run_id)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (config.STATE_DIR / "secret.txt").write_text("secret", encoding="utf-8")
+    (run_dir / "index.json").write_text(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "timestamp": run_id,
+                "artifacts": {"leak": "../secret.txt"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    client = TestClient(dashboard.app)
+    resp = client.get(f"/runs/{run_id}/artifact/leak")
+    assert resp.status_code == 500
+    assert "invalid" in resp.json()["detail"].lower()
+
+
 def test_dashboard_semantic_summary_endpoint(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("JOBINTEL_STATE_DIR", str(tmp_path / "state"))
 

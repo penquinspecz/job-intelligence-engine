@@ -91,15 +91,19 @@ def _list_runs() -> List[Dict[str, Any]]:
 
 
 def _resolve_artifact_path(run_dir: Path, index: Dict[str, Any], name: str) -> Path:
-    rel = None
+    if "/" in name or "\\" in name:
+        raise HTTPException(status_code=400, detail="Invalid artifact name")
+
     artifacts = index.get("artifacts") if isinstance(index.get("artifacts"), dict) else {}
-    if name in artifacts:
-        rel = artifacts[name]
-    elif "/" in name:
-        rel = name
-    if not rel:
+    rel = artifacts.get(name)
+    if not isinstance(rel, str) or not rel.strip():
         raise HTTPException(status_code=404, detail="Artifact not found")
-    candidate = (run_dir / rel).resolve()
+
+    rel_path = Path(rel)
+    if rel_path.is_absolute() or ".." in rel_path.parts:
+        raise HTTPException(status_code=500, detail="Artifact mapping is invalid")
+
+    candidate = (run_dir / rel_path).resolve()
     if run_dir.resolve() not in candidate.parents and candidate != run_dir.resolve():
         raise HTTPException(status_code=400, detail="Invalid artifact path")
     if not candidate.exists():
