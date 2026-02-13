@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from ji_engine.config import DEFAULT_CANDIDATE_ID, sanitize_candidate_id
 from ji_engine.providers.openai_provider import CAREERS_SEARCH_URL
 from ji_engine.providers.registry import load_providers_config, resolve_provider_ids
 
@@ -167,6 +168,7 @@ def _run_daily(args: argparse.Namespace) -> int:
     profiles = _merge_profiles(args)
     if not profiles:
         raise SystemExit("No profiles provided. Use --role or --profiles.")
+    safe_candidate_id = _validate_candidate_for_run(args.candidate_id)
 
     cmd = [
         sys.executable,
@@ -188,12 +190,52 @@ def _run_daily(args: argparse.Namespace) -> int:
         cmd.append("--ai_only")
 
     env = os.environ.copy()
+    env["JOBINTEL_CANDIDATE_ID"] = safe_candidate_id
     if args.offline:
         env["CAREERS_MODE"] = "SNAPSHOT"
 
     logging.info("Running: %s", " ".join(cmd))
     result = subprocess.run(cmd, env=env, check=False)
     return result.returncode
+
+
+def _validate_candidate_for_run(candidate_id: str) -> str:
+    safe_candidate_id = sanitize_candidate_id(candidate_id)
+    from ji_engine.candidates import registry as candidate_registry
+
+    registry = candidate_registry.load_registry()
+    known_candidates = {entry.candidate_id for entry in registry.candidates}
+    if safe_candidate_id not in known_candidates:
+        raise SystemExit(
+            f"candidate '{safe_candidate_id}' is not registered. "
+            f"Run `python scripts/candidates.py bootstrap {safe_candidate_id}` first."
+        )
+    try:
+        candidate_registry.load_candidate_profile(safe_candidate_id)
+    except candidate_registry.CandidateValidationError as exc:
+        raise SystemExit(
+            f"candidate '{safe_candidate_id}' profile is invalid: {exc}. "
+            f"Run `python scripts/candidates.py doctor {safe_candidate_id}`."
+        ) from exc
+    return safe_candidate_id
+
+
+def _add_run_daily_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--role", help="Profile role name (e.g. cs).")
+    parser.add_argument("--profiles", help="Comma-separated profiles (e.g. cs or cs,tam,se).")
+    parser.add_argument("--providers", help="Comma-separated provider ids.")
+    parser.add_argument("--offline", action="store_true", help="Force snapshot mode (no live scraping).")
+    parser.add_argument("--no_post", "--no-post", dest="no_post", action="store_true")
+    parser.add_argument("--no_enrich", "--no-enrich", dest="no_enrich", action="store_true")
+    parser.add_argument("--ai", action="store_true")
+    parser.add_argument("--ai_only", action="store_true")
+    parser.add_argument(
+        "--candidate-id",
+        "--candidate_id",
+        dest="candidate_id",
+        default=DEFAULT_CANDIDATE_ID,
+        help=f"Candidate namespace id (default: {DEFAULT_CANDIDATE_ID}).",
+    )
 
 
 def _safety_diff(args: argparse.Namespace) -> int:
@@ -260,15 +302,12 @@ def build_parser() -> argparse.ArgumentParser:
     validate_cmd.set_defaults(func=_validate_snapshots)
 
     run_cmd = subparsers.add_parser("run", help="Run pipeline helpers")
-    run_cmd.add_argument("--role", help="Profile role name (e.g. cs).")
-    run_cmd.add_argument("--profiles", help="Comma-separated profiles (e.g. cs or cs,tam,se).")
-    run_cmd.add_argument("--providers", help="Comma-separated provider ids.")
-    run_cmd.add_argument("--offline", action="store_true", help="Force snapshot mode (no live scraping).")
-    run_cmd.add_argument("--no_post", "--no-post", dest="no_post", action="store_true")
-    run_cmd.add_argument("--no_enrich", "--no-enrich", dest="no_enrich", action="store_true")
-    run_cmd.add_argument("--ai", action="store_true")
-    run_cmd.add_argument("--ai_only", action="store_true")
+    _add_run_daily_args(run_cmd)
     run_cmd.set_defaults(func=_run_daily)
+    run_sub = run_cmd.add_subparsers(dest="run_command")
+    run_daily_cmd = run_sub.add_parser("daily", help="Run daily pipeline with candidate safety checks")
+    _add_run_daily_args(run_daily_cmd)
+    run_daily_cmd.set_defaults(func=_run_daily)
 
     safety_cmd = subparsers.add_parser("safety", help="Semantic safety net tooling")
     safety_sub = safety_cmd.add_subparsers(dest="safety_command", required=True)

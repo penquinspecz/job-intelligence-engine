@@ -153,3 +153,56 @@ def test_set_profile_text_alias(tmp_path: Path, monkeypatch, capsys) -> None:
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["updated_fields"] == ["summary_text"]
+
+
+def test_bootstrap_creates_template_and_next_steps(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("JOBINTEL_STATE_DIR", str(tmp_path / "state"))
+    config, _candidate_registry, candidates_cli = _reload_modules()
+
+    rc = candidates_cli.main(["bootstrap", "alice"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "bootstrapped candidate candidate_id=alice" in out
+    assert "next_steps:" in out
+    assert "run daily --candidate-id alice" in out
+
+    profile = _read(config.candidate_profile_path("alice"))
+    assert profile["target_roles"] == ["replace_with_target_role"]
+    assert profile["preferred_locations"] == ["replace_with_location"]
+    assert (config.candidate_state_dir("alice") / "system_state").exists()
+    assert (config.candidate_state_dir("alice") / "inputs").exists()
+
+
+def test_doctor_validates_pointer_and_no_raw_text_leak(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("JOBINTEL_STATE_DIR", str(tmp_path / "state"))
+    _config, _candidate_registry, candidates_cli = _reload_modules()
+
+    secret_like = "Authorization: Bearer super-secret-123"
+    assert candidates_cli.main(["bootstrap", "alice"]) == 0
+    capsys.readouterr()
+    assert candidates_cli.main(["ingest-text", "alice", "--resume-text", secret_like]) == 0
+    capsys.readouterr()
+
+    rc = candidates_cli.main(["doctor", "alice"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "candidate doctor: OK candidate_id=alice" in out
+    assert secret_like not in out
+
+
+def test_doctor_fails_when_pointer_missing(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("JOBINTEL_STATE_DIR", str(tmp_path / "state"))
+    config, _candidate_registry, candidates_cli = _reload_modules()
+
+    assert candidates_cli.main(["bootstrap", "alice"]) == 0
+    capsys.readouterr()
+    assert candidates_cli.main(["ingest-text", "alice", "--summary-text", "hello", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    pointer = payload["text_input_artifacts"]["summary_text"]["artifact_path"]
+    (config.STATE_DIR / pointer).unlink()
+
+    rc = candidates_cli.main(["doctor", "alice", "--json"])
+    assert rc == 2
+    out = json.loads(capsys.readouterr().out)
+    assert out["ok"] is False
+    assert any("missing file" in err for err in out["errors"])

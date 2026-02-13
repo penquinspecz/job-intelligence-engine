@@ -38,6 +38,7 @@ For trusted friends traffic, preferred posture is:
 
 Operational guide:
 - `ops/onprem/RUNBOOK_DEPLOY.md` (section: Cloudflare Tunnel + Access)
+- `ops/onprem/RUNBOOK_DNS.md` (managed DNS + hostname posture)
 
 Security constraints to keep:
 - No in-app authentication is added in this phase; identity/auth is enforced at the edge.
@@ -59,6 +60,7 @@ Security constraints to keep:
 
 - `ops/onprem/RUNBOOK_ONPREM_INSTALL.md`
 - `ops/onprem/RUNBOOK_DEPLOY.md`
+- `ops/onprem/RUNBOOK_DNS.md`
 - `ops/onprem/RUNBOOK_UPGRADES.md`
 - `ops/onprem/RUNBOOK_BACKUPS.md`
 - `ops/onprem/RUNBOOK_BORING_72H_PROOF.md`

@@ -20,3 +20,10 @@ def test_placeholder_substitution_rejects_empty_env(monkeypatch) -> None:
             "eks.amazonaws.com/role-arn: ${JOBINTEL_IRSA_ROLE_ARN}\n",
             Path("patch-serviceaccount.yaml"),
         )
+
+
+def test_render_manifest_fallback_without_kubectl_or_kustomize(monkeypatch) -> None:
+    monkeypatch.setattr(k8s_render.shutil, "which", lambda _: None)
+    output = k8s_render._render_manifest(k8s_render.OVERLAY_DIRS["onprem-pi"])
+    assert "kind: Middleware" in output
+    assert "kind: NetworkPolicy" in output

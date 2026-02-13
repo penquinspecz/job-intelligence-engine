@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Sequence
@@ -25,6 +27,10 @@ def _run(cmd: Sequence[str], repo_root: Path) -> subprocess.CompletedProcess[str
     )
 
 
+def _is_ci() -> bool:
+    return os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
+
+
 def _parse_worktrees(raw: str) -> List[dict[str, str]]:
     entries: List[dict[str, str]] = []
     current: dict[str, str] = {}
@@ -35,6 +41,8 @@ def _parse_worktrees(raw: str) -> List[dict[str, str]]:
                 current = {}
             continue
         if " " not in line:
+            if line.strip() == "detached":
+                current["detached"] = "true"
             continue
         key, value = line.split(" ", 1)
         current[key] = value.strip()
@@ -57,21 +65,30 @@ def _check_worktrees(repo_root: Path) -> CheckResult:
     if cp.returncode != 0:
         return CheckResult("worktrees", False, cp.stderr.strip() or "git worktree list failed")
     cwd = str(repo_root.resolve())
-    unexpected_main_holders: List[str] = []
+    main_holders: List[str] = []
+    current_detached = False
     for entry in _parse_worktrees(cp.stdout):
         branch = entry.get("branch", "")
         wt = entry.get("worktree", "")
         if not wt:
             continue
-        if branch.endswith("/main") and str(Path(wt).resolve()) != cwd:
-            unexpected_main_holders.append(wt)
-    if unexpected_main_holders:
+        wt_resolved = str(Path(wt).resolve())
+        if branch.endswith("/main"):
+            main_holders.append(wt_resolved)
+        if wt_resolved == cwd and entry.get("detached") == "true":
+            current_detached = True
+
+    if current_detached:
+        if _is_ci():
+            return CheckResult("worktrees", True, "detached checkout allowed in CI job")
+        return CheckResult("worktrees", False, "current worktree is detached; checkout a branch (expected: main)")
+    if len(main_holders) > 1:
         return CheckResult(
             "worktrees",
             False,
-            "unexpected worktree(s) holding main: " + ", ".join(sorted(unexpected_main_holders)),
+            "main is checked out in multiple worktrees: " + ", ".join(sorted(main_holders)),
         )
-    return CheckResult("worktrees", True, "no unexpected worktrees holding main")
+    return CheckResult("worktrees", True, "worktree branch topology is sane")
 
 
 def _check_venv(repo_root: Path) -> CheckResult:
@@ -99,6 +116,7 @@ def _check_venv(repo_root: Path) -> CheckResult:
 def _check_docs(repo_root: Path) -> CheckResult:
     required = [
         "docs/DETERMINISM_CONTRACT.md",
+        "docs/RUN_REPORT.md",
         "config/scoring.v1.json",
         "schemas/run_health.schema.v1.json",
     ]
@@ -106,6 +124,84 @@ def _check_docs(repo_root: Path) -> CheckResult:
     if missing:
         return CheckResult("ci_parity_docs", False, "missing required contract files: " + ", ".join(missing))
     return CheckResult("ci_parity_docs", True, "determinism parity contract files present")
+
+
+def _check_pytest_harness(repo_root: Path) -> CheckResult:
+    conftest_path = repo_root / "tests" / "conftest.py"
+    pytest_ini_path = repo_root / "pytest.ini"
+    if not conftest_path.exists():
+        return CheckResult("pytest_harness", False, "missing tests/conftest.py")
+    if not pytest_ini_path.exists():
+        return CheckResult("pytest_harness", False, "missing pytest.ini")
+
+    conftest = conftest_path.read_text(encoding="utf-8")
+    pytest_ini = pytest_ini_path.read_text(encoding="utf-8")
+    required_env_keys = (
+        "AWS_EC2_METADATA_DISABLED",
+        "AWS_CONFIG_FILE",
+        "AWS_SHARED_CREDENTIALS_FILE",
+    )
+    missing_env_keys = [key for key in required_env_keys if key not in conftest]
+    if missing_env_keys:
+        return CheckResult(
+            "pytest_harness",
+            False,
+            "offline AWS defaults missing in tests/conftest.py: " + ", ".join(missing_env_keys),
+        )
+    if "aws_integration" not in conftest and "aws_integration" not in pytest_ini:
+        return CheckResult("pytest_harness", False, "aws_integration marker/opt-in wiring missing")
+
+    venv_python = repo_root / ".venv" / "bin" / "python"
+    python_bin = str(venv_python if venv_python.exists() else Path(sys.executable))
+    marker_cp = _run((python_bin, "-m", "pytest", "--markers"), repo_root)
+    if marker_cp.returncode != 0:
+        if _is_ci() and "No module named pytest" in (marker_cp.stderr or ""):
+            return CheckResult(
+                "pytest_harness", True, "pytest marker runtime check skipped in CI (pytest not installed)"
+            )
+        return CheckResult(
+            "pytest_harness",
+            False,
+            marker_cp.stderr.strip() or "pytest marker discovery failed",
+        )
+    if "aws_integration" not in marker_cp.stdout:
+        return CheckResult("pytest_harness", False, "pytest marker discovery missing aws_integration")
+    return CheckResult("pytest_harness", True, "offline harness defaults + marker discovery are valid")
+
+
+def _check_state_dir_invariant(repo_root: Path) -> CheckResult:
+    state_dir = os.getenv("JOBINTEL_STATE_DIR")
+    if not state_dir:
+        return CheckResult("state_dir", True, "JOBINTEL_STATE_DIR is not set")
+    resolved_state = Path(state_dir).expanduser().resolve()
+    resolved_repo = repo_root.resolve()
+    if resolved_repo in (resolved_state, *resolved_state.parents):
+        return CheckResult(
+            "state_dir",
+            True,
+            f"JOBINTEL_STATE_DIR={resolved_state} (WARNING: points inside repo; prefer external path)",
+        )
+    return CheckResult("state_dir", True, f"JOBINTEL_STATE_DIR={resolved_state}")
+
+
+def _check_k8s_overlay_render(repo_root: Path) -> CheckResult:
+    venv_python = repo_root / ".venv" / "bin" / "python"
+    python_bin = str(venv_python if venv_python.exists() else Path(sys.executable))
+    cmd = (python_bin, "scripts/k8s_render.py", "--overlay", "onprem-pi", "--stdout", "--limit", "40")
+    cp = _run(cmd, repo_root)
+    if cp.returncode != 0:
+        detail = cp.stderr.strip() or cp.stdout.strip() or "overlay render failed"
+        if _is_ci() and "No module named 'yaml'" in detail:
+            return CheckResult("k8s_overlay", True, "overlay render runtime check skipped in CI (PyYAML not installed)")
+        return CheckResult(
+            "k8s_overlay",
+            False,
+            f"unable to render onprem-pi overlay: {detail}. Ensure overlay files are valid and scripts/k8s_render.py supports local rendering without kubectl.",
+        )
+    line_count = len(cp.stdout.splitlines())
+    if line_count == 0:
+        return CheckResult("k8s_overlay", False, "overlay render produced no output")
+    return CheckResult("k8s_overlay", True, f"onprem-pi overlay rendered ({line_count} line(s) sampled)")
 
 
 def _line(result: CheckResult) -> str:
@@ -123,6 +219,9 @@ def main() -> int:
         _check_worktrees(repo_root),
         _check_venv(repo_root),
         _check_docs(repo_root),
+        _check_pytest_harness(repo_root),
+        _check_state_dir_invariant(repo_root),
+        _check_k8s_overlay_render(repo_root),
     ]
 
     print("SignalCraft doctor")

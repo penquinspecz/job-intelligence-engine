@@ -31,19 +31,22 @@ Determinism parity preflight (local and CI-friendly):
 make doctor
 ```
 
-## GitHub CLI Reliability (Flaky DNS/API)
-
-Symptom:
-- `gh` intermittently fails with `error connecting to api.github.com`
-- `curl` or `git` may also show `Could not resolve host: github.com`
-
-Normal path (preferred):
-- Use retry wrapper when available:
+GitHub CLI reliability (flaky DNS/API environments):
 
 ```bash
-./scripts/gh_retry.sh pr checks <pr_number> --watch
-./scripts/gh_retry.sh pr merge <pr_number> --merge --delete-branch
+scripts/gh_retry.sh pr checks <pr-number> --watch
+scripts/gh_retry.sh pr merge <pr-number> --merge --delete-branch
+scripts/gh_retry.sh pr view <pr-number>
 ```
+
+- Symptom:
+  - `gh` intermittently fails with `error connecting to api.github.com`
+  - `curl` or `git` may also show `Could not resolve host: github.com`
+- Wrapper retries transient DNS/network failures only (for example `error connecting to api.github.com`).
+- Non-network failures (invalid args, permission, failed checks) fail immediately.
+- Retry controls:
+  - `GH_RETRY_MAX_ATTEMPTS` (default `4`)
+  - `GH_RETRY_SLEEP_SECONDS` (default `2`)
 
 Health probe (quick triage):
 
@@ -57,17 +60,21 @@ If health probe fails, switch to elevated network execution in this environment:
 - Re-run `gh`/`curl` operations with elevated network execution (the same host/elevated mode used for successful `gh api .../rate_limit` checks).
 - Keep commands identical; only execution mode changes.
 
-Fallback mode (manual GitHub web flow):
-- PR create URL pattern:
-  - `https://github.com/penquinspecz/SignalCraft/pull/new/<branch>`
-- Checks page:
-  - `https://github.com/penquinspecz/SignalCraft/pull/<pr_number>/checks`
+Fallback mode when `gh` is unavailable:
+- PR creation: open manual URL `https://github.com/penquinspecz/SignalCraft/pull/new/<branch>`
+- Checks: open PR checks page in browser and confirm required checks are green before merge.
 
 `make doctor` fails closed for:
 - dirty git status
-- unexpected additional worktrees holding `main`
+- detached current worktree or `main` checked out in multiple worktrees
 - missing/mismatched `.venv` against `.python-version`
-- missing CI parity contract files (`docs/DETERMINISM_CONTRACT.md`, `config/scoring.v1.json`, `schemas/run_health.schema.v1.json`)
+- missing CI parity contract files (`docs/DETERMINISM_CONTRACT.md`, `docs/RUN_REPORT.md`, `config/scoring.v1.json`, `schemas/run_health.schema.v1.json`)
+- missing offline test harness defaults/marker wiring (`tests/conftest.py`, `pytest.ini`, `aws_integration`)
+- non-renderable `onprem-pi` overlay via `scripts/k8s_render.py --overlay onprem-pi --stdout --limit 40`
+
+Doctor informational warnings:
+- prints `JOBINTEL_STATE_DIR` if set
+- warns when `JOBINTEL_STATE_DIR` points inside the repo (to avoid mixing source + runtime state)
 
 CI smoke gate contract and failure-mode diagnostics:
 - `docs/CI_SMOKE_GATE.md`

@@ -10,6 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import yaml
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BASE_DIR = REPO_ROOT / "ops" / "k8s" / "jobintel"
 OVERLAY_DIRS = {
@@ -51,10 +53,73 @@ def _render_manifest(path: Path) -> str:
             text=True,
         )
     else:
-        raise RuntimeError("kubectl or kustomize is required to render manifests")
+        return _render_manifest_fallback(path)
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or "kustomize render failed")
     return result.stdout
+
+
+def _load_kustomization(path: Path) -> dict[str, object]:
+    kustomization = path / "kustomization.yaml"
+    if not kustomization.exists():
+        raise RuntimeError(f"kustomization.yaml not found: {path}")
+    payload = yaml.safe_load(kustomization.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"invalid kustomization payload: {kustomization}")
+    return payload
+
+
+def _iter_resource_files(kustomization_dir: Path, seen: set[Path]) -> list[Path]:
+    if kustomization_dir in seen:
+        return []
+    seen.add(kustomization_dir)
+
+    payload = _load_kustomization(kustomization_dir)
+    resource_files: list[Path] = []
+    resources = payload.get("resources", [])
+    if resources is None:
+        resources = []
+    if not isinstance(resources, list):
+        raise RuntimeError(f"resources must be a list: {kustomization_dir / 'kustomization.yaml'}")
+    for entry in resources:
+        if not isinstance(entry, str):
+            raise RuntimeError(f"resource entry must be string: {entry!r}")
+        resolved = (kustomization_dir / entry).resolve()
+        if resolved.is_dir():
+            resource_files.extend(_iter_resource_files(resolved, seen))
+            continue
+        if not resolved.exists():
+            raise RuntimeError(f"resource path not found: {resolved}")
+        resource_files.append(resolved)
+
+    patches = payload.get("patchesStrategicMerge", [])
+    if patches is None:
+        patches = []
+    if not isinstance(patches, list):
+        raise RuntimeError(f"patchesStrategicMerge must be a list: {kustomization_dir / 'kustomization.yaml'}")
+    for entry in patches:
+        if not isinstance(entry, str):
+            raise RuntimeError(f"patch entry must be string: {entry!r}")
+        resolved = (kustomization_dir / entry).resolve()
+        if not resolved.exists():
+            raise RuntimeError(f"patch path not found: {resolved}")
+        resource_files.append(resolved)
+    return resource_files
+
+
+def _render_manifest_fallback(path: Path) -> str:
+    """
+    Minimal local renderer for doctor/preflight: resolve kustomization resources
+    and concatenate valid YAML docs in deterministic path order.
+    """
+    files = sorted(set(_iter_resource_files(path.resolve(), set())), key=lambda p: p.as_posix())
+    rendered_docs: list[str] = []
+    for file_path in files:
+        text = file_path.read_text(encoding="utf-8")
+        # Validate YAML shape early so doctor catches broken overlays.
+        list(yaml.safe_load_all(text))
+        rendered_docs.append(text.rstrip() + "\n")
+    return "---\n".join(rendered_docs).strip() + "\n"
 
 
 def _collect_patch_paths(overlay_dir: Path) -> list[Path]:
@@ -189,6 +254,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--validate", action="store_true", help="kubectl apply --dry-run=client")
     parser.add_argument("--secrets", action="store_true", help="Print required secret keys")
+    parser.add_argument(
+        "--stdout",
+        action="store_true",
+        help="Explicitly print rendered manifest to stdout (default behavior).",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="Print only the first N lines of rendered output (0 = full).",
+    )
     args = parser.parse_args(argv)
 
     overlays = args.overlay or []
@@ -196,7 +272,10 @@ def main(argv: list[str] | None = None) -> int:
         manifest = _render_with_overlays(overlays, image_override_arg=args.image)
     else:
         manifest = _render_manifest(BASE_DIR)
-    print(manifest)
+    output = manifest
+    if args.limit and args.limit > 0:
+        output = "\n".join(manifest.splitlines()[: args.limit]) + "\n"
+    print(output, end="" if output.endswith("\n") else "\n")
 
     if args.secrets:
         payload = {

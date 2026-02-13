@@ -103,6 +103,65 @@ def cmd_ingest_text(args: argparse.Namespace) -> int:
     return 0
 
 
+def _print_bootstrap_next_steps(candidate_id: str) -> None:
+    print("next_steps:")
+    print(f"  python scripts/candidates.py ingest-text {candidate_id} --resume-file ./resume.txt --json")
+    print(f"  python scripts/candidates.py ingest-text {candidate_id} --linkedin-file ./linkedin.txt --json")
+    print(f"  python -m jobintel.cli run daily --candidate-id {candidate_id} --profiles cs --offline --no_post")
+
+
+def cmd_bootstrap(args: argparse.Namespace) -> int:
+    candidate_registry = args.registry_module
+    try:
+        result = candidate_registry.bootstrap_candidate(args.candidate_id, args.display_name)
+    except (candidate_registry.CandidateValidationError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    if args.json:
+        print(json.dumps(result, sort_keys=True))
+    else:
+        print(
+            "bootstrapped candidate "
+            f"candidate_id={result['candidate_id']} profile_path={result['profile_path']} candidate_dir={result['candidate_dir']}"
+        )
+        _print_bootstrap_next_steps(result["candidate_id"])
+    return 0
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    candidate_registry = args.registry_module
+    try:
+        result = candidate_registry.doctor_candidate(args.candidate_id)
+    except (candidate_registry.CandidateValidationError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    if args.json:
+        print(json.dumps(result, sort_keys=True))
+    else:
+        status = "OK" if result["ok"] else "INVALID"
+        print(f"candidate doctor: {status} candidate_id={result['candidate_id']}")
+        for name, exists in sorted(result["directories"].items()):
+            label = "OK" if exists else "MISSING"
+            print(f"  [{label}] dir:{name}")
+        profile = result["profile"]
+        if profile["schema_valid"]:
+            print(f"  [OK] profile:{profile['path']}")
+        else:
+            print(f"  [FAIL] profile:{profile['path']}")
+        for kind, pointer in sorted(result["text_input_artifacts"].items()):
+            if pointer["exists"] and pointer["in_candidate_root"]:
+                print(f"  [OK] pointer:{kind} path={pointer['artifact_path']}")
+            else:
+                print(f"  [FAIL] pointer:{kind} path={pointer['artifact_path']}")
+        if result["errors"]:
+            print("errors:", file=sys.stderr)
+            for err in result["errors"]:
+                print(f"- {err}", file=sys.stderr)
+    return 0 if result["ok"] else 2
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Manage file-backed candidate registry and profiles.")
     parser.add_argument(
@@ -121,9 +180,20 @@ def main(argv: Optional[list[str]] = None) -> int:
     add_cmd.add_argument("--json", action="store_true")
     add_cmd.set_defaults(func=cmd_add)
 
+    bootstrap_cmd = sub.add_parser("bootstrap", help="Create canonical candidate scaffold + template profile")
+    bootstrap_cmd.add_argument("candidate_id")
+    bootstrap_cmd.add_argument("--display-name")
+    bootstrap_cmd.add_argument("--json", action="store_true")
+    bootstrap_cmd.set_defaults(func=cmd_bootstrap)
+
     validate_cmd = sub.add_parser("validate", help="Validate candidate profiles")
     validate_cmd.add_argument("--json", action="store_true")
     validate_cmd.set_defaults(func=cmd_validate)
+
+    doctor_cmd = sub.add_parser("doctor", help="Validate one candidate scaffold/profile/artifact pointers")
+    doctor_cmd.add_argument("candidate_id")
+    doctor_cmd.add_argument("--json", action="store_true")
+    doctor_cmd.set_defaults(func=cmd_doctor)
 
     ingest_cmd = sub.add_parser("ingest-text", help="Set pasted profile text fields (no URL fetching)")
     ingest_cmd.add_argument("candidate_id")
