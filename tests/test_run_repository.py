@@ -3,88 +3,140 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
 
-from ji_engine.run_repository import FileSystemRunRepository
-
-
-def _safe(run_id: str) -> str:
+def _sanitize(run_id: str) -> str:
     return run_id.replace(":", "").replace("-", "").replace(".", "")
 
 
-def test_resolve_run_dir_prefers_namespaced_local(tmp_path: Path) -> None:
-    runs = tmp_path / "state" / "runs"
-    repo = FileSystemRunRepository(runs)
-
-    run_id = "2026-02-13T00:00:00Z"
-    safe = _safe(run_id)
-    namespaced = tmp_path / "state" / "candidates" / "local" / "runs" / safe
-    legacy = runs / safe
-    namespaced.mkdir(parents=True, exist_ok=True)
-    legacy.mkdir(parents=True, exist_ok=True)
-
-    assert repo.resolve_run_dir(run_id, candidate_id="local") == namespaced
+def _write_index(run_dir: Path, run_id: str, timestamp: str) -> None:
+    run_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "run_id": run_id,
+        "timestamp": timestamp,
+        "artifacts": {},
+    }
+    (run_dir / "index.json").write_text(json.dumps(payload), encoding="utf-8")
 
 
-def test_resolve_run_dir_local_falls_back_to_legacy(tmp_path: Path) -> None:
-    runs = tmp_path / "state" / "runs"
-    repo = FileSystemRunRepository(runs)
+def test_rebuild_index_is_deterministic(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("JOBINTEL_STATE_DIR", str(tmp_path / "state"))
 
-    run_id = "2026-02-13T00:00:00Z"
-    safe = _safe(run_id)
-    legacy = runs / safe
-    legacy.mkdir(parents=True, exist_ok=True)
+    import importlib
 
-    assert repo.resolve_run_dir(run_id, candidate_id="local") == legacy
+    import ji_engine.config as config
+    import ji_engine.run_repository as run_repository
 
+    importlib.reload(config)
+    run_repository = importlib.reload(run_repository)
 
-def test_list_run_dirs_deterministic_and_deduped(tmp_path: Path) -> None:
-    runs = tmp_path / "state" / "runs"
-    repo = FileSystemRunRepository(runs)
+    run_a = "2026-01-02T00:00:00Z"
+    run_b = "2026-01-03T00:00:00Z"
+    _write_index(config.RUN_METADATA_DIR / _sanitize(run_a), run_a, run_a)
+    _write_index(config.RUN_METADATA_DIR / _sanitize(run_b), run_b, run_b)
 
-    namespaced_root = tmp_path / "state" / "candidates" / "local" / "runs"
-    (namespaced_root / "b").mkdir(parents=True, exist_ok=True)
-    (namespaced_root / "a").mkdir(parents=True, exist_ok=True)
-    (runs / "a").mkdir(parents=True, exist_ok=True)
-    (runs / "c").mkdir(parents=True, exist_ok=True)
+    repo = run_repository.FileSystemRunRepository()
+    first = repo.rebuild_index()
+    first_list = repo.list_runs()
 
-    listed = repo.list_run_dirs(candidate_id="local")
-    assert [p.name for p in listed] == ["a", "b", "c"]
-    assert listed[0] == namespaced_root / "a"
+    second = repo.rebuild_index()
+    second_list = repo.list_runs()
 
-
-def test_list_run_metadata_paths_deterministic_and_deduped(tmp_path: Path) -> None:
-    runs = tmp_path / "state" / "runs"
-    repo = FileSystemRunRepository(runs)
-
-    namespaced_root = tmp_path / "state" / "candidates" / "local" / "runs"
-    namespaced_root.mkdir(parents=True, exist_ok=True)
-    runs.mkdir(parents=True, exist_ok=True)
-
-    (namespaced_root / "a.json").write_text("{}", encoding="utf-8")
-    (runs / "a.json").write_text("{}", encoding="utf-8")
-    (runs / "b.json").write_text("{}", encoding="utf-8")
-
-    listed = repo.list_run_metadata_paths(candidate_id="local")
-    assert [p.name for p in listed] == ["a.json", "b.json"]
-    assert listed[0] == namespaced_root / "a.json"
+    assert first["runs_indexed"] == 2
+    assert second["runs_indexed"] == 2
+    assert [item["run_id"] for item in first_list] == [item["run_id"] for item in second_list] == [run_b, run_a]
 
 
-def test_resolve_run_artifact_path_rejects_escape(tmp_path: Path) -> None:
-    runs = tmp_path / "state" / "runs"
-    repo = FileSystemRunRepository(runs)
-    run_id = "2026-02-13T00:00:00Z"
+def test_candidate_isolation_same_run_id(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("JOBINTEL_STATE_DIR", str(tmp_path / "state"))
 
-    with pytest.raises(ValueError):
-        repo.resolve_run_artifact_path(run_id, "../escape.json", candidate_id="local")
+    import importlib
+
+    import ji_engine.config as config
+    import ji_engine.run_repository as run_repository
+
+    importlib.reload(config)
+    run_repository = importlib.reload(run_repository)
+
+    run_id = "2026-01-02T00:00:00Z"
+    local_run = config.RUN_METADATA_DIR / _sanitize(run_id)
+    alice_run = config.candidate_run_metadata_dir("alice") / _sanitize(run_id)
+
+    _write_index(local_run, run_id, "2026-01-02T00:00:00Z")
+    _write_index(alice_run, run_id, "2026-01-04T00:00:00Z")
+
+    repo = run_repository.FileSystemRunRepository()
+    local_meta = repo.rebuild_index("local")
+    alice_meta = repo.rebuild_index("alice")
+
+    assert local_meta["db_path"] != alice_meta["db_path"]
+    assert repo.latest_run("local")["timestamp"] == "2026-01-02T00:00:00Z"
+    assert repo.latest_run("alice")["timestamp"] == "2026-01-04T00:00:00Z"
 
 
-def test_write_run_json_targets_candidate_namespace(tmp_path: Path) -> None:
-    runs = tmp_path / "state" / "runs"
-    repo = FileSystemRunRepository(runs)
-    run_id = "2026-02-13T00:00:00Z"
+def test_latest_run_uses_index_without_filesystem_scan(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("JOBINTEL_STATE_DIR", str(tmp_path / "state"))
 
-    out = repo.write_run_json(run_id, "index.json", {"run_id": run_id}, candidate_id="alice")
-    assert "/candidates/alice/runs/" in out.as_posix()
-    payload = json.loads(out.read_text(encoding="utf-8"))
-    assert payload["run_id"] == run_id
+    import importlib
+
+    import ji_engine.config as config
+    import ji_engine.run_repository as run_repository
+
+    importlib.reload(config)
+    run_repository = importlib.reload(run_repository)
+
+    run_id = "2026-01-02T00:00:00Z"
+    _write_index(config.RUN_METADATA_DIR / _sanitize(run_id), run_id, run_id)
+
+    repo = run_repository.FileSystemRunRepository()
+    repo.rebuild_index("local")
+
+    monkeypatch.setattr(
+        repo,
+        "_scan_runs_from_filesystem",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("filesystem scan called")),
+    )
+    latest = repo.latest_run("local")
+    assert latest and latest["run_id"] == run_id
+
+
+def test_corrupt_index_triggers_safe_rebuild(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("JOBINTEL_STATE_DIR", str(tmp_path / "state"))
+
+    import importlib
+
+    import ji_engine.config as config
+    import ji_engine.run_repository as run_repository
+
+    importlib.reload(config)
+    run_repository = importlib.reload(run_repository)
+
+    run_id = "2026-01-02T00:00:00Z"
+    _write_index(config.RUN_METADATA_DIR / _sanitize(run_id), run_id, run_id)
+
+    repo = run_repository.FileSystemRunRepository()
+    meta = repo.rebuild_index("local")
+    Path(meta["db_path"]).write_text("not a sqlite db", encoding="utf-8")
+
+    runs = repo.list_runs("local")
+    assert runs and runs[0]["run_id"] == run_id
+    assert Path(meta["db_path"]).read_bytes().startswith(b"SQLite format 3")
+
+
+def test_rebuild_run_index_cli(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("JOBINTEL_STATE_DIR", str(tmp_path / "state"))
+
+    import importlib
+
+    import ji_engine.config as config
+    from scripts import rebuild_run_index
+
+    importlib.reload(config)
+
+    run_id = "2026-01-02T00:00:00Z"
+    _write_index(config.RUN_METADATA_DIR / _sanitize(run_id), run_id, run_id)
+
+    rc = rebuild_run_index.main(["--json"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 0
+    assert payload["results"][0]["candidate_id"] == "local"
+    assert payload["results"][0]["runs_indexed"] == 1

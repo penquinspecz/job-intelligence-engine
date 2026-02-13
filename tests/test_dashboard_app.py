@@ -172,8 +172,9 @@ def test_dashboard_latest_local(tmp_path: Path, monkeypatch) -> None:
     dashboard = importlib.reload(dashboard)
 
     run_id = "2026-01-22T00:00:00Z"
-    run_dir = config.RUN_METADATA_DIR / _sanitize(run_id)
+    run_dir = config.candidate_run_metadata_dir("local") / _sanitize(run_id)
     run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "index.json").write_text(json.dumps({"run_id": run_id, "timestamp": run_id}), encoding="utf-8")
     last_success = {
         "run_id": run_id,
         "providers": ["openai"],
@@ -197,11 +198,60 @@ def test_dashboard_latest_local(tmp_path: Path, monkeypatch) -> None:
     assert resp.status_code == 200
     payload = resp.json()
     assert payload["source"] == "local"
+    assert payload["candidate_id"] == "local"
     assert payload["payload"]["run_id"] == run_id
 
     artifacts = client.get("/v1/artifacts/latest/openai/cs")
     assert artifacts.status_code == 200
     assert "openai_ranked_jobs.cs.json" in artifacts.json()["paths"][0]
+
+
+def test_dashboard_runs_candidate_isolation(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("JOBINTEL_STATE_DIR", str(tmp_path / "state"))
+
+    import importlib
+
+    import ji_engine.config as config
+    import ji_engine.dashboard.app as dashboard
+
+    importlib.reload(config)
+    dashboard = importlib.reload(dashboard)
+
+    run_id = "2026-01-22T00:00:00Z"
+    local_dir = config.candidate_run_metadata_dir("local") / _sanitize(run_id)
+    alice_dir = config.candidate_run_metadata_dir("alice") / _sanitize(run_id)
+    local_dir.mkdir(parents=True, exist_ok=True)
+    alice_dir.mkdir(parents=True, exist_ok=True)
+    (local_dir / "index.json").write_text(
+        json.dumps({"run_id": run_id, "timestamp": "2026-01-22T00:00:00Z"}), encoding="utf-8"
+    )
+    (alice_dir / "index.json").write_text(
+        json.dumps({"run_id": run_id, "timestamp": "2026-01-23T00:00:00Z"}), encoding="utf-8"
+    )
+
+    client = TestClient(dashboard.app)
+    local_runs = client.get("/runs?candidate_id=local")
+    alice_runs = client.get("/runs?candidate_id=alice")
+    assert local_runs.status_code == 200
+    assert alice_runs.status_code == 200
+    assert local_runs.json()[0]["timestamp"] == "2026-01-22T00:00:00Z"
+    assert alice_runs.json()[0]["timestamp"] == "2026-01-23T00:00:00Z"
+
+
+def test_dashboard_invalid_candidate_id_rejected(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("JOBINTEL_STATE_DIR", str(tmp_path / "state"))
+
+    import importlib
+
+    import ji_engine.config as config
+    import ji_engine.dashboard.app as dashboard
+
+    importlib.reload(config)
+    dashboard = importlib.reload(dashboard)
+
+    client = TestClient(dashboard.app)
+    resp = client.get("/runs?candidate_id=../../etc")
+    assert resp.status_code == 400
 
 
 def test_dashboard_latest_s3(monkeypatch) -> None:
