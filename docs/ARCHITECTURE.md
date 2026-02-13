@@ -1,3 +1,7 @@
+© 2026 Chris Menendez. Source Available — All Rights Reserved.
+This repository is publicly viewable but not open source.
+See LICENSE for permitted use.
+
 # Architecture
 
 ## Pipeline stages
