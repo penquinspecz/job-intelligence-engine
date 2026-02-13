@@ -1,3 +1,7 @@
+© 2026 Chris Menendez. Source Available — All Rights Reserved.
+This repository is publicly viewable but not open source.
+See LICENSE for permitted use.
+
 # SignalCraft
 
 [![CI](https://github.com/penquinspecz/SignalCraft/actions/workflows/ci.yml/badge.svg)](https://github.com/penquinspecz/SignalCraft/actions/workflows/ci.yml)

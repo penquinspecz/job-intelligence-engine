@@ -1,3 +1,7 @@
+© 2026 Chris Menendez. Source Available — All Rights Reserved.
+This repository is publicly viewable but not open source.
+See LICENSE for permitted use.
+
 # SignalCraft Roadmap
 
 This roadmap is the anti-chaos anchor. We optimize for:
