@@ -50,6 +50,12 @@ from ji_engine.config import (
     SNAPSHOT_DIR,
     STATE_DIR,
     USER_STATE_DIR,
+    candidate_last_run_pointer_path,
+    candidate_last_run_read_paths,
+    candidate_last_success_pointer_path,
+    candidate_last_success_read_paths,
+    candidate_run_metadata_dir,
+    candidate_state_paths,
     ensure_dirs,
     ranked_families_json,
     ranked_jobs_csv,
@@ -134,15 +140,16 @@ def _unavailable_summary() -> str:
 
 logger = logging.getLogger(__name__)
 USE_SUBPROCESS = True
-LAST_RUN_JSON = STATE_DIR / "last_run.json"
-LAST_SUCCESS_JSON = STATE_DIR / "last_success.json"
 RUN_REPORT_SCHEMA_VERSION = 1
-PROOFS_DIR = STATE_DIR / "proofs"
 PROOF_RECEIPT_SCHEMA_VERSION = 1
 try:
     CANDIDATE_ID = sanitize_candidate_id(os.environ.get("JOBINTEL_CANDIDATE_ID", DEFAULT_CANDIDATE_ID))
 except ValueError as exc:
     raise SystemExit(f"invalid JOBINTEL_CANDIDATE_ID: {exc}")
+
+LAST_RUN_JSON = candidate_last_run_pointer_path(CANDIDATE_ID)
+LAST_SUCCESS_JSON = candidate_last_success_pointer_path(CANDIDATE_ID)
+PROOFS_DIR = candidate_state_paths(CANDIDATE_ID).proofs_dir
 
 
 def _flush_logging() -> None:
@@ -850,9 +857,11 @@ def _state_last_ranked(provider: str, profile: str) -> Path:
 
 
 def _local_last_success_pointer_paths(provider: str, profile: str) -> List[Path]:
+    if CANDIDATE_ID != DEFAULT_CANDIDATE_ID:
+        return [candidate_last_success_pointer_path(CANDIDATE_ID)]
     return [
+        *candidate_last_success_read_paths(CANDIDATE_ID),
         STATE_DIR / provider / profile / "last_success.json",
-        STATE_DIR / "last_success.json",
     ]
 
 
@@ -875,11 +884,12 @@ def _resolve_local_last_success_ranked(provider: str, profile: str, current_run_
 
 
 def _resolve_latest_run_ranked(provider: str, profile: str, current_run_id: str) -> Optional[Path]:
-    if not RUN_METADATA_DIR.exists():
+    run_root = RUN_METADATA_DIR if CANDIDATE_ID == DEFAULT_CANDIDATE_ID else candidate_run_metadata_dir(CANDIDATE_ID)
+    if not run_root.exists():
         return None
     candidates: List[Tuple[float, str, Path]] = []
     current_name = _sanitize_run_id(current_run_id)
-    for run_dir in RUN_METADATA_DIR.iterdir():
+    for run_dir in run_root.iterdir():
         if not run_dir.is_dir() or run_dir.name == current_name:
             continue
         ranked_path = run_dir / provider / profile / f"{provider}_ranked_jobs.{profile}.json"
@@ -982,7 +992,10 @@ def _archive_run_inputs(
 
 
 def _run_registry_dir(run_id: str) -> Path:
-    return RUN_METADATA_DIR / _sanitize_run_id(run_id)
+    safe_run = _sanitize_run_id(run_id)
+    if CANDIDATE_ID == DEFAULT_CANDIDATE_ID:
+        return RUN_METADATA_DIR / safe_run
+    return candidate_run_metadata_dir(CANDIDATE_ID) / safe_run
 
 
 def _write_run_registry(
@@ -1894,16 +1907,27 @@ def _safe_len(path: Path) -> int:
 
 
 def _load_last_run() -> Dict[str, Any]:
-    if not LAST_RUN_JSON.exists():
-        return {}
-    try:
-        return json.loads(LAST_RUN_JSON.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    candidates = [LAST_RUN_JSON, *candidate_last_run_read_paths(CANDIDATE_ID)]
+    seen: set[Path] = set()
+    for path in candidates:
+        if path in seen:
+            continue
+        seen.add(path)
+        if not path.exists():
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if isinstance(payload, dict):
+            return payload
+    return {}
 
 
 def _write_last_run(payload: Dict[str, Any]) -> None:
     _write_json(LAST_RUN_JSON, payload)
+    if CANDIDATE_ID == DEFAULT_CANDIDATE_ID:
+        _write_json(STATE_DIR / "last_run.json", payload)
 
 
 def _parse_logical_key(logical_key: str) -> Optional[Tuple[str, str, str]]:
@@ -1956,6 +1980,11 @@ def _write_last_success_pointer(run_report: Dict[str, Any], run_report_path: Pat
         LAST_SUCCESS_JSON,
         json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n",
     )
+    if CANDIDATE_ID == DEFAULT_CANDIDATE_ID:
+        atomic_write_text(
+            STATE_DIR / "last_success.json",
+            json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n",
+        )
 
 
 def validate_config(args: argparse.Namespace, webhook: str) -> None:

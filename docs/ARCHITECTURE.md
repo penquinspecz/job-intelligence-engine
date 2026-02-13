@@ -256,6 +256,42 @@ Future evolution toward product:
   - `local` readers fall back to legacy un-namespaced paths (`state/runs`, `state/last_success.json`)
   - S3 writes namespaced pointers and keeps legacy global pointers for `local` only.
 
+### Candidate State Contract v1
+
+Canonical candidate root:
+
+- `state/candidates/<candidate_id>/`
+
+Contract groups:
+
+- User inputs:
+  - `state/candidates/<candidate_id>/inputs/candidate_profile.json`
+- System state pointers:
+  - `state/candidates/<candidate_id>/system_state/last_run.json`
+  - `state/candidates/<candidate_id>/system_state/last_success.json`
+  - `state/candidates/<candidate_id>/system_state/run_index.sqlite`
+- Derived artifacts:
+  - `state/candidates/<candidate_id>/runs/<run_id>/...`
+  - `state/candidates/<candidate_id>/history/...`
+  - `state/candidates/<candidate_id>/user_state/...`
+  - `state/candidates/<candidate_id>/proofs/<run_id>.json`
+
+Invariants:
+
+- All candidate-scoped paths are resolved through canonical helpers in `src/ji_engine/config.py`.
+- Candidate IDs are sanitized fail-closed via `[a-z0-9_]{1,64}`.
+- Writes to pointer/index artifacts use atomic writes.
+- Deterministic ordering and replay guarantees remain unchanged.
+
+Compatibility and migration:
+
+- `candidate_id=local` keeps deterministic legacy behavior:
+  - reads include legacy global fallbacks (`state/last_run.json`, `state/last_success.json`, `state/runs/...`)
+  - writes keep legacy mirrors for global pointers while canonical namespaced pointers are also maintained
+- Candidate profile reads support legacy location fallback:
+  - from canonical `inputs/candidate_profile.json`
+  - to legacy `state/candidates/<candidate_id>/candidate_profile.json` when present
+
 ### Profile Ingestion
 
 - Structured profile schema.
