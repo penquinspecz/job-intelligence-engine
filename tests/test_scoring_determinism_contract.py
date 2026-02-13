@@ -149,3 +149,30 @@ def test_scoring_drift_signature_requires_intentional_update() -> None:
         "Scoring model signature drifted while version is still v1. "
         "If scoring semantics changed intentionally, bump scoring model version and refresh fixture."
     )
+
+
+def test_scoring_signature_is_path_stable_across_repo_root_forms() -> None:
+    config = load_scoring_config(REPO_ROOT / "config" / "scoring.v1.json")
+    scoring_inputs = {
+        "openai": {
+            "cs": {
+                "path": "state/runs/example/inputs/openai/cs/selected_scoring_input.json",
+                "sha256": "0" * 64,
+            }
+        }
+    }
+    abs_meta = build_scoring_model_metadata(
+        config=config,
+        config_path=REPO_ROOT / "config" / "scoring.v1.json",
+        profiles_path=REPO_ROOT / "config" / "profiles.json",
+        scoring_inputs_by_provider=scoring_inputs,
+        repo_root=REPO_ROOT,
+    )
+    rel_meta = build_scoring_model_metadata(
+        config=config,
+        config_path=Path("config/scoring.v1.json"),
+        profiles_path=Path("config/profiles.json"),
+        scoring_inputs_by_provider=scoring_inputs,
+        repo_root=REPO_ROOT,
+    )
+    assert build_scoring_model_signature(abs_meta) == build_scoring_model_signature(rel_meta)

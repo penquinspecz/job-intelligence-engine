@@ -148,6 +148,18 @@ def _sorted_inputs(pointers: List[_Pointer]) -> List[Dict[str, str]]:
     return out
 
 
+def _canonical_pointer_path(path: Path | str, repo_root: Path) -> str:
+    root = repo_root.resolve()
+    path_obj = Path(path)
+    if path_obj.is_absolute():
+        resolved = path_obj.resolve(strict=False)
+        try:
+            return resolved.relative_to(root).as_posix()
+        except ValueError:
+            return resolved.as_posix()
+    return path_obj.as_posix()
+
+
 def build_scoring_model_metadata(
     *,
     config: ScoringConfig,
@@ -160,14 +172,14 @@ def build_scoring_model_metadata(
     pointers.append(
         _Pointer(
             pointer_type="scoring_config",
-            path=str(config_path),
+            path=_canonical_pointer_path(config_path, repo_root),
             sha256=compute_sha256_file(config_path) if config_path.exists() else None,
         )
     )
     pointers.append(
         _Pointer(
             pointer_type="profiles_config",
-            path=str(profiles_path),
+            path=_canonical_pointer_path(profiles_path, repo_root),
             sha256=compute_sha256_file(profiles_path) if profiles_path.exists() else None,
         )
     )
@@ -183,7 +195,7 @@ def build_scoring_model_metadata(
                     pointer_type="selected_scoring_input",
                     provider=provider,
                     profile=profile,
-                    path=str(path),
+                    path=_canonical_pointer_path(path, repo_root),
                     sha256=str(sha) if sha else None,
                 )
             )
