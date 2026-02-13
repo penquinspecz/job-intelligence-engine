@@ -74,3 +74,11 @@ We welcome good-faith security research intended to improve SignalCraft security
 - Avoid privacy violations, data destruction, and service disruption
 - Avoid testing against third-party targets in a way that could impact them
 - Use offline/snapshot modes where possible for reproduction
+
+## On-Prem Exposure Notes
+
+- Preferred exposure path for small trusted traffic is Cloudflare Tunnel + Cloudflare Access.
+- Alternative path is `kubectl port-forward` from a trusted host with strict host firewall rules.
+- Direct WAN ingress/NAT forwarding to dashboard is not recommended.
+- On-prem hardened overlays should include ingress rate limiting, secure headers, and a baseline `NetworkPolicy`.
+- Dashboard artifact serving must remain constrained to indexed run artifacts (no arbitrary filesystem reads).

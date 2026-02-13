@@ -1,0 +1,33 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: jobintel-daily
+  namespace: jobintel
+spec:
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: jobintel
+              env:
+                - name: CAREERS_MODE
+                  value: "AUTO"
+                - name: JOBINTEL_SNAPSHOT_WRITE_DIR
+                  value: "/work/jobintel_snapshots"
+                - name: JOBINTEL_DATA_DIR
+                  value: "/app/data/ashby_cache"
+                - name: JOBINTEL_STATE_DIR
+                  value: "/app/state"
+              volumeMounts:
+                - name: jobintel-data
+                  mountPath: /app/data/ashby_cache
+                - name: jobintel-state
+                  mountPath: /app/state
+          volumes:
+            - name: jobintel-data
+              persistentVolumeClaim:
+                claimName: jobintel-data-pvc
+            - name: jobintel-state
+              persistentVolumeClaim:
+                claimName: jobintel-state-pvc

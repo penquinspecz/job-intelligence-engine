@@ -203,21 +203,24 @@ def _list_runs(candidate_id: str) -> List[Dict[str, Any]]:
     runs.sort(key=lambda r: r.get("timestamp") or "", reverse=True)
     return runs
 
-
 def _resolve_artifact_path(run_id: str, candidate_id: str, index: Dict[str, Any], name: str) -> Path:
-    rel = None
+    if "/" in name or "\\" in name:
+        raise HTTPException(status_code=400, detail="Invalid artifact name")
     artifacts = index.get("artifacts") if isinstance(index.get("artifacts"), dict) else {}
-    if name in artifacts:
-        rel = artifacts[name]
-    elif "/" in name:
-        rel = name
-    if not rel:
+    rel = artifacts.get(name)
+    if not isinstance(rel, str) or not rel.strip():
         raise HTTPException(status_code=404, detail="Artifact not found")
+
+    rel_path = Path(rel)
+    if rel_path.is_absolute() or ".." in rel_path.parts:
+        raise HTTPException(status_code=500, detail="Artifact mapping is invalid")
+
+    safe_candidate = _sanitize_candidate_id(candidate_id)
     try:
         candidate = RUN_REPOSITORY.resolve_run_artifact_path(
             run_id,
-            rel,
-            candidate_id=_sanitize_candidate_id(candidate_id),
+            rel_path.as_posix(),
+            candidate_id=safe_candidate,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid artifact path") from exc

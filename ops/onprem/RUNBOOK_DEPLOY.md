@@ -78,3 +78,36 @@ Success criteria:
 If it fails:
 - If host does not resolve: fix VPN DNS route first.
 - If TLS secret missing: provision cert and recreate secret before exposing endpoint.
+
+## 5) Exposure pattern (friends traffic hardening)
+
+Preferred pattern: Cloudflare Tunnel + Cloudflare Access
+- Keep cluster service private (`ClusterIP` only).
+- Terminate external access in Cloudflare Zero Trust policies.
+- Restrict by identity/email allowlist and device posture where available.
+- Keep origin host private (no direct WAN listener/NAT rule to ingress).
+
+Alternative pattern: local-only `kubectl port-forward` + host firewall
+- Use short-lived forwarding from a trusted admin host:
+
+```bash
+kubectl -n jobintel port-forward svc/jobintel-dashboard 8080:80
+```
+
+- Restrict host firewall to explicit source IPs only.
+- Do not expose dashboard via open router port forwarding.
+
+Baseline technical controls shipped in `onprem-pi` overlay:
+- Ingress rate limiting annotations + secure headers
+- Traefik middleware chain for response hardening
+- Dashboard ingress `NetworkPolicy` baseline (CNI enforcement required)
+
+Apply hardened overlay:
+
+```bash
+kubectl apply -k ops/k8s/overlays/onprem-pi
+```
+
+Security posture:
+- Dashboard artifact reads are constrained to declared run artifacts only.
+- Path traversal and malformed artifact mapping are rejected fail-closed.
