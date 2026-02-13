@@ -31,6 +31,38 @@ Determinism parity preflight (local and CI-friendly):
 make doctor
 ```
 
+## GitHub CLI Reliability (Flaky DNS/API)
+
+Symptom:
+- `gh` intermittently fails with `error connecting to api.github.com`
+- `curl` or `git` may also show `Could not resolve host: github.com`
+
+Normal path (preferred):
+- Use retry wrapper when available:
+
+```bash
+./scripts/gh_retry.sh pr checks <pr_number> --watch
+./scripts/gh_retry.sh pr merge <pr_number> --merge --delete-branch
+```
+
+Health probe (quick triage):
+
+```bash
+curl -I https://api.github.com
+curl -I https://github.com
+gh auth status
+```
+
+If health probe fails, switch to elevated network execution in this environment:
+- Re-run `gh`/`curl` operations with elevated network execution (the same host/elevated mode used for successful `gh api .../rate_limit` checks).
+- Keep commands identical; only execution mode changes.
+
+Fallback mode (manual GitHub web flow):
+- PR create URL pattern:
+  - `https://github.com/penquinspecz/SignalCraft/pull/new/<branch>`
+- Checks page:
+  - `https://github.com/penquinspecz/SignalCraft/pull/<pr_number>/checks`
+
 `make doctor` fails closed for:
 - dirty git status
 - unexpected additional worktrees holding `main`
