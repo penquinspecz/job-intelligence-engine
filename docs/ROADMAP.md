@@ -53,18 +53,18 @@ SignalCraft is a **discovery and alerting net**, not a job board replacement.
 
 Hard rules:
 
-- [ ] Canonical outbound links always included
-- [ ] UI-safe artifacts never replace original job pages
-- [ ] Robots and policy decisions logged in provenance
-- [ ] Per-host rate limits enforced
-- [ ] Opt-out supported via provider tombstone
-- [ ] Honest, stable User-Agent
-- [ ] No paywall bypass or login scraping
+- Canonical outbound links always included
+- UI-safe artifacts never replace original job pages
+- Robots and policy decisions logged in provenance
+- Per-host rate limits enforced
+- Opt-out supported via provider tombstone
+- Honest, stable User-Agent
+- No paywall bypass or login scraping
 
 Evidence expectations:
 
-- [ ] Provenance includes scrape_mode + policy decision
-- [ ] Provider availability reasons surfaced explicitly
+- Provenance includes scrape_mode + policy decision
+- Provider availability reasons surfaced explicitly
 
 ---
 
