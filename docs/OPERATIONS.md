@@ -39,11 +39,26 @@ scripts/gh_retry.sh pr merge <pr-number> --merge --delete-branch
 scripts/gh_retry.sh pr view <pr-number>
 ```
 
+- Symptom:
+  - `gh` intermittently fails with `error connecting to api.github.com`
+  - `curl` or `git` may also show `Could not resolve host: github.com`
 - Wrapper retries transient DNS/network failures only (for example `error connecting to api.github.com`).
 - Non-network failures (invalid args, permission, failed checks) fail immediately.
 - Retry controls:
   - `GH_RETRY_MAX_ATTEMPTS` (default `4`)
   - `GH_RETRY_SLEEP_SECONDS` (default `2`)
+
+Health probe (quick triage):
+
+```bash
+curl -I https://api.github.com
+curl -I https://github.com
+gh auth status
+```
+
+If health probe fails, switch to elevated network execution in this environment:
+- Re-run `gh`/`curl` operations with elevated network execution (the same host/elevated mode used for successful `gh api .../rate_limit` checks).
+- Keep commands identical; only execution mode changes.
 
 Fallback mode when `gh` is unavailable:
 - PR creation: open manual URL `https://github.com/penquinspecz/SignalCraft/pull/new/<branch>`
