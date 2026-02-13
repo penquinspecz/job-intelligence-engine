@@ -25,6 +25,18 @@ CI:
 make gate-ci
 ```
 
+Determinism parity preflight (local and CI-friendly):
+
+```bash
+make doctor
+```
+
+`make doctor` fails closed for:
+- dirty git status
+- unexpected additional worktrees holding `main`
+- missing/mismatched `.venv` against `.python-version`
+- missing CI parity contract files (`docs/DETERMINISM_CONTRACT.md`, `config/scoring.v1.json`, `schemas/run_health.schema.v1.json`)
+
 CI smoke gate contract and failure-mode diagnostics:
 - `docs/CI_SMOKE_GATE.md`
 

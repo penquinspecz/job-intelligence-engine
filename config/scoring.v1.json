@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "version": "v1",
+  "algorithm_id": "heuristic_ai_blend_v1",
+  "module_path": "scripts/score_jobs.py",
+  "role_band_multipliers": {
+    "CS_ADJACENT": 1.15,
+    "CS_CORE": 1.25,
+    "OTHER": 0.95,
+    "SOLUTIONS": 1.05
+  },
+  "profile_weights": {
+    "boost_cs_adjacent": 5,
+    "boost_cs_core": 15,
+    "boost_solutions": 2,
+    "penalty_low_level": -5,
+    "penalty_research_heavy": -8,
+    "penalty_strong_swe_only": -4,
+    "pin_manager_ai_deployment": 30
+  },
+  "ai_blend": {
+    "weight": 0.35,
+    "min_heuristic_floor": null,
+    "max_ai_contribution": null
+  }
+}

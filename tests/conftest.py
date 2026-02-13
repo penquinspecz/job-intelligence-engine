@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 import pytest
 
@@ -6,6 +7,12 @@ _AWS_TEST_ENV_DEFAULTS = {
     "AWS_EC2_METADATA_DISABLED": "true",
     "AWS_CONFIG_FILE": "/dev/null",
     "AWS_SHARED_CREDENTIALS_FILE": "/dev/null",
+}
+
+_TEST_SANDBOX_ROOT = Path("/tmp") / "signalcraft_pytest"
+_TEST_ENV_DEFAULTS = {
+    "JOBINTEL_DATA_DIR": str(_TEST_SANDBOX_ROOT / "data"),
+    "JOBINTEL_STATE_DIR": str(_TEST_SANDBOX_ROOT / "state"),
 }
 
 
@@ -27,6 +34,10 @@ def pytest_configure(config) -> None:
     # Test-only offline defaults: avoid AWS credential/provider discovery side effects.
     for key, value in _AWS_TEST_ENV_DEFAULTS.items():
         os.environ.setdefault(key, value)
+    for key, value in _TEST_ENV_DEFAULTS.items():
+        os.environ.setdefault(key, value)
+    Path(os.environ["JOBINTEL_DATA_DIR"]).mkdir(parents=True, exist_ok=True)
+    Path(os.environ["JOBINTEL_STATE_DIR"]).mkdir(parents=True, exist_ok=True)
 
 
 def pytest_collection_modifyitems(config, items) -> None:
