@@ -1,42 +1,76 @@
 # Security Policy
 
+SignalCraft takes security seriously. If you discover a vulnerability, please report it privately so we can investigate and address it.
+
 ## Reporting a Vulnerability
 
-Please report suspected security vulnerabilities to:
-- Email: `security@your-domain.com`
-- GitHub Security Advisories for this repository (if enabled)
+**Preferred:** GitHub Security Advisories  
+Use the repository’s “Report a vulnerability” flow (Security tab). This is the fastest way to get a private thread with maintainers.
 
-Please do not open public GitHub issues with detailed vulnerability information.
+**Email:** Not available yet  
+We are intentionally not publishing a security mailbox until our intake process is staffed and tested. If GitHub Advisories are unavailable for you, open a minimal GitHub issue that says only: “Security report — please enable private reporting or contact me,” and do **not** include technical details.
 
-## Disclosure Expectations
+## What to Include
 
-SignalCraft follows a coordinated disclosure approach:
-- Report privately first.
-- Allow time for triage, validation, and remediation.
-- Public disclosure should occur only after a fix is available or coordinated timing is agreed.
+Please include enough detail to reproduce and validate the issue:
+
+- A clear description of the impact (what an attacker can do)
+- Affected component(s) and version/commit (e.g., `main` at SHA)
+- Reproduction steps or a proof-of-concept (safe, non-destructive)
+- Any relevant logs, stack traces, or artifact paths
+- Suggested fix or mitigation (if you have one)
+
+**Do not** include secrets, tokens, or private data in your report.
+
+## Coordinated Disclosure
+
+We follow coordinated disclosure:
+
+- Report privately first
+- We will acknowledge receipt as soon as practical
+- We will work with you on validation, severity, and remediation
+- Public disclosure should wait until a fix is available or a coordinated timeline is agreed
 
 ## Scope
 
-In scope:
-- Code in this repository and its first-party runtime behavior.
+### In scope
+- Code in this repository
+- First-party runtime behavior (CLI, pipeline execution, dashboard API)
+- Supply-chain risks in dependencies that affect SignalCraft execution
 
-Out of scope:
-- Third-party services, infrastructure, or vendor-managed systems.
-- Vulnerabilities in external websites that SignalCraft indexes.
-- Scraping targets themselves (career sites) as vulnerability-report scope.
+### Out of scope
+- Vulnerabilities in third-party career sites SignalCraft indexes
+- Social engineering, phishing, or physical attacks
+- DoS against external sites (including any testing that impacts a target site)
+- Attacks that require you to bypass paywalls, CAPTCHAs, login walls, or other access controls  
+  (SignalCraft explicitly does **not** do this; reports requiring it aren’t actionable.)
 
 ## Supported Versions
 
-- `main` branch only.
+- We support the latest `main` branch.
+- Releases/tags may receive fixes at our discretion, but `main` is the primary supported line.
 
-## Dependency and Supply Chain Policy
+## Safety, Data, and Secrets
 
-SignalCraft uses dependency monitoring and pinned dependency workflows (including Dependabot where configured) with best-effort maintenance.
+SignalCraft is designed to minimize sensitive data handling:
 
-No warranty is provided for third-party dependency vulnerabilities; remediation is prioritized based on severity and operational impact.
+- **No secrets in the repo** (and we will remove any discovered secrets immediately)
+- Runs produce artifacts under `state/` and may include scraped **public** job posting text/metadata
+- The pipeline includes redaction/scanning guardrails to reduce accidental secret exposure risk
 
-## Data Handling and Secrets
+If your report involves data handling concerns, include:
+- Which artifact(s) are impacted
+- Whether the issue causes unintended retention, exposure, or publication
 
-- Do not include secrets, tokens, credentials, or private data in vulnerability reports.
-- The repository should not contain secrets by design.
-- SignalCraft includes redaction/scanning guardrails in the pipeline to reduce accidental secret exposure risk.
+## Dependency & Supply Chain
+
+- Dependencies are managed via the repo’s dependency contract (lock/pins where applicable)
+- We prioritize fixes based on severity, exploitability, and operational impact
+- We may temporarily mitigate by disabling a feature path (fail-closed) if that is the safest short-term option
+
+## Safe Harbor
+
+We welcome good-faith security research intended to improve SignalCraft security. Please:
+- Avoid privacy violations, data destruction, and service disruption
+- Avoid testing against third-party targets in a way that could impact them
+- Use offline/snapshot modes where possible for reproduction
