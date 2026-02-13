@@ -20,7 +20,7 @@ endif
 
 define ensure_deps_venv
 	@if [ ! -x "$(DEPS_PY)" ]; then \
-		echo "Missing .venv. Create it with: PYENV_VERSION=3.12.12 python -m venv .venv"; \
+		echo "Missing .venv. Create it with: PYENV_VERSION=3.14.3 python -m venv .venv"; \
 		exit 2; \
 	fi
 endef
@@ -69,8 +69,8 @@ deps:
 
 tooling-sync:
 	@if [ ! -x "$(DEPS_PY)" ]; then \
-		echo "Creating .venv with Python 3.12.12..."; \
-		PYENV_VERSION=3.12.12 python -m venv .venv; \
+		echo "Creating .venv with Python 3.14.3..."; \
+		PYENV_VERSION=3.14.3 python -m venv .venv; \
 	fi
 	$(DEPS_PY) -m pip install --upgrade "pip==$(TOOLING_PIP_VERSION)" setuptools wheel \
 		"pip-tools==$(TOOLING_PIPTOOLS_VERSION)"

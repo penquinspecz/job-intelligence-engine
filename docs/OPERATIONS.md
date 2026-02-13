@@ -68,6 +68,7 @@ Fallback mode when `gh` is unavailable:
 - dirty git status
 - detached current worktree or `main` checked out in multiple worktrees
 - missing/mismatched `.venv` against `.python-version`
+  - runtime pin: `.python-version` is `3.14.3`
 - missing CI parity contract files (`docs/DETERMINISM_CONTRACT.md`, `docs/RUN_REPORT.md`, `config/scoring.v1.json`, `schemas/run_health.schema.v1.json`)
 - missing offline test harness defaults/marker wiring (`tests/conftest.py`, `pytest.ini`, `aws_integration`)
 - non-renderable `onprem-pi` overlay via `scripts/k8s_render.py --overlay onprem-pi --stdout --limit 40`

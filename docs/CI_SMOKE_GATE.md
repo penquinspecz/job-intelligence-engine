@@ -6,7 +6,7 @@ It describes exactly what CI runs, what each step proves, and how to debug failu
 ## CI Step Order
 
 1. `actions/checkout@v4`
-2. `actions/setup-python@v5` (`python-version: 3.12.12`, pip cache keyed by `requirements.txt`)
+2. `actions/setup-python@v5` (`python-version: 3.14.3`, pip cache keyed by `requirements.txt`)
 3. **Install deps**
    - `python -m venv .venv`
    - `.venv/bin/python -m pip install --upgrade pip==25.0.1 setuptools wheel pip-tools==7.4.1`

@@ -1,0 +1,34 @@
+# Python Runtime Baseline Capture
+UTC timestamp: 2026-02-13T23:36:47Z
+python3 --version:
+Python 3.14.3
+.venv/bin/python --version:
+Python 3.14.3
+
+== make gate ==
+==> pytest
+.venv/bin/python -m pytest -q
+........................................................................ [ 12%]
+.ssss................................................................... [ 25%]
+........................................................................ [ 37%]
+...ss................................................................... [ 50%]
+........ss....................sss......s................................ [ 62%]
+........................................................................ [ 75%]
+........................................................................ [ 87%]
+..............................................................s....s...  [100%]
+561 passed, 15 skipped in 37.48s
+==> snapshot immutability
+PYTHONPATH=src .venv/bin/python scripts/verify_snapshots_immutable.py
+data/anthropic_snapshots/index.html: sha256=3c2f5fcfa255fe7115675c6cc0fb4d3f3db5b8442aac2ad63fb96cf93f18c250 bytes=818
+data/openai_snapshots/index.html: sha256=db859f209b7e1eeeaa385d9dab87d02f9ee72217e5afa57edebc21932b586ffc bytes=504376
+==> replay smoke
+PYTHONPATH=src .venv/bin/python scripts/replay_smoke_fixture.py
+PASS: all artifacts match run report hashes
+REPLAY REPORT
+input:enriched_jobs_json: expected=a5e52c08fe2123372d176a0b4acd2f75d4a638a934a4cbb1eb86ef13ea41d5ea actual=a5e52c08fe2123372d176a0b4acd2f75d4a638a934a4cbb1eb86ef13ea41d5ea match=True
+scoring_input:cs: expected=a5e52c08fe2123372d176a0b4acd2f75d4a638a934a4cbb1eb86ef13ea41d5ea actual=a5e52c08fe2123372d176a0b4acd2f75d4a638a934a4cbb1eb86ef13ea41d5ea match=True
+output:ranked_csv: expected=94728d55148effda31db88be62d29d947375b55cba92ad61b1cef4cfe2846ecf actual=94728d55148effda31db88be62d29d947375b55cba92ad61b1cef4cfe2846ecf match=True
+output:ranked_families_json: expected=d707459c036035d9a716924d2aa50f7b1c7ff66987d243aaef7629c8a679ce3f actual=d707459c036035d9a716924d2aa50f7b1c7ff66987d243aaef7629c8a679ce3f match=True
+output:ranked_json: expected=f6100fed8446ca9609c8a1fe78384b6e87037b2e0f47838db9a198b91f00f8c0 actual=f6100fed8446ca9609c8a1fe78384b6e87037b2e0f47838db9a198b91f00f8c0 match=True
+output:shortlist_md: expected=4a1a468e12aaf654de0928db760555a31c8ce721d1c23ce126e6d42f2a23fc38 actual=4a1a468e12aaf654de0928db760555a31c8ce721d1c23ce126e6d42f2a23fc38 match=True
+SUMMARY: checked=6 matched=6 mismatched=0 missing=0
