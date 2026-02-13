@@ -1,6 +1,16 @@
 © 2026 Chris Menendez. Source Available — All Rights Reserved.
 This repository is publicly viewable but not open source.
-See [LICENSE](https://github.com/penquinspecz/SignalCraft/blob/main/LICENSE) for permitted use.
+See [LICENSE](LICENSE) for permitted use.
+
+<p align="center">
+  <img src="assets/brand/signalcraft-wordmark.dark.png#gh-dark-mode-only" width="520" />
+  <img src="assets/brand/signalcraft-wordmark.light.png#gh-light-mode-only" width="520" />
+</p>
+
+<p align="center">
+  <img src="assets/brand/signalcraft-logo.dark.png#gh-dark-mode-only" width="96" />
+  <img src="assets/brand/signalcraft-logo.light.png#gh-light-mode-only" width="96" />
+</p>
 
 # SignalCraft
 
@@ -9,6 +19,17 @@ See [LICENSE](https://github.com/penquinspecz/SignalCraft/blob/main/LICENSE) for
 SignalCraft is a career intelligence engine that aggregates, normalizes, scores, and analyzes job postings directly from leading technology company career pages — with deterministic logic, reproducible outputs, and guardrailed AI augmentation.
 
 It is built as infrastructure, not a script.
+
+---
+
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md)
+- [Roadmap](docs/ROADMAP.md)
+- [Operations](docs/OPERATIONS.md)
+- [Legal Positioning](docs/LEGAL_POSITIONING.md)
+- [License](LICENSE)
+- [Security Policy](SECURITY.md)
 
 ---
 
@@ -66,7 +87,7 @@ SignalCraft:
 - Respects provider policies, rate limits, and robots decisions
 - Avoids scraping arms-race behavior
 
-See [`docs/LEGAL_POSITIONING.md`](https://github.com/penquinspecz/SignalCraft/blob/main/docs/LEGAL_POSITIONING.md) for the explicit design contract.
+See [`docs/LEGAL_POSITIONING.md`](docs/LEGAL_POSITIONING.md) for the explicit design contract.
 
 ### Infrastructure-Grade Execution
 - CI + Docker smoke validation
@@ -114,7 +135,7 @@ SignalCraft is built as a layered system:
    Kubernetes CronJobs  
 
 Detailed architecture:
-[`docs/ARCHITECTURE.md`](https://github.com/penquinspecz/SignalCraft/blob/main/docs/ARCHITECTURE.md)
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 
 ---
 
@@ -143,7 +164,7 @@ SignalCraft is evolving toward:
 - Compliance-aware partnerships
 
 Full roadmap:
-[`docs/ROADMAP.md`](https://github.com/penquinspecz/SignalCraft/blob/main/docs/ROADMAP.md)
+[`docs/ROADMAP.md`](docs/ROADMAP.md)
 
 ---
 
@@ -151,7 +172,7 @@ Full roadmap:
 
 SignalCraft is Source Available, not open source.
 
-Use is governed by the SignalCraft Source Available License v1.0 in [`LICENSE`](https://github.com/penquinspecz/SignalCraft/blob/main/LICENSE).
+Use is governed by the SignalCraft Source Available License v1.0 in [`LICENSE`](LICENSE).
 
 Commercial use, redistribution, derivative works, and competing hosted services are prohibited without written permission.
 
