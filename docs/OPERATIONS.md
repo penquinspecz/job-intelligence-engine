@@ -31,6 +31,24 @@ Determinism parity preflight (local and CI-friendly):
 make doctor
 ```
 
+GitHub CLI reliability (flaky DNS/API environments):
+
+```bash
+scripts/gh_retry.sh pr checks <pr-number> --watch
+scripts/gh_retry.sh pr merge <pr-number> --merge --delete-branch
+scripts/gh_retry.sh pr view <pr-number>
+```
+
+- Wrapper retries transient DNS/network failures only (for example `error connecting to api.github.com`).
+- Non-network failures (invalid args, permission, failed checks) fail immediately.
+- Retry controls:
+  - `GH_RETRY_MAX_ATTEMPTS` (default `4`)
+  - `GH_RETRY_SLEEP_SECONDS` (default `2`)
+
+Fallback mode when `gh` is unavailable:
+- PR creation: open manual URL `https://github.com/penquinspecz/SignalCraft/pull/new/<branch>`
+- Checks: open PR checks page in browser and confirm required checks are green before merge.
+
 `make doctor` fails closed for:
 - dirty git status
 - unexpected additional worktrees holding `main`
