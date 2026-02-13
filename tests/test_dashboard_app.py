@@ -130,6 +130,39 @@ def test_dashboard_artifact_exfil_guard_rejects_invalid_mapping(tmp_path: Path, 
     assert "invalid" in resp.json()["detail"].lower()
 
 
+def test_dashboard_artifact_exfil_guard_rejects_oversized_name(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("JOBINTEL_STATE_DIR", str(tmp_path / "state"))
+
+    import importlib
+
+    import ji_engine.config as config
+    import ji_engine.dashboard.app as dashboard
+
+    importlib.reload(config)
+    dashboard = importlib.reload(dashboard)
+
+    run_id = "2026-01-22T00:00:00Z"
+    run_dir = config.RUN_METADATA_DIR / _sanitize(run_id)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "index.json").write_text(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "timestamp": run_id,
+                "artifacts": {"safe.json": "safe.json"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "safe.json").write_text("[]", encoding="utf-8")
+
+    client = TestClient(dashboard.app)
+    oversized = "a" * 300
+    resp = client.get(f"/runs/{run_id}/artifact/{oversized}")
+    assert resp.status_code == 400
+    assert "invalid artifact name" in resp.json()["detail"].lower()
+
+
 def test_dashboard_runs_populated_namespaced_candidate(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("JOBINTEL_STATE_DIR", str(tmp_path / "state"))
 

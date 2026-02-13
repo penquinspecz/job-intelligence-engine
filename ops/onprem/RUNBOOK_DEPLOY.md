@@ -101,6 +101,7 @@ Baseline technical controls shipped in `onprem-pi` overlay:
 - Ingress rate limiting annotations + secure headers
 - Traefik middleware chain for response hardening
 - Dashboard ingress `NetworkPolicy` baseline (CNI enforcement required)
+- Validation receipts: `docs/proof/onprem-ops-hardening-2026-02-13.md`
 
 Apply hardened overlay:
 

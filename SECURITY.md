@@ -82,6 +82,7 @@ We welcome good-faith security research intended to improve SignalCraft security
 - Direct WAN ingress/NAT forwarding to dashboard is not recommended.
 - On-prem hardened overlays should include ingress rate limiting, secure headers, and a baseline `NetworkPolicy`.
 - Dashboard artifact serving must remain constrained to indexed run artifacts (no arbitrary filesystem reads).
+- Keep ops/manifests hardening and dashboard application hardening independently testable and receipted.
 
 ## Edge Auth Posture (Cloudflare Access)
 

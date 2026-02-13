@@ -139,7 +139,24 @@ Without temporal diffing, the system collapses into a crawler.
 
 ---
 
-## 6. AI Insights Sidecar
+## 6. Run Metadata Index (Rebuildable SQLite)
+
+Run discovery uses a candidate-aware metadata index:
+
+- SQLite file per candidate namespace (`state/candidates/<candidate_id>/run_index.sqlite`)
+- Index stores metadata only; run artifacts remain canonical blobs on disk
+- Common dashboard/latest lookups are index-first for O(1)-style retrieval of recent runs
+- Index is fully rebuildable from run artifacts (`index.json`), so no hidden state becomes authoritative
+- Corrupt/missing index path is fail-safe:
+  - rebuild first
+  - fallback to deterministic filesystem scan if read still fails
+- `candidate_id=local` retains deterministic backward-compatibility with legacy `state/runs` reads
+
+This preserves artifact truth while removing filesystem-scan hot paths.
+
+---
+
+## 7. AI Insights Sidecar
 
 AI operates as a structured sidecar:
 
@@ -156,7 +173,7 @@ AI enhances interpretation — not ranking authority.
 
 ---
 
-## 7. Delivery Layer (API + Object Store)
+## 8. Delivery Layer (API + Object Store)
 
 Delivery surfaces artifacts for:
 
@@ -227,6 +244,7 @@ Future evolution toward product:
 - `candidate_id` becomes first-class.
 - Run state partitions by candidate.
 - No cross-user artifact leakage.
+- Candidate registry/CLI contract: `docs/CANDIDATES.md`.
 
 ### Namespace Reservation (Current Policy)
 
@@ -305,6 +323,7 @@ Deterministic intelligence with forensic guarantees is far harder to replicate.
 # Related Contracts
 
 - `docs/OPERATIONS.md`
+- `docs/CANDIDATES.md`
 - `docs/RUN_REPORT.md`
 - `docs/CI_SMOKE_GATE.md`
 - `docs/ROADMAP.md`
