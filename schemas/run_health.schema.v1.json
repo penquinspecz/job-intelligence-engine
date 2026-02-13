@@ -1,0 +1,378 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "run_health schema v1",
+  "type": "object",
+  "required": [
+    "run_health_schema_version",
+    "run_id",
+    "candidate_id",
+    "status",
+    "timestamps",
+    "durations",
+    "failed_stage",
+    "failure_codes",
+    "phases",
+    "logs",
+    "proof_bundle_path"
+  ],
+  "properties": {
+    "run_health_schema_version": {
+      "type": "integer",
+      "enum": [
+        1
+      ]
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "candidate_id": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "success",
+        "partial",
+        "failed"
+      ]
+    },
+    "timestamps": {
+      "type": "object",
+      "required": [
+        "started_at",
+        "ended_at"
+      ],
+      "properties": {
+        "started_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ended_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "durations": {
+      "type": "object",
+      "required": [
+        "total_sec"
+      ],
+      "properties": {
+        "total_sec": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "failed_stage": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "failure_codes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "AI_DISABLED",
+          "AI_STAGE_FAILED",
+          "CLASSIFY_STAGE_FAILED",
+          "COST_GUARDRAILS_EXCEEDED",
+          "ENRICH_STAGE_FAILED",
+          "LOCK_HELD",
+          "PROVIDER_POLICY_FAILED",
+          "PROVIDER_TOMBSTONED",
+          "PUBLISH_FAILED",
+          "PUBLISH_NO_BUCKET",
+          "PUBLISH_NO_CREDS",
+          "PUBLISH_PREFLIGHT_FAILED",
+          "SCORING_CONFIG_INVALID",
+          "SCORING_INPUT_MISSING",
+          "SCORING_STAGE_FAILED",
+          "SNAPSHOT_FETCH_FAILED",
+          "SNAPSHOT_MISSING",
+          "UNEXPECTED_FAILURE"
+        ]
+      }
+    },
+    "phases": {
+      "type": "object",
+      "required": [
+        "snapshot_fetch",
+        "normalize",
+        "score",
+        "publish",
+        "ai_sidecar"
+      ],
+      "properties": {
+        "snapshot_fetch": {
+          "type": "object",
+          "required": [
+            "status",
+            "duration_sec",
+            "failure_codes"
+          ],
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "not_run",
+                "skipped",
+                "success",
+                "failed"
+              ]
+            },
+            "duration_sec": {
+              "type": "number"
+            },
+            "failure_codes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "AI_DISABLED",
+                  "AI_STAGE_FAILED",
+                  "CLASSIFY_STAGE_FAILED",
+                  "COST_GUARDRAILS_EXCEEDED",
+                  "ENRICH_STAGE_FAILED",
+                  "LOCK_HELD",
+                  "PROVIDER_POLICY_FAILED",
+                  "PROVIDER_TOMBSTONED",
+                  "PUBLISH_FAILED",
+                  "PUBLISH_NO_BUCKET",
+                  "PUBLISH_NO_CREDS",
+                  "PUBLISH_PREFLIGHT_FAILED",
+                  "SCORING_CONFIG_INVALID",
+                  "SCORING_INPUT_MISSING",
+                  "SCORING_STAGE_FAILED",
+                  "SNAPSHOT_FETCH_FAILED",
+                  "SNAPSHOT_MISSING",
+                  "UNEXPECTED_FAILURE"
+                ]
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "normalize": {
+          "type": "object",
+          "required": [
+            "status",
+            "duration_sec",
+            "failure_codes"
+          ],
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "not_run",
+                "skipped",
+                "success",
+                "failed"
+              ]
+            },
+            "duration_sec": {
+              "type": "number"
+            },
+            "failure_codes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "AI_DISABLED",
+                  "AI_STAGE_FAILED",
+                  "CLASSIFY_STAGE_FAILED",
+                  "COST_GUARDRAILS_EXCEEDED",
+                  "ENRICH_STAGE_FAILED",
+                  "LOCK_HELD",
+                  "PROVIDER_POLICY_FAILED",
+                  "PROVIDER_TOMBSTONED",
+                  "PUBLISH_FAILED",
+                  "PUBLISH_NO_BUCKET",
+                  "PUBLISH_NO_CREDS",
+                  "PUBLISH_PREFLIGHT_FAILED",
+                  "SCORING_CONFIG_INVALID",
+                  "SCORING_INPUT_MISSING",
+                  "SCORING_STAGE_FAILED",
+                  "SNAPSHOT_FETCH_FAILED",
+                  "SNAPSHOT_MISSING",
+                  "UNEXPECTED_FAILURE"
+                ]
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "score": {
+          "type": "object",
+          "required": [
+            "status",
+            "duration_sec",
+            "failure_codes"
+          ],
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "not_run",
+                "skipped",
+                "success",
+                "failed"
+              ]
+            },
+            "duration_sec": {
+              "type": "number"
+            },
+            "failure_codes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "AI_DISABLED",
+                  "AI_STAGE_FAILED",
+                  "CLASSIFY_STAGE_FAILED",
+                  "COST_GUARDRAILS_EXCEEDED",
+                  "ENRICH_STAGE_FAILED",
+                  "LOCK_HELD",
+                  "PROVIDER_POLICY_FAILED",
+                  "PROVIDER_TOMBSTONED",
+                  "PUBLISH_FAILED",
+                  "PUBLISH_NO_BUCKET",
+                  "PUBLISH_NO_CREDS",
+                  "PUBLISH_PREFLIGHT_FAILED",
+                  "SCORING_CONFIG_INVALID",
+                  "SCORING_INPUT_MISSING",
+                  "SCORING_STAGE_FAILED",
+                  "SNAPSHOT_FETCH_FAILED",
+                  "SNAPSHOT_MISSING",
+                  "UNEXPECTED_FAILURE"
+                ]
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "publish": {
+          "type": "object",
+          "required": [
+            "status",
+            "duration_sec",
+            "failure_codes"
+          ],
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "not_run",
+                "skipped",
+                "success",
+                "failed"
+              ]
+            },
+            "duration_sec": {
+              "type": "number"
+            },
+            "failure_codes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "AI_DISABLED",
+                  "AI_STAGE_FAILED",
+                  "CLASSIFY_STAGE_FAILED",
+                  "COST_GUARDRAILS_EXCEEDED",
+                  "ENRICH_STAGE_FAILED",
+                  "LOCK_HELD",
+                  "PROVIDER_POLICY_FAILED",
+                  "PROVIDER_TOMBSTONED",
+                  "PUBLISH_FAILED",
+                  "PUBLISH_NO_BUCKET",
+                  "PUBLISH_NO_CREDS",
+                  "PUBLISH_PREFLIGHT_FAILED",
+                  "SCORING_CONFIG_INVALID",
+                  "SCORING_INPUT_MISSING",
+                  "SCORING_STAGE_FAILED",
+                  "SNAPSHOT_FETCH_FAILED",
+                  "SNAPSHOT_MISSING",
+                  "UNEXPECTED_FAILURE"
+                ]
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "ai_sidecar": {
+          "type": "object",
+          "required": [
+            "status",
+            "duration_sec",
+            "failure_codes"
+          ],
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "not_run",
+                "skipped",
+                "success",
+                "failed"
+              ]
+            },
+            "duration_sec": {
+              "type": "number"
+            },
+            "failure_codes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "AI_DISABLED",
+                  "AI_STAGE_FAILED",
+                  "CLASSIFY_STAGE_FAILED",
+                  "COST_GUARDRAILS_EXCEEDED",
+                  "ENRICH_STAGE_FAILED",
+                  "LOCK_HELD",
+                  "PROVIDER_POLICY_FAILED",
+                  "PROVIDER_TOMBSTONED",
+                  "PUBLISH_FAILED",
+                  "PUBLISH_NO_BUCKET",
+                  "PUBLISH_NO_CREDS",
+                  "PUBLISH_PREFLIGHT_FAILED",
+                  "SCORING_CONFIG_INVALID",
+                  "SCORING_INPUT_MISSING",
+                  "SCORING_STAGE_FAILED",
+                  "SNAPSHOT_FETCH_FAILED",
+                  "SNAPSHOT_MISSING",
+                  "UNEXPECTED_FAILURE"
+                ]
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "logs": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "proof_bundle_path": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "additionalProperties": false
+}

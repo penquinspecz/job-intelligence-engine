@@ -109,6 +109,11 @@ from jobintel.aws_runs import (
 from jobintel.delta import compute_delta
 from jobintel.discord_notify import build_run_summary_message, post_discord, resolve_webhook
 
+try:
+    from scripts.schema_validate import resolve_named_schema_path, validate_payload
+except ModuleNotFoundError:
+    from schema_validate import resolve_named_schema_path, validate_payload  # type: ignore
+
 OUTPUT_DIR = DATA_DIR
 SCORING_CONFIG_PATH = REPO_ROOT / "config" / "scoring.v1.json"
 PROFILES_CONFIG_PATH = REPO_ROOT / "config" / "profiles.json"
@@ -149,6 +154,7 @@ def _unavailable_summary() -> str:
 logger = logging.getLogger(__name__)
 USE_SUBPROCESS = True
 RUN_REPORT_SCHEMA_VERSION = 1
+RUN_HEALTH_SCHEMA_VERSION = 1
 PROOF_RECEIPT_SCHEMA_VERSION = 1
 try:
     CANDIDATE_ID = sanitize_candidate_id(os.environ.get("JOBINTEL_CANDIDATE_ID", DEFAULT_CANDIDATE_ID))
@@ -158,6 +164,29 @@ except ValueError as exc:
 LAST_RUN_JSON = candidate_last_run_pointer_path(CANDIDATE_ID)
 LAST_SUCCESS_JSON = candidate_last_success_pointer_path(CANDIDATE_ID)
 PROOFS_DIR = candidate_state_paths(CANDIDATE_ID).proofs_dir
+
+RUN_HEALTH_PHASES = ("snapshot_fetch", "normalize", "score", "publish", "ai_sidecar")
+RUN_HEALTH_FAILURE_CODES = (
+    "AI_DISABLED",
+    "AI_STAGE_FAILED",
+    "CLASSIFY_STAGE_FAILED",
+    "COST_GUARDRAILS_EXCEEDED",
+    "ENRICH_STAGE_FAILED",
+    "LOCK_HELD",
+    "PROVIDER_POLICY_FAILED",
+    "PROVIDER_TOMBSTONED",
+    "PUBLISH_FAILED",
+    "PUBLISH_NO_BUCKET",
+    "PUBLISH_NO_CREDS",
+    "PUBLISH_PREFLIGHT_FAILED",
+    "SCORING_CONFIG_INVALID",
+    "SCORING_INPUT_MISSING",
+    "SCORING_STAGE_FAILED",
+    "SNAPSHOT_FETCH_FAILED",
+    "SNAPSHOT_MISSING",
+    "UNEXPECTED_FAILURE",
+)
+_RUN_HEALTH_SCHEMA_CACHE: Optional[Dict[str, Any]] = None
 
 
 def _flush_logging() -> None:
@@ -765,8 +794,236 @@ def _run_metadata_path(run_id: str) -> Path:
     return RUN_METADATA_DIR / f"{safe_id}.json"
 
 
+def _run_health_path(run_id: str) -> Path:
+    return _run_registry_dir(run_id) / "run_health.v1.json"
+
+
 def _sanitize_run_id(run_id: str) -> str:
     return run_id.replace(":", "").replace("-", "").replace(".", "")
+
+
+def _run_health_schema() -> Dict[str, Any]:
+    global _RUN_HEALTH_SCHEMA_CACHE
+    if _RUN_HEALTH_SCHEMA_CACHE is None:
+        schema_path = resolve_named_schema_path("run_health", RUN_HEALTH_SCHEMA_VERSION)
+        _RUN_HEALTH_SCHEMA_CACHE = json.loads(schema_path.read_text(encoding="utf-8"))
+    return _RUN_HEALTH_SCHEMA_CACHE
+
+
+def _phase_for_stage(stage_name: str) -> Optional[str]:
+    base = stage_name.split(":", 1)[0]
+    if base == "publish":
+        return "publish"
+    if base == "scrape":
+        return "snapshot_fetch"
+    if base in {"classify", "enrich", "provider_policy"}:
+        return "normalize"
+    if base in {"score", "cost_guardrails", "scoring_model_metadata"}:
+        return "score"
+    if base in {"ai_augment", "ai_insights", "ai_job_briefs"}:
+        return "ai_sidecar"
+    return None
+
+
+def _coerce_duration(value: Any) -> float:
+    try:
+        return round(max(0.0, float(value)), 3)
+    except Exception:
+        return 0.0
+
+
+def _duration_between_iso(started_at: Optional[str], ended_at: Optional[str]) -> Optional[float]:
+    if not started_at or not ended_at:
+        return None
+    try:
+        start_dt = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+        end_dt = datetime.fromisoformat(ended_at.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return round(max(0.0, (end_dt - start_dt).total_seconds()), 3)
+
+
+def _failure_code_for_context(
+    *,
+    failed_stage: Optional[str],
+    error_text: Optional[str],
+    s3_meta: Optional[Dict[str, Any]],
+    ai_requested: bool,
+) -> List[str]:
+    codes: List[str] = []
+    failed = (failed_stage or "").lower()
+    err = (error_text or "").lower()
+
+    if "snapshot not found" in err:
+        codes.append("SNAPSHOT_MISSING")
+    if failed.startswith("scrape"):
+        codes.append("SNAPSHOT_FETCH_FAILED")
+    if failed.startswith("classify"):
+        codes.append("CLASSIFY_STAGE_FAILED")
+    if failed.startswith("enrich"):
+        codes.append("ENRICH_STAGE_FAILED")
+    if failed.startswith("provider_policy"):
+        if "tombstone" in err:
+            codes.append("PROVIDER_TOMBSTONED")
+        else:
+            codes.append("PROVIDER_POLICY_FAILED")
+    if failed.startswith("score"):
+        if "score input missing" in err:
+            codes.append("SCORING_INPUT_MISSING")
+        else:
+            codes.append("SCORING_STAGE_FAILED")
+    if failed == "scoring_model_metadata":
+        codes.append("SCORING_CONFIG_INVALID")
+    if failed == "cost_guardrails":
+        codes.append("COST_GUARDRAILS_EXCEEDED")
+    if failed.startswith("ai_"):
+        codes.append("AI_STAGE_FAILED")
+    if failed == "startup" and "already running" in err:
+        codes.append("LOCK_HELD")
+    if not ai_requested:
+        codes.append("AI_DISABLED")
+
+    if isinstance(s3_meta, dict):
+        status = str(s3_meta.get("status") or "")
+        reason = str(s3_meta.get("reason") or "")
+        reason_lower = reason.lower()
+        if status == "error" or reason:
+            if reason == "missing_bucket":
+                codes.append("PUBLISH_NO_BUCKET")
+            elif reason == "preflight_failed":
+                preflight = s3_meta.get("preflight") if isinstance(s3_meta.get("preflight"), dict) else {}
+                preflight_errors = preflight.get("errors") if isinstance(preflight, dict) else []
+                if any("cred" in str(item).lower() for item in (preflight_errors or [])):
+                    codes.append("PUBLISH_NO_CREDS")
+                else:
+                    codes.append("PUBLISH_PREFLIGHT_FAILED")
+            elif reason_lower.startswith("publish_failed"):
+                codes.append("PUBLISH_FAILED")
+
+    if failed and not codes:
+        codes.append("UNEXPECTED_FAILURE")
+
+    unique_sorted = sorted({code for code in codes if code in RUN_HEALTH_FAILURE_CODES})
+    return unique_sorted
+
+
+def _build_run_health_payload(
+    *,
+    run_id: str,
+    telemetry: Dict[str, Any],
+    final_status: str,
+    s3_meta: Optional[Dict[str, Any]],
+    logs: Optional[Dict[str, Any]],
+    proof_bundle_path: Optional[str],
+) -> Dict[str, Any]:
+    started_at = telemetry.get("started_at")
+    ended_at = telemetry.get("ended_at")
+    stage_entries = telemetry.get("stages") if isinstance(telemetry.get("stages"), dict) else {}
+    failed_stage = telemetry.get("failed_stage")
+    error_text = telemetry.get("error")
+    ai_requested = bool(telemetry.get("ai_requested", False))
+    failure_codes = _failure_code_for_context(
+        failed_stage=failed_stage if isinstance(failed_stage, str) else None,
+        error_text=error_text if isinstance(error_text, str) else None,
+        s3_meta=s3_meta if isinstance(s3_meta, dict) else None,
+        ai_requested=ai_requested,
+    )
+
+    phases: Dict[str, Dict[str, Any]] = {
+        phase: {"status": "not_run", "duration_sec": 0.0, "failure_codes": []} for phase in RUN_HEALTH_PHASES
+    }
+    for stage_name, stage_payload in stage_entries.items():
+        if not isinstance(stage_payload, dict):
+            continue
+        phase = _phase_for_stage(str(stage_name))
+        if not phase:
+            continue
+        duration = _coerce_duration(stage_payload.get("duration_sec"))
+        phases[phase]["duration_sec"] = round(float(phases[phase]["duration_sec"]) + duration, 3)
+        if phases[phase]["status"] == "not_run":
+            phases[phase]["status"] = "success"
+
+    if isinstance(s3_meta, dict):
+        publish_phase = phases["publish"]
+        publish_status = str(s3_meta.get("status") or "")
+        if publish_status == "ok":
+            publish_phase["status"] = "success"
+        elif publish_status in {"disabled", "skipped"}:
+            publish_phase["status"] = "skipped"
+        elif publish_status:
+            publish_phase["status"] = "failed"
+
+    if not ai_requested and phases["ai_sidecar"]["status"] == "not_run":
+        phases["ai_sidecar"]["status"] = "skipped"
+
+    failed_phase = _phase_for_stage(str(failed_stage)) if isinstance(failed_stage, str) else None
+    if failed_phase:
+        phases[failed_phase]["status"] = "failed"
+
+    for code in failure_codes:
+        target_phase = "score"
+        if code.startswith("SNAPSHOT_"):
+            target_phase = "snapshot_fetch"
+        elif code in {"CLASSIFY_STAGE_FAILED", "ENRICH_STAGE_FAILED", "PROVIDER_POLICY_FAILED", "PROVIDER_TOMBSTONED"}:
+            target_phase = "normalize"
+        elif code.startswith("PUBLISH_"):
+            target_phase = "publish"
+        elif code.startswith("AI_"):
+            target_phase = "ai_sidecar"
+        phases[target_phase]["failure_codes"].append(code)
+
+    for phase in RUN_HEALTH_PHASES:
+        phases[phase]["failure_codes"] = sorted(set(phases[phase]["failure_codes"]))
+
+    health_status = "success"
+    if final_status == "error":
+        health_status = "failed"
+    elif any(phases[phase]["status"] == "failed" for phase in RUN_HEALTH_PHASES):
+        health_status = "partial"
+
+    return {
+        "run_health_schema_version": RUN_HEALTH_SCHEMA_VERSION,
+        "run_id": run_id,
+        "candidate_id": CANDIDATE_ID,
+        "status": health_status,
+        "timestamps": {
+            "started_at": started_at if isinstance(started_at, str) else None,
+            "ended_at": ended_at if isinstance(ended_at, str) else None,
+        },
+        "durations": {"total_sec": _duration_between_iso(started_at, ended_at)},
+        "failed_stage": failed_stage if isinstance(failed_stage, str) else None,
+        "failure_codes": failure_codes,
+        "phases": phases,
+        "logs": logs if isinstance(logs, dict) else {},
+        "proof_bundle_path": proof_bundle_path,
+    }
+
+
+def _write_run_health_artifact(
+    *,
+    run_id: str,
+    telemetry: Dict[str, Any],
+    final_status: str,
+    s3_meta: Optional[Dict[str, Any]],
+    logs: Optional[Dict[str, Any]],
+    proof_bundle_path: Optional[str],
+) -> Optional[Path]:
+    payload = _build_run_health_payload(
+        run_id=run_id,
+        telemetry=telemetry,
+        final_status=final_status,
+        s3_meta=s3_meta,
+        logs=logs,
+        proof_bundle_path=proof_bundle_path,
+    )
+    errors = validate_payload(payload, _run_health_schema())
+    if errors:
+        logger.error("run_health schema validation failed for run_id=%s: %s", run_id, "; ".join(errors))
+        return None
+    path = _run_health_path(run_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _write_canonical_json(path, payload)
+    return path
 
 
 def _resolve_providers(args: argparse.Namespace) -> List[str]:
@@ -3341,6 +3598,8 @@ def main() -> int:
 
     def _finalize(status: str, extra: Optional[Dict[str, Any]] = None) -> str:
         final_status = status
+        s3_meta: Dict[str, Any] = {"status": "disabled"}
+        proof_receipt_path: Optional[str] = None
         telemetry["status"] = final_status
         telemetry["hashes"] = {
             "raw": _hash_file(_provider_raw_jobs_json("openai")),
@@ -3591,9 +3850,9 @@ def main() -> int:
             telemetry,
         )
 
-        s3_meta: Dict[str, Any] = {"status": "disabled"}
         s3_failed = False
         s3_exit_code: Optional[int] = None
+        publish_started = time.time()
         dry_run = False
         publish_requested_env = os.environ.get("PUBLISH_S3", "0").strip() == "1"
         publish_requested_cli = bool(args.publish_s3 or args.publish_dry_run)
@@ -3674,6 +3933,8 @@ def main() -> int:
                 logger.info("S3 publish not requested (PUBLISH_S3 != 1).")
             else:
                 logger.info("S3 publish disabled.")
+
+        telemetry["stages"]["publish"] = {"duration_sec": round(max(0.0, time.time() - publish_started), 3)}
 
         required_contract = require_s3 and not dry_run
         publish_section = _build_publish_section(
@@ -3827,6 +4088,7 @@ def main() -> int:
                         publish_section=publish_section,
                     )
                     if proof_path:
+                        proof_receipt_path = str(proof_path)
                         logger.info("Proof receipt written: %s", proof_path)
             except Exception as exc:
                 logger.warning("Failed to write proof receipt: %r", exc)
@@ -3891,6 +4153,14 @@ def main() -> int:
             dashboard_url,
             json.dumps(discord_status_by_provider, sort_keys=True) if discord_status_by_provider else None,
             json.dumps(provider_availability, sort_keys=True),
+        )
+        _write_run_health_artifact(
+            run_id=run_id,
+            telemetry=telemetry,
+            final_status=final_status,
+            s3_meta=s3_meta,
+            logs=run_log_pointers,
+            proof_bundle_path=proof_receipt_path,
         )
         if s3_failed:
             raise SystemExit(s3_exit_code or 2)
