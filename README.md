@@ -1,6 +1,6 @@
 © 2026 Chris Menendez. Source Available — All Rights Reserved.
 This repository is publicly viewable but not open source.
-See LICENSE for permitted use.
+See [LICENSE](https://github.com/penquinspecz/SignalCraft/blob/main/LICENSE) for permitted use.
 
 # SignalCraft
 
@@ -66,7 +66,7 @@ SignalCraft:
 - Respects provider policies, rate limits, and robots decisions
 - Avoids scraping arms-race behavior
 
-See `docs/LEGAL_POSITIONING.md` for the explicit design contract.
+See [`docs/LEGAL_POSITIONING.md`](https://github.com/penquinspecz/SignalCraft/blob/main/docs/LEGAL_POSITIONING.md) for the explicit design contract.
 
 ### Infrastructure-Grade Execution
 - CI + Docker smoke validation
@@ -114,7 +114,7 @@ SignalCraft is built as a layered system:
    Kubernetes CronJobs  
 
 Detailed architecture:
-`docs/ARCHITECTURE.md`
+[`docs/ARCHITECTURE.md`](https://github.com/penquinspecz/SignalCraft/blob/main/docs/ARCHITECTURE.md)
 
 ---
 
@@ -143,7 +143,7 @@ SignalCraft is evolving toward:
 - Compliance-aware partnerships
 
 Full roadmap:
-`docs/ROADMAP.md`
+[`docs/ROADMAP.md`](https://github.com/penquinspecz/SignalCraft/blob/main/docs/ROADMAP.md)
 
 ---
 
@@ -151,7 +151,7 @@ Full roadmap:
 
 SignalCraft is Source Available, not open source.
 
-Use is governed by the SignalCraft Source Available License v1.0 in `LICENSE`.
+Use is governed by the SignalCraft Source Available License v1.0 in [`LICENSE`](https://github.com/penquinspecz/SignalCraft/blob/main/LICENSE).
 
 Commercial use, redistribution, derivative works, and competing hosted services are prohibited without written permission.
 
