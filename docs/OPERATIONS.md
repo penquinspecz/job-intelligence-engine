@@ -59,6 +59,38 @@ make dashboard
 
 If `fastapi`/`uvicorn` are missing, dashboard startup fails closed with a clear install command.
 
+Run metadata index (Milestone 13):
+- Rebuild command: `scripts/rebuild_run_index.py`
+- Default behavior rebuilds `candidate_id=local`.
+- Use this after manual state repair, index corruption, or migration checks.
+
+Rebuild local candidate index:
+
+```bash
+python scripts/rebuild_run_index.py --json
+```
+
+Rebuild specific candidate index:
+
+```bash
+python scripts/rebuild_run_index.py --candidate-id alice --json
+```
+
+Rebuild all discovered candidate indexes:
+
+```bash
+python scripts/rebuild_run_index.py --all-candidates --json
+```
+
+Expected JSON fields per candidate:
+- `candidate_id`
+- `runs_indexed`
+- `db_path`
+
+Corrupt index behavior:
+- Runtime read path attempts rebuild first.
+- If rebuild/read still fails, repository falls back to deterministic filesystem scan and logs warning.
+
 Provider registry (Milestone 5 foundation):
 
 - Canonical file: `config/providers.json` (schema: `schemas/providers.schema.v1.json`)
