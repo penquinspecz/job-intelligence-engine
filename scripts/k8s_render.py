@@ -19,6 +19,7 @@ OVERLAY_DIRS = {
     "live": REPO_ROOT / "ops" / "k8s" / "overlays" / "live",
     "onprem": REPO_ROOT / "ops" / "k8s" / "jobintel" / "overlays" / "onprem",
     "onprem-wrapper": REPO_ROOT / "ops" / "k8s" / "overlays" / "onprem",
+    "onprem-pi": REPO_ROOT / "ops" / "k8s" / "overlays" / "onprem-pi",
 }
 
 REQUIRED_SECRET_KEYS = ["JOBINTEL_S3_BUCKET"]
@@ -99,6 +100,9 @@ def _substitute_placeholders(content: str, source_path: Path) -> str:
 
 
 def _render_with_overlays(overlays: list[str], image_override_arg: str | None = None) -> str:
+    if len(overlays) == 1 and overlays[0] == "onprem-pi":
+        return _render_manifest(OVERLAY_DIRS["onprem-pi"])
+
     overlay_dirs = [OVERLAY_DIRS[name] for name in overlays]
     patch_paths: list[Path] = []
     for overlay_dir in overlay_dirs:
