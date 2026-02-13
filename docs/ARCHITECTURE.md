@@ -244,6 +244,7 @@ Future evolution toward product:
 - `candidate_id` becomes first-class.
 - Run state partitions by candidate.
 - No cross-user artifact leakage.
+- Candidate registry/CLI contract: `docs/CANDIDATES.md`.
 
 ### Namespace Reservation (Current Policy)
 
@@ -322,6 +323,7 @@ Deterministic intelligence with forensic guarantees is far harder to replicate.
 # Related Contracts
 
 - `docs/OPERATIONS.md`
+- `docs/CANDIDATES.md`
 - `docs/RUN_REPORT.md`
 - `docs/CI_SMOKE_GATE.md`
 - `docs/ROADMAP.md`

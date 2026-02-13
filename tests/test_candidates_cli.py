@@ -29,6 +29,7 @@ def test_candidate_add_creates_namespaced_dirs(tmp_path: Path, monkeypatch, caps
     created = json.loads(capsys.readouterr().out)
 
     assert created["candidate_id"] == "alice"
+    assert created["registry_path"] == str(config.STATE_DIR / "candidates" / "registry.json")
     assert config.candidate_state_dir("alice").exists()
     assert config.candidate_run_metadata_dir("alice").exists()
     assert config.candidate_history_dir("alice").exists()
@@ -37,6 +38,28 @@ def test_candidate_add_creates_namespaced_dirs(tmp_path: Path, monkeypatch, caps
     profile = _read(config.candidate_state_dir("alice") / "candidate_profile.json")
     assert profile["candidate_id"] == "alice"
     assert profile["display_name"] == "Alice Example"
+
+
+def test_candidate_add_honors_state_dir_override(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("JOBINTEL_STATE_DIR", str(tmp_path / "state_default"))
+    _config, _candidate_registry, candidates_cli = _reload_modules()
+
+    override_state = tmp_path / "state_override"
+    rc = candidates_cli.main(
+        [
+            "--state-dir",
+            str(override_state),
+            "add",
+            "alice",
+            "--json",
+        ]
+    )
+    assert rc == 0
+    created = json.loads(capsys.readouterr().out)
+    assert created["registry_path"] == str(override_state / "candidates" / "registry.json")
+    assert Path(created["profile_path"]).is_file()
+    assert Path(created["candidate_dir"]) == override_state / "candidates" / "alice"
+    assert not (tmp_path / "state_default" / "candidates" / "alice").exists()
 
 
 def test_candidate_add_rejects_invalid_candidate_id(tmp_path: Path, monkeypatch, capsys) -> None:

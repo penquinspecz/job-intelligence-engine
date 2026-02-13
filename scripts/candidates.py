@@ -7,20 +7,26 @@ except ModuleNotFoundError:
     from scripts import _bootstrap  # noqa: F401
 
 import argparse
+import importlib
 import json
+import os
 import sys
-from typing import Optional
+from pathlib import Path
+from typing import Any, Optional
 
-from ji_engine.candidates.registry import (
-    CandidateValidationError,
-    add_candidate,
-    list_candidates,
-    validate_candidate_profiles,
-)
+
+def _load_registry_module(state_dir: str | None) -> Any:
+    if state_dir:
+        os.environ["JOBINTEL_STATE_DIR"] = str(Path(state_dir).expanduser())
+    import ji_engine.candidates.registry as candidate_registry
+    import ji_engine.config as config
+
+    importlib.reload(config)
+    return importlib.reload(candidate_registry)
 
 
 def cmd_list(args: argparse.Namespace) -> int:
-    candidates = list_candidates()
+    candidates = args.registry_module.list_candidates()
     if args.json:
         print(json.dumps({"candidates": candidates}, sort_keys=True))
         return 0
@@ -32,9 +38,10 @@ def cmd_list(args: argparse.Namespace) -> int:
 
 
 def cmd_add(args: argparse.Namespace) -> int:
+    candidate_registry = args.registry_module
     try:
-        created = add_candidate(args.candidate_id, args.display_name)
-    except (CandidateValidationError, ValueError) as exc:
+        created = candidate_registry.add_candidate(args.candidate_id, args.display_name)
+    except (candidate_registry.CandidateValidationError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 
@@ -49,7 +56,7 @@ def cmd_add(args: argparse.Namespace) -> int:
 
 
 def cmd_validate(args: argparse.Namespace) -> int:
-    ok, errors = validate_candidate_profiles()
+    ok, errors = args.registry_module.validate_candidate_profiles()
     if args.json:
         print(json.dumps({"ok": ok, "errors": errors}, sort_keys=True))
     else:
@@ -64,6 +71,10 @@ def cmd_validate(args: argparse.Namespace) -> int:
 
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Manage file-backed candidate registry and profiles.")
+    parser.add_argument(
+        "--state-dir",
+        help="Override state directory (sets JOBINTEL_STATE_DIR for this process).",
+    )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     list_cmd = sub.add_parser("list", help="List registered candidates")
@@ -81,6 +92,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     validate_cmd.set_defaults(func=cmd_validate)
 
     args = parser.parse_args(argv)
+    args.registry_module = _load_registry_module(args.state_dir)
     return args.func(args)
 
 

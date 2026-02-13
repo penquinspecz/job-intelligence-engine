@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Literal, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -20,6 +20,7 @@ from ji_engine.utils.atomic_write import atomic_write_text
 CANDIDATE_PROFILE_SCHEMA_VERSION = 1
 CANDIDATE_REGISTRY_SCHEMA_VERSION = 1
 CANDIDATE_PROFILE_FILENAME = "candidate_profile.json"
+CANDIDATE_REGISTRY_FILENAME = "registry.json"
 
 
 class CandidateConstraints(BaseModel):
@@ -32,7 +33,7 @@ class CandidateConstraints(BaseModel):
 class CandidateProfile(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: int = CANDIDATE_PROFILE_SCHEMA_VERSION
+    schema_version: Literal[1] = CANDIDATE_PROFILE_SCHEMA_VERSION
     candidate_id: str
     display_name: str
     target_roles: List[str] = Field(default_factory=list)
@@ -50,7 +51,7 @@ class CandidateRegistryEntry(BaseModel):
 class CandidateRegistry(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: int = CANDIDATE_REGISTRY_SCHEMA_VERSION
+    schema_version: Literal[1] = CANDIDATE_REGISTRY_SCHEMA_VERSION
     candidates: List[CandidateRegistryEntry] = Field(default_factory=list)
 
 
@@ -58,8 +59,12 @@ class CandidateValidationError(ValueError):
     pass
 
 
+def candidate_registry_path() -> Path:
+    return STATE_DIR / "candidates" / CANDIDATE_REGISTRY_FILENAME
+
+
 def _registry_path() -> Path:
-    return STATE_DIR / "candidates" / "registry.json"
+    return candidate_registry_path()
 
 
 def _profile_path(candidate_id: str) -> Path:
@@ -192,6 +197,7 @@ def add_candidate(candidate_id: str, display_name: str | None = None) -> Dict[st
         "candidate_id": safe_id,
         "profile_path": str(profile_path),
         "candidate_dir": str(candidate_state_dir(safe_id)),
+        "registry_path": str(candidate_registry_path()),
     }
 
 

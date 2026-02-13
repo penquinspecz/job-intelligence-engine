@@ -29,6 +29,7 @@ It is built as infrastructure, not a script.
 - [Architecture](docs/ARCHITECTURE.md)
 - [Roadmap](docs/ROADMAP.md)
 - [Operations](docs/OPERATIONS.md)
+- [Candidates](docs/CANDIDATES.md)
 - [Legal Positioning](docs/LEGAL_POSITIONING.md)
 - [License](LICENSE)
 - [Security Policy](SECURITY.md)

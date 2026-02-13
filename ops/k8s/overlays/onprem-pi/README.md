@@ -11,3 +11,4 @@ Notes:
 - No secrets are committed here.
 - This is cloud-agnostic and intended for k3s on-prem deployments.
 - Preferred external exposure is Cloudflare Tunnel/Access, not direct WAN ingress.
+- This overlay intentionally contains only ops/manifests hardening. Dashboard artifact-serving guards are validated separately in dashboard tests.

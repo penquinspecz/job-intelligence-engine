@@ -205,6 +205,8 @@ def _list_runs(candidate_id: str) -> List[Dict[str, Any]]:
 
 
 def _resolve_artifact_path(run_id: str, candidate_id: str, index: Dict[str, Any], name: str) -> Path:
+    if not isinstance(name, str) or not name.strip() or len(name) > 255:
+        raise HTTPException(status_code=400, detail="Invalid artifact name")
     if "/" in name or "\\" in name:
         raise HTTPException(status_code=400, detail="Invalid artifact name")
     artifacts = index.get("artifacts") if isinstance(index.get("artifacts"), dict) else {}
