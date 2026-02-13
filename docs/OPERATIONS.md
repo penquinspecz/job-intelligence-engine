@@ -75,6 +75,18 @@ State root override for candidate operations:
 python scripts/candidates.py --state-dir /path/to/state add alice --json
 ```
 
+Candidate state contract (canonical layout):
+- Candidate root: `state/candidates/<candidate_id>/`
+- User inputs: `inputs/candidate_profile.json`
+- System state pointers: `system_state/{last_run.json,last_success.json,run_index.sqlite}`
+- Derived artifacts: `{runs/,history/,user_state/,proofs/}`
+- Canonical path resolution is implemented in `src/ji_engine/config.py` (`candidate_state_paths(...)`).
+
+Backward compatibility policy (`candidate_id=local`):
+- Reads prefer namespaced paths and then fall back to legacy global paths where required.
+- Pointer writers keep legacy global pointer mirrors for `local` to avoid breaking existing consumers.
+- Legacy candidate profile location (`state/candidates/<candidate_id>/candidate_profile.json`) remains readable.
+
 Run metadata index (Milestone 13):
 - Rebuild command: `scripts/rebuild_run_index.py`
 - Default behavior rebuilds `candidate_id=local`.

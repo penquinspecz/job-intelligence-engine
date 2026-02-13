@@ -279,6 +279,9 @@ def test_run_metadata_written_and_deterministic(tmp_path: Path, monkeypatch) -> 
     assert data["ai_accounting"]["totals"]["calls"] == 0
     assert data["ai_accounting"]["totals"]["tokens_total"] == 0
     assert data["ai_accounting"]["totals"]["estimated_cost_usd"] == "0.000000"
+    assert data["candidate_input_provenance"]["candidate_id"] == run_daily.CANDIDATE_ID
+    assert data["candidate_input_provenance"]["text_input_artifacts"] == {}
+    assert data["provenance"]["candidate_inputs"]["text_input_artifacts"] == {}
     assert path1.name == "20260101T000000Z.json"
     schema = json.loads(resolve_schema_path(1).read_text(encoding="utf-8"))
     assert validate_report(data, schema) == []

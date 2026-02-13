@@ -19,6 +19,7 @@ from ji_engine.config import (
     DEFAULT_CANDIDATE_ID,
     RUN_METADATA_DIR,
     STATE_DIR,
+    candidate_run_index_path,
     candidate_run_metadata_dir,
     candidate_state_dir,
     sanitize_candidate_id,
@@ -84,7 +85,11 @@ class FileSystemRunRepository(RunRepository):
         self._fallback_logged: set[str] = set()
 
     def _db_path(self, candidate_id: str) -> Path:
-        return candidate_state_dir(candidate_id) / "run_index.sqlite"
+        namespaced = candidate_run_index_path(candidate_id)
+        legacy = candidate_state_dir(candidate_id) / "run_index.sqlite"
+        if namespaced.exists() or not legacy.exists():
+            return namespaced
+        return legacy
 
     def _candidate_run_roots(self, candidate_id: str) -> List[Path]:
         roots: List[Path] = []

@@ -9,7 +9,12 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from ji_engine.config import DATA_DIR, DEFAULT_CANDIDATE_ID, RUN_METADATA_DIR, sanitize_candidate_id
+from ji_engine.config import (
+    DATA_DIR,
+    DEFAULT_CANDIDATE_ID,
+    candidate_last_run_read_paths,
+    sanitize_candidate_id,
+)
 from jobintel.ai_insights import PROMPT_PATH, generate_insights
 from jobintel.discord_notify import post_discord, resolve_webhook
 
@@ -36,12 +41,11 @@ def _read_last_run(path: Path) -> Optional[str]:
 
 
 def _last_run_id(candidate_id: str) -> Optional[str]:
-    namespaced = RUN_METADATA_DIR.parent / "candidates" / candidate_id / "last_run.json"
-    run_id = _read_last_run(namespaced)
-    if run_id:
-        return run_id
-    if candidate_id == DEFAULT_CANDIDATE_ID:
-        return _read_last_run(RUN_METADATA_DIR.parent / "last_run.json")
+    safe_candidate = sanitize_candidate_id(candidate_id)
+    for path in candidate_last_run_read_paths(safe_candidate):
+        run_id = _read_last_run(path)
+        if run_id:
+            return run_id
     return None
 
 

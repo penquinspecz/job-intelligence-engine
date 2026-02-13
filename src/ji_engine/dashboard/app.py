@@ -28,7 +28,8 @@ from ji_engine.config import (
     DEFAULT_CANDIDATE_ID,
     RUN_METADATA_DIR,
     STATE_DIR,
-    candidate_state_dir,
+    candidate_last_success_read_paths,
+    candidate_state_paths,
     sanitize_candidate_id,
 )
 from ji_engine.run_repository import FileSystemRunRepository, RunRepository
@@ -257,12 +258,10 @@ def _s3_enabled() -> bool:
 
 def _state_last_success_path(candidate_id: str) -> Path:
     safe_candidate = _sanitize_candidate_id(candidate_id)
-    namespaced = candidate_state_dir(safe_candidate) / "last_success.json"
-    if namespaced.exists():
-        return namespaced
-    if safe_candidate == DEFAULT_CANDIDATE_ID:
-        return STATE_DIR / "last_success.json"
-    return namespaced
+    for path in candidate_last_success_read_paths(safe_candidate):
+        if path.exists():
+            return path
+    return candidate_last_success_read_paths(safe_candidate)[0]
 
 
 def _read_local_json(path: Path) -> Dict[str, Any]:
@@ -315,7 +314,7 @@ def _read_s3_json(bucket: str, key: str) -> Tuple[Optional[Dict[str, Any]], str]
 
 def _local_proof_path(run_id: str, candidate_id: str) -> Path:
     safe_candidate = _sanitize_candidate_id(candidate_id)
-    namespaced = candidate_state_dir(safe_candidate) / "proofs" / f"{run_id}.json"
+    namespaced = candidate_state_paths(safe_candidate).proofs_dir / f"{run_id}.json"
     if namespaced.exists():
         return namespaced
     if safe_candidate == DEFAULT_CANDIDATE_ID:

@@ -35,7 +35,7 @@ def test_candidate_add_creates_namespaced_dirs(tmp_path: Path, monkeypatch, caps
     assert config.candidate_history_dir("alice").exists()
     assert config.candidate_user_state_dir("alice").exists()
 
-    profile = _read(config.candidate_state_dir("alice") / "candidate_profile.json")
+    profile = _read(config.candidate_profile_path("alice"))
     assert profile["candidate_id"] == "alice"
     assert profile["display_name"] == "Alice Example"
 
@@ -80,7 +80,7 @@ def test_candidate_profile_validation(tmp_path: Path, monkeypatch, capsys) -> No
     assert rc == 0
     capsys.readouterr()
 
-    profile_path = config.candidate_state_dir("bob") / "candidate_profile.json"
+    profile_path = config.candidate_profile_path("bob")
     broken = _read(profile_path)
     broken.pop("display_name")
     profile_path.write_text(json.dumps(broken), encoding="utf-8")
@@ -90,3 +90,66 @@ def test_candidate_profile_validation(tmp_path: Path, monkeypatch, capsys) -> No
     payload = json.loads(capsys.readouterr().out)
     assert payload["ok"] is False
     assert any("invalid candidate profile" in item for item in payload["errors"])
+
+
+def test_ingest_text_writes_hashed_artifact(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("JOBINTEL_STATE_DIR", str(tmp_path / "state"))
+    config, _candidate_registry, candidates_cli = _reload_modules()
+
+    assert candidates_cli.main(["add", "alice"]) == 0
+    capsys.readouterr()
+    rc = candidates_cli.main(
+        [
+            "ingest-text",
+            "alice",
+            "--resume-text",
+            "Experienced CS leader with enterprise GTM background.",
+            "--json",
+        ]
+    )
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    artifact = payload["text_input_artifacts"]["resume_text"]
+    assert len(artifact["sha256"]) == 64
+    artifact_path = config.STATE_DIR / artifact["artifact_path"]
+    assert artifact_path.exists()
+    artifact_payload = _read(artifact_path)
+    assert artifact_payload["text"] == "Experienced CS leader with enterprise GTM background."
+
+
+def test_ingest_text_enforces_max_size(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("JOBINTEL_STATE_DIR", str(tmp_path / "state"))
+    _config, _candidate_registry, candidates_cli = _reload_modules()
+
+    assert candidates_cli.main(["add", "alice"]) == 0
+    capsys.readouterr()
+    huge = "a" * 120001
+    rc = candidates_cli.main(["ingest-text", "alice", "--resume-text", huge])
+    assert rc == 2
+    assert "exceeds max bytes" in capsys.readouterr().err
+
+
+def test_ingest_text_output_does_not_leak_raw_text(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("JOBINTEL_STATE_DIR", str(tmp_path / "state"))
+    _config, _candidate_registry, candidates_cli = _reload_modules()
+
+    secret_like = "Authorization: Bearer token_abcdefghijklmnopqrstuvwxyz12345"
+    assert candidates_cli.main(["add", "alice"]) == 0
+    capsys.readouterr()
+    rc = candidates_cli.main(["ingest-text", "alice", "--resume-text", secret_like])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "updated candidate text" in out
+    assert secret_like not in out
+
+
+def test_set_profile_text_alias(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("JOBINTEL_STATE_DIR", str(tmp_path / "state"))
+    _config, _candidate_registry, candidates_cli = _reload_modules()
+
+    assert candidates_cli.main(["add", "alice"]) == 0
+    capsys.readouterr()
+    rc = candidates_cli.main(["set-profile-text", "alice", "--summary-text", "Hands-on operator", "--json"])
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["updated_fields"] == ["summary_text"]

@@ -422,3 +422,73 @@ Product surface comes after plumbing and security receipts:
 - Billing/cost attribution readiness
 - Provider scaling + maintenance tooling
 - UI (only after API is boring)
+
+---
+
+## Archive — Milestones 1–9 (Completed)
+
+This archive is retained for historical continuity; the active roadmap above remains canonical. These milestones are completed and superseded by the current structure and PR receipts.
+
+# ARCHIVE — Milestones 1–9 (Completed / Superseded)
+
+**Archive rule:** These milestones are “done enough” for Phase 1.  
+Do not reopen unless a regression threatens determinism, replayability, or deployability.
+
+## Milestone 1 — Daily run deterministic & debuggable (Local + Docker + CI) ✅
+**Receipts:** see `docs/OPERATIONS.md`, CI smoke contracts, snapshot helpers.
+- [x] `pytest -q` passes locally/CI
+- [x] Docker smoke produces ranked outputs + run report
+- [x] Exit codes normalized
+- [x] Snapshot debugging helpers (`make debug-snapshots`)
+- [x] CI deterministic artifact validation
+
+## Milestone 2 — Determinism Contract & Replayability ✅
+**Receipts:** `docs/RUN_REPORT.md`, `scripts/replay_run.py`, tests covering selection reasons + archival + `--recalc`.
+- [x] Run report explains selection
+- [x] Schema contract documented
+- [x] Selected inputs archived per run
+- [x] Replay workflow + hash verification
+
+## Milestone 3 — Scheduled run + object-store publishing (K8s CronJob first) ✅
+**Receipts:** proof bundles under `ops/proof/bundles/m3-*`, runbooks, publish/verify scripts.
+- [x] CronJob runs end-to-end
+- [x] S3 publish plan + offline verification
+- [x] Real bucket publish verified (+ latest pointers)
+- [x] Live scrape proof in-cluster
+- [x] Politeness/backoff/circuit breaker enforced
+
+## Milestone 4 — On-Prem primary + Cloud DR (proven once; stability pending) ◐
+**Status:** Partially complete: backup/restore + cloud DR proven once, on-prem 72h stability not yet proven.
+**Receipts:** `ops/proof/bundles/m4-*`, runbooks in repo.
+- [x] Backup/restore rehearsal (encrypted + checksummed)
+- [x] DR rehearsal end-to-end (bring up → restore → run → teardown)
+- [ ] On-prem 72h stability receipts (blocked by hardware timing)
+
+## Milestone 5 — Provider Expansion (config-driven, offline proof) ◐
+**Status:** Offline multi-provider proof exists; “fully config-driven provider registry” still needs consolidation/hardening as a single coherent milestone (see Milestone 10 below).
+**Receipts:** `docs/proof/m5-offline-multi-provider-2026-02-11.md`
+
+## Milestone 6 — History & intelligence (identity, dedupe, user state) ✅
+**Receipts:** `src/ji_engine/history_retention.py`, tests, `docs/OPERATIONS.md`.
+- [x] Stable job identity + identity-based diffs
+- [x] Retention rules enforced
+- [x] User state overlay affects outputs and alerts
+
+## Milestone 7 — Semantic Safety Net (deterministic) ✅ (Phase 1 scope)
+**Receipts:** `docs/proof/m7-semantic-safety-net-offline-2026-02-12.md`, tests.
+- [x] Deterministic embedding backend (hash backend) + cache
+- [x] Sidecar + boost modes
+- [x] Thresholds testable/documented
+- [x] Evidence artifacts produced
+
+## Milestone 8 — Hardening & scaling (Phase 1 subset done) ◐
+**Status:** Several elements exist (cost guardrails, provider availability reasons, observability basics), but consolidation is needed (see Milestone 12).
+- [x] Cost guardrails + costs artifact
+- [x] Provider unavailable reasons surfaced
+- [x] CI smoke gate failure modes documented
+- [ ] Full “operational hardening pack” milestone still needed
+
+## Milestone 9 — Multi-user (deferred to Phase 3) ⏸
+**Status:** intentionally deferred; do not start UX/product complexity until Phase 2/3 tranche.
+
+---

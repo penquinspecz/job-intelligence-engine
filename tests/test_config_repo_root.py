@@ -20,6 +20,14 @@ def test_repo_root_is_independent_of_cwd(tmp_path, monkeypatch):
     assert config.HISTORY_DIR == repo_root / "state" / "history"
     assert config.RUN_METADATA_DIR == repo_root / "state" / "runs"
     assert config.candidate_run_metadata_dir("local") == repo_root / "state" / "candidates" / "local" / "runs"
+    assert (
+        config.candidate_profile_path("local")
+        == repo_root / "state" / "candidates" / "local" / "inputs" / "candidate_profile.json"
+    )
+    assert (
+        config.candidate_last_success_pointer_path("local")
+        == repo_root / "state" / "candidates" / "local" / "system_state" / "last_success.json"
+    )
 
 
 def test_candidate_id_sanitizer():

@@ -69,6 +69,40 @@ def cmd_validate(args: argparse.Namespace) -> int:
     return 0 if ok else 2
 
 
+def _load_text_value(raw_text: str | None, file_path: str | None) -> str | None:
+    if raw_text is not None and file_path is not None:
+        raise ValueError("pass either text or file, not both")
+    if raw_text is not None:
+        return raw_text
+    if file_path is None:
+        return None
+    return Path(file_path).read_text(encoding="utf-8")
+
+
+def cmd_ingest_text(args: argparse.Namespace) -> int:
+    candidate_registry = args.registry_module
+    try:
+        resume_text = _load_text_value(args.resume_text, args.resume_file)
+        linkedin_text = _load_text_value(args.linkedin_text, args.linkedin_file)
+        summary_text = _load_text_value(args.summary_text, args.summary_file)
+        result = candidate_registry.set_profile_text(
+            args.candidate_id,
+            resume_text=resume_text,
+            linkedin_text=linkedin_text,
+            summary_text=summary_text,
+        )
+    except (OSError, candidate_registry.CandidateValidationError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    if args.json:
+        print(json.dumps(result, sort_keys=True))
+    else:
+        fields = ",".join(result.get("updated_fields") or [])
+        print(f"updated candidate text candidate_id={result['candidate_id']} fields={fields}")
+    return 0
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Manage file-backed candidate registry and profiles.")
     parser.add_argument(
@@ -90,6 +124,28 @@ def main(argv: Optional[list[str]] = None) -> int:
     validate_cmd = sub.add_parser("validate", help="Validate candidate profiles")
     validate_cmd.add_argument("--json", action="store_true")
     validate_cmd.set_defaults(func=cmd_validate)
+
+    ingest_cmd = sub.add_parser("ingest-text", help="Set pasted profile text fields (no URL fetching)")
+    ingest_cmd.add_argument("candidate_id")
+    ingest_cmd.add_argument("--resume-text")
+    ingest_cmd.add_argument("--resume-file")
+    ingest_cmd.add_argument("--linkedin-text")
+    ingest_cmd.add_argument("--linkedin-file")
+    ingest_cmd.add_argument("--summary-text")
+    ingest_cmd.add_argument("--summary-file")
+    ingest_cmd.add_argument("--json", action="store_true")
+    ingest_cmd.set_defaults(func=cmd_ingest_text)
+
+    set_profile_text_cmd = sub.add_parser("set-profile-text", help="Alias for ingest-text")
+    set_profile_text_cmd.add_argument("candidate_id")
+    set_profile_text_cmd.add_argument("--resume-text")
+    set_profile_text_cmd.add_argument("--resume-file")
+    set_profile_text_cmd.add_argument("--linkedin-text")
+    set_profile_text_cmd.add_argument("--linkedin-file")
+    set_profile_text_cmd.add_argument("--summary-text")
+    set_profile_text_cmd.add_argument("--summary-file")
+    set_profile_text_cmd.add_argument("--json", action="store_true")
+    set_profile_text_cmd.set_defaults(func=cmd_ingest_text)
 
     args = parser.parse_args(argv)
     args.registry_module = _load_registry_module(args.state_dir)
