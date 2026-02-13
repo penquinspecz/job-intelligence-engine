@@ -14,7 +14,7 @@ See [LICENSE](LICENSE) for permitted use.
 
 # SignalCraft
 
-[![ci](https://github.com/penquinspecz/SignalCraft/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/penquinspecz/SignalCraft/actions/workflows/ci.yml)
+[![ci](https://github.com/penquinspecz/SignalCraft/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/penquinspecz/SignalCraft/actions/workflows/ci.yml) [![Docker Smoke](https://github.com/penquinspecz/SignalCraft/actions/workflows/docker-smoke.yml/badge.svg)](https://github.com/penquinspecz/SignalCraft/actions/workflows/docker-smoke.yml)
 
 **Deterministic Career Intelligence for Top Technology Companies**
 
