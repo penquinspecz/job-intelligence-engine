@@ -1,27 +1,65 @@
 SignalCraft Source Available License v1.0
 
-Copyright (c) 2026 Chris Menendez. All Rights Reserved.
+Copyright (c) 2026 Chris Menendez.
+All Rights Reserved.
 
-1. Grant of Limited Rights
-This repository is source available. You may view and read the source code.
-You may clone this repository solely for personal, non-commercial evaluation.
+This Source Available License governs your use of the SignalCraft source code and related documentation. By accessing or using this code, you agree to the terms below.
 
-2. Restrictions
-Except as expressly permitted above, you may not, without prior explicit written permission from Chris Menendez:
-- copy, reproduce, or redistribute this code, in whole or in part;
-- use this code for any commercial purpose;
-- create, publish, distribute, or exploit derivative works;
-- host, operate, or provide this software (or substantially similar functionality) as a competing service.
+1. Definitions
 
-3. Ownership
-All rights, title, and interest in and to the software and related materials remain exclusively with Chris Menendez.
-No rights are granted by implication, estoppel, or otherwise.
+1.1 “Evaluation” means accessing, reading, or running the Source Code for personal, non-commercial assessment or internal testing only.
 
-4. Relicensing
-Chris Menendez reserves the right to relicense this repository, in whole or in part, at any time, under different terms.
+1.2 “Source Code” means the original code files and documentation in this repository (SignalCraft), including scripts, tests, configs, and supporting documentation.
 
-5. No Warranty
-THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
+1.3 “Commercial Use” means any use of Source Code for monetary gain, commercial advantage, charging fees, provisioning a service, or inclusion in a distribution that is sold, licensed, or otherwise offered for hire.
 
-6. Contact
-For permission requests, including commercial licensing or derivative use, contact Chris Menendez in writing.
+1.4 “Derivative Works” means modified or transformed versions of the Source Code that retain substantive similarity to SignalCraft’s structure, logic, or architecture.
+
+1.5 “Competing Service” means any hosted, SaaS, or mass-distribution product that leverages this Source Code to provide functionality similar to SignalCraft’s intent or core features.
+
+1.6 “Redistribution” means copying, publishing, licensing, selling, linking, bundling, or otherwise making the Source Code available to third parties.
+
+2. Permitted Use
+
+2.1 You may clone, download, and view the Source Code for Evaluation.
+
+2.2 You may run the Source Code locally for personal learning, research, or experimentation.
+
+3. Restrictions
+
+3.1 You may not use the Source Code for Commercial Use without an explicit written license from the copyright holder.
+
+3.2 You may not modify, adapt, translate, reverse engineer, or create Derivative Works except as required to run the Source Code for Evaluation.
+
+3.3 You may not redistribute, sublicense, or otherwise make the Source Code available to any third parties in any form.
+
+3.4 You may not deploy or operate a Competing Service using the Source Code or Derivative Works.
+
+3.5 You may not remove, alter, or conceal any copyright, trademark, attribution, or notice included in the Source Code or documentation.
+
+4. No Trademark Rights
+
+4.1 SignalCraft and related marks, logos, or branded elements are trademarks or service marks of the copyright holder and are protected by law. This License does not grant any rights or permissions to use these marks.
+
+5. Termination
+
+5.1 If you breach any terms of this License, your rights to use or access the Source Code automatically terminate.
+
+5.2 Sections 2, 3, 4, 6, and 7 survive termination.
+
+6. Commercial Licensing
+
+6.1 To obtain a commercial license or negotiate permissions beyond this License’s restrictions, open a GitHub Issue titled **“Commercial Licensing Inquiry”** and include:
+- Your intended use case
+- Organization name (if applicable)
+- Contact information
+
+6.2 A commercial license requires a separate written agreement with the copyright holder.
+
+7. Disclaimer of Warranty
+
+7.1 The Source Code is provided “AS IS” without warranty of any kind, express or implied. The copyright holder disclaims all warranties, including but not limited to merchantability, fitness for a particular purpose, and non-infringement.
+
+7.2 In no event shall the copyright holder be liable for any claim, damages, or other liability arising from the use of the Source Code.
+
+END OF LICENSE
