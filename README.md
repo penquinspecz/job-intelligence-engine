@@ -3,6 +3,17 @@
 [![CI](https://github.com/penquinspecz/SignalCraft/actions/workflows/ci.yml/badge.svg)](https://github.com/penquinspecz/SignalCraft/actions/workflows/ci.yml)
 [![Docker Smoke](https://github.com/penquinspecz/SignalCraft/actions/workflows/docker-smoke.yml/badge.svg)](https://github.com/penquinspecz/SignalCraft/actions/workflows/docker-smoke.yml)
 
+---
+
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md)
+- [Roadmap](docs/ROADMAP.md)
+- [Operations](docs/OPERATIONS.md)
+- [Legal & Ethics](docs/LEGAL_POSITIONING.md)
+- [License](LICENSE)
+
+---
 
 An AI-powered job intelligence system that monitors frontier AI company careers pages, classifies roles, matches them to a candidate profile, and generates deterministic artifacts, diffs, and alerts.
 
