@@ -68,6 +68,12 @@ from ji_engine.config import (
 )
 from ji_engine.history_retention import update_history_retention, write_history_run_artifacts
 from ji_engine.providers.registry import load_providers_config, resolve_provider_ids
+from ji_engine.scoring import (
+    ScoringConfig,
+    ScoringConfigError,
+    build_scoring_model_metadata,
+    load_scoring_config,
+)
 from ji_engine.semantic.core import DEFAULT_SEMANTIC_MODEL_ID, EMBEDDING_BACKEND_VERSION
 from ji_engine.semantic.step import finalize_semantic_artifacts, semantic_score_artifact_path
 from ji_engine.utils.atomic_write import atomic_write_text
@@ -104,6 +110,8 @@ from jobintel.delta import compute_delta
 from jobintel.discord_notify import build_run_summary_message, post_discord, resolve_webhook
 
 OUTPUT_DIR = DATA_DIR
+SCORING_CONFIG_PATH = REPO_ROOT / "config" / "scoring.v1.json"
+PROFILES_CONFIG_PATH = REPO_ROOT / "config" / "profiles.json"
 
 try:
     import scripts.publish_s3 as publish_s3  # type: ignore
@@ -977,6 +985,7 @@ def _archive_run_inputs(
     profile: str,
     selected_input_path: Path,
     profiles_config_path: Path,
+    scoring_config_path: Path,
 ) -> Dict[str, Any]:
     base = Path("inputs") / provider / profile
     if not selected_input_path.exists():
@@ -985,9 +994,13 @@ def _archive_run_inputs(
     if not profiles_config_path.exists():
         logger.error("Profiles config missing for archival: %s", profiles_config_path)
         raise SystemExit(2)
+    if not scoring_config_path.exists():
+        logger.error("Scoring config missing for archival: %s", scoring_config_path)
+        raise SystemExit(2)
     return {
         "selected_scoring_input": _archive_input(run_dir, selected_input_path, base / "selected_scoring_input.json"),
         "profile_config": _archive_input(run_dir, profiles_config_path, base / "profiles.json"),
+        "scoring_config": _archive_input(run_dir, scoring_config_path, base / "scoring.v1.json"),
     }
 
 
@@ -1142,6 +1155,7 @@ def _persist_run_metadata(
     semantic_contract: Optional[Dict[str, Any]] = None,
     ai_accounting: Optional[Dict[str, Any]] = None,
     candidate_input_provenance: Optional[Dict[str, Any]] = None,
+    scoring_model: Optional[Dict[str, Any]] = None,
 ) -> Path:
     run_report_schema_version = RUN_REPORT_SCHEMA_VERSION
     inputs: Dict[str, Dict[str, Optional[str]]] = {
@@ -1259,6 +1273,8 @@ def _persist_run_metadata(
     )
     if archived_inputs_by_provider_profile:
         payload["archived_inputs_by_provider_profile"] = archived_inputs_by_provider_profile
+    if scoring_model is not None:
+        payload["scoring_model"] = scoring_model
     if delta_summary is not None:
         payload["delta_summary"] = delta_summary
     if user_state_counts_by_provider_profile is not None:
@@ -3248,6 +3264,11 @@ def main() -> int:
 
     validate_config(args, webhook)
 
+    try:
+        scoring_config: ScoringConfig = load_scoring_config(SCORING_CONFIG_PATH)
+    except ScoringConfigError as exc:
+        raise SystemExit(f"Scoring config validation failed: {exc}") from exc
+
     if args.print_paths:
         print("DATA_DIR=", DATA_DIR)
         print("STATE_DIR=", STATE_DIR)
@@ -3465,6 +3486,23 @@ def main() -> int:
             }
             _write_last_run(telemetry)
             logger.error("Cost guardrail violation: %s", telemetry["error"])
+        try:
+            scoring_model_metadata = build_scoring_model_metadata(
+                config=scoring_config,
+                config_path=SCORING_CONFIG_PATH,
+                profiles_path=PROFILES_CONFIG_PATH,
+                scoring_inputs_by_provider=scoring_inputs_by_provider,
+                repo_root=REPO_ROOT,
+            )
+        except (ScoringConfigError, OSError) as exc:
+            logger.error("Failed to build scoring model metadata: %s", exc)
+            final_status = "error"
+            telemetry["status"] = final_status
+            telemetry["success"] = False
+            telemetry["failed_stage"] = "scoring_model_metadata"
+            telemetry["error"] = str(exc)
+            _write_last_run(telemetry)
+            return final_status
         run_metadata_path = _persist_run_metadata(
             run_id,
             telemetry,
@@ -3495,6 +3533,7 @@ def main() -> int:
                 "embedding_backend_version": EMBEDDING_BACKEND_VERSION,
             },
             ai_accounting=costs_payload.get("ai_accounting"),
+            scoring_model=scoring_model_metadata,
         )
         if telemetry.get("success", False):
             try:
@@ -4043,7 +4082,8 @@ def main() -> int:
                     "openai",
                     profile,
                     score_in,
-                    REPO_ROOT / "config" / "profiles.json",
+                    PROFILES_CONFIG_PATH,
+                    SCORING_CONFIG_PATH,
                 )
 
                 need_score = semantic_enabled or (not ai_required) or not ranked_json.exists()
@@ -4065,6 +4105,8 @@ def main() -> int:
                     "openai",
                     "--in_path",
                     str(score_in),
+                    "--scoring_config",
+                    str(SCORING_CONFIG_PATH),
                     "--out_json",
                     str(ranked_json),
                     "--out_csv",
@@ -4306,7 +4348,8 @@ def main() -> int:
                     provider,
                     profile,
                     in_path,
-                    REPO_ROOT / "config" / "profiles.json",
+                    PROFILES_CONFIG_PATH,
+                    SCORING_CONFIG_PATH,
                 )
 
                 current_stage = _stage_label("score", provider, profile)
@@ -4319,6 +4362,8 @@ def main() -> int:
                     provider,
                     "--in_path",
                     str(in_path),
+                    "--scoring_config",
+                    str(SCORING_CONFIG_PATH),
                     "--out_json",
                     str(ranked_json),
                     "--out_csv",

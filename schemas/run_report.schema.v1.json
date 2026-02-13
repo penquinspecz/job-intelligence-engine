@@ -133,6 +133,64 @@
       },
       "additionalProperties": false
     },
+    "scoring_model": {
+      "type": "object",
+      "required": [
+        "version",
+        "algorithm_id",
+        "config_sha256",
+        "module_path",
+        "code_sha256",
+        "inputs"
+      ],
+      "properties": {
+        "version": {
+          "type": "string"
+        },
+        "algorithm_id": {
+          "type": "string"
+        },
+        "config_sha256": {
+          "type": "string"
+        },
+        "module_path": {
+          "type": "string"
+        },
+        "code_sha256": {
+          "type": "string"
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "pointer_type",
+              "path",
+              "sha256"
+            ],
+            "properties": {
+              "pointer_type": {
+                "type": "string"
+              },
+              "provider": {
+                "type": "string"
+              },
+              "profile": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "scoring_input_selection_by_profile": {
       "type": "object",
       "additionalProperties": {

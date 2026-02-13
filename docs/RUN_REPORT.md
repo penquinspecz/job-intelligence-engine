@@ -53,6 +53,12 @@ All run report timestamps use UTC ISO 8601 with trailing `Z` and seconds precisi
   - `keep_runs`, `runs_seen`, `runs_kept`, `log_dirs_pruned`, `pruned_log_dirs`, `reason`
   - pruning only removes `state/runs/<run_id>/logs/` for older runs; it does not delete run artifacts.
 - `scoring_inputs_by_profile`: selected scoring input metadata (path/mtime/sha256).
+- `scoring_model`: deterministic scoring contract metadata:
+  - `version` (current contract version, e.g. `v1`)
+  - `algorithm_id` (stable algorithm identifier)
+  - `config_sha256` (hash of normalized `config/scoring.v1.json`)
+  - `module_path` + `code_sha256` (scoring implementation audit pointer)
+  - `inputs` (pointer list for selected scoring input(s), profiles config, and scoring config)
 - `scoring_input_selection_by_profile`: decision metadata for scoring inputs:
   - `selected_path`
   - `candidate_paths_considered` (path/mtime/sha/exists)
@@ -67,8 +73,8 @@ All run report timestamps use UTC ISO 8601 with trailing `Z` and seconds precisi
       - `decision_timestamp` (ISO 8601)
   - `comparison_details` (e.g., newer_by_seconds, prefer_ai)
   - `decision` (human-readable rule and reason)
-- `archived_inputs_by_provider_profile`: archived copies of the selected scoring inputs and profiles config:
-  - `<provider>` → `<profile>` → `{selected_scoring_input, profile_config}`
+- `archived_inputs_by_provider_profile`: archived copies of scoring dependencies:
+  - `<provider>` → `<profile>` → `{selected_scoring_input, profile_config, scoring_config}`
   - Each archived entry includes `source_path`, `archived_path` (relative to `JOBINTEL_STATE_DIR`), `sha256`, `bytes`.
 - `delta_summary`: delta intelligence summary if available.
 - `git_sha`: best-effort git sha when available.
@@ -145,6 +151,7 @@ To recompute scoring outputs from archived inputs and compare hashes:
 python scripts/replay_run.py --run-id <run_id> --profile cs --strict --recalc
 ```
 - Uses archived scoring inputs + profile config from the run directory (no `data/` dependency).
+- If present, recalc also uses archived `scoring_config` from the run directory.
 - Writes regenerated outputs under `state/runs/<run_id>/_recalc/` and compares hashes to the run report.
 
 Machine-readable replay output:
