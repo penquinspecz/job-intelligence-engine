@@ -102,9 +102,9 @@ gate-fast:
 	@echo "==> pytest"
 	$(PY) -m pytest -q
 	@echo "==> snapshot immutability"
-	$(PY) scripts/verify_snapshots_immutable.py
+	PYTHONPATH=src $(PY) scripts/verify_snapshots_immutable.py
 	@echo "==> replay smoke"
-	$(PY) scripts/replay_smoke_fixture.py
+	PYTHONPATH=src $(PY) scripts/replay_smoke_fixture.py
 
 gate-truth: gate-fast
 	@echo "==> docker build (no-cache, RUN_TESTS=1)"
@@ -119,7 +119,7 @@ gate: gate-fast
 gate-ci: gate-truth
 
 verify-snapshots:
-	$(PY) scripts/verify_snapshots_immutable.py
+	PYTHONPATH=src $(PY) scripts/verify_snapshots_immutable.py
 
 install-hooks:
 	@mkdir -p .git/hooks
@@ -136,7 +136,7 @@ replay:
 gate-replay:
 	$(PY) -m pytest -q
 	$(MAKE) verify-snapshots
-	$(PY) scripts/replay_smoke_fixture.py
+	PYTHONPATH=src $(PY) scripts/replay_smoke_fixture.py
 
 ecs-shape-smoke:
 	$(PY) scripts/ecs_shape_smoke.py
