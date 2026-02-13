@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://signalcraft.dev/schemas/candidate_profile.schema.v1.json",
+  "title": "SignalCraft Candidate Profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "candidate_id",
+    "display_name",
+    "target_roles",
+    "preferred_locations",
+    "constraints"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "enum": [1]
+    },
+    "candidate_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]{1,64}$"
+    },
+    "display_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "target_roles": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "preferred_locations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "allow_remote",
+        "max_commute_minutes"
+      ],
+      "properties": {
+        "allow_remote": {
+          "type": "boolean"
+        },
+        "max_commute_minutes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 600
+        }
+      }
+    }
+  }
+}

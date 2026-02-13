@@ -106,6 +106,7 @@ def ensure_dirs() -> None:
     HISTORY_DIR.mkdir(parents=True, exist_ok=True)
     RUN_METADATA_DIR.mkdir(parents=True, exist_ok=True)
     # Reserve a deterministic default candidate namespace without changing legacy paths.
+    candidate_state_dir(DEFAULT_CANDIDATE_ID).mkdir(parents=True, exist_ok=True)
     candidate_run_metadata_dir(DEFAULT_CANDIDATE_ID).mkdir(parents=True, exist_ok=True)
     candidate_history_dir(DEFAULT_CANDIDATE_ID).mkdir(parents=True, exist_ok=True)
     candidate_user_state_dir(DEFAULT_CANDIDATE_ID).mkdir(parents=True, exist_ok=True)
