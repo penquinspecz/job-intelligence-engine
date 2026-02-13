@@ -1,7 +1,0 @@
-command: /Users/christophermenendez/Projects/job-intelligence-engine/.venv/bin/python /Users/christophermenendez/Projects/job-intelligence-engine/scripts/verify_published_s3.py --bucket my-real-jobintel-bucket --run-id 2026-02-07T01:55:39.183131+00:00 --prefix jobintel --run-dir /Users/christophermenendez/Projects/job-intelligence-engine/state/runs/20260207T015539183131+0000 --verify-latest
-exit_code: 0
---- stdout ---
-OK: verification passed
-
---- stderr ---
-

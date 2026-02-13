@@ -1,8 +1,0 @@
-$ kubectl --context arn:aws:eks:us-east-1:048622080012:cluster/jobintel-eks -n jobintel get events --sort-by=.metadata.creationTimestamp
-LAST SEEN   TYPE     REASON             OBJECT                                        MESSAGE
-5m1s        Normal   Scheduled          pod/jobintel-liveproof-20260207032751-pdk5f   Successfully assigned jobintel/jobintel-liveproof-20260207032751-pdk5f to ip-172-31-87-214.ec2.internal
-5m1s        Normal   Pulled             pod/jobintel-liveproof-20260207032751-pdk5f   Container image "048622080012.dkr.ecr.us-east-1.amazonaws.com/jobintel:live-snapshotdir-20260205-082950" already present on machine
-5m1s        Normal   Created            pod/jobintel-liveproof-20260207032751-pdk5f   Created container: jobintel
-5m1s        Normal   Started            pod/jobintel-liveproof-20260207032751-pdk5f   Started container jobintel
-5m1s        Normal   SuccessfulCreate   job/jobintel-liveproof-20260207032751         Created pod: jobintel-liveproof-20260207032751-pdk5f
-4m35s       Normal   Completed          job/jobintel-liveproof-20260207032751         Job completed
