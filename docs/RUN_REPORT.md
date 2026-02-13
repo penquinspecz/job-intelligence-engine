@@ -3,6 +3,7 @@
 Run reports are written to `state/runs/<run_id>.json` and copied to
 `state/runs/<run_id>/run_report.json`. They include metadata for reproducibility,
 debugging, and audit trails. They are versioned with `run_report_schema_version`.
+Run health snapshots are also written to `state/runs/<run_id>/run_health.v1.json`.
 
 ## Schema version
 `run_report_schema_version`: integer. Current version: **1**.
@@ -76,6 +77,27 @@ All run report timestamps use UTC ISO 8601 with trailing `Z` and seconds precisi
 - `s3_bucket`, `s3_prefixes`, `uploaded_files_count`, `dashboard_url`: S3 publishing metadata (when enabled).
 - Diff summary artifacts are written under the run directory (`state/runs/<run_id>/diff_summary.json` and `.md`).
 
+## Run health artifact (`run_health.v1.json`)
+- `status`: `success`, `partial`, or `failed`.
+- `phases`: deterministic phase breakdown for:
+  - `snapshot_fetch`
+  - `normalize`
+  - `score`
+  - `publish`
+  - `ai_sidecar`
+- `failure_codes`: stable enum-like reason strings, including:
+  - `SNAPSHOT_MISSING`
+  - `PROVIDER_TOMBSTONED`
+  - `SCORING_CONFIG_INVALID`
+  - `SCORING_INPUT_MISSING`
+  - `PUBLISH_NO_CREDS`
+  - `AI_DISABLED`
+- `timestamps` + `durations.total_sec`: coarse run timing summary.
+- `logs` and `proof_bundle_path`: pointers to run logs and proof receipt (when present).
+
+`run_health.v1.json` is best-effort on failed runs: the runner attempts to write it before exit without mutating
+scoring outputs.
+
 ### Provider provenance additions
 Each provider entry in `provenance_by_provider` may include:
 - `live_error_type`: one of `success`, `transient_error`, `unavailable`, `invalid_response` (when live was attempted).
@@ -112,6 +134,7 @@ Use these paths to inspect artifacts:
   - `state/runs/<run_id>/run_report.json`
 - Run registry:
   - `state/runs/<run_id>/index.json`
+  - `state/runs/<run_id>/run_health.v1.json`
 - Ranked outputs:
   - `data/<provider>_ranked_jobs.<profile>.json`
   - `data/<provider>_ranked_jobs.<profile>.csv`
