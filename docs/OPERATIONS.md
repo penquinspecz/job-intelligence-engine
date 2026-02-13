@@ -151,6 +151,8 @@ Provider registry (Milestone 5 foundation):
   - `scripts/run_scrape.py`
   - `scripts/run_daily.py`
 - `providers=all` resolves only providers with `enabled=true` (deterministic sort by `provider_id`).
+- Run reports include provider registry provenance under
+  `provenance.build.provider_registry` (schema version + registry hash).
 - Supported extraction modes:
   - `ashby_api` (canonical config alias, normalized to runtime `ashby`)
   - `jsonld` (structured JobPosting JSON-LD parser)
@@ -173,6 +175,10 @@ How to add a provider (deterministic path):
      - `llm_fallback.enabled=true` + `llm_fallback.cache_dir` (required)
      - `llm_fallback.temperature=0` (enforced)
 2. Add/update snapshot fixture under `data/<provider_id>_snapshots/`.
+   - CI enforces snapshot fixture existence for enabled snapshot providers.
+   - To retire a provider without deleting history, set `enabled=false` and populate
+     `tombstone` metadata (`tombstone.reason` required; `ticket`, `replaced_by`,
+     `removed_at` optional).
 3. Run scrape in snapshot mode:
 
 ```bash
