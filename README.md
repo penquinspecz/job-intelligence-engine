@@ -3,13 +3,19 @@ This repository is publicly viewable but not open source.
 See [LICENSE](LICENSE) for permitted use.
 
 <p align="center">
-  <img src="assets/brand/signalcraft-wordmark.dark.png#gh-dark-mode-only" width="520" />
-  <img src="assets/brand/signalcraft-wordmark.light.png#gh-light-mode-only" width="520" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/signalcraft-wordmark.dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="assets/brand/signalcraft-wordmark.light.png">
+    <img alt="SignalCraft" src="assets/brand/signalcraft-wordmark.light.png" width="520">
+  </picture>
 </p>
 
 <p align="center">
-  <img src="assets/brand/signalcraft-logo.dark.png#gh-dark-mode-only" width="96" />
-  <img src="assets/brand/signalcraft-logo.light.png#gh-light-mode-only" width="96" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/signalcraft-logo.dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="assets/brand/signalcraft-logo.light.png">
+    <img alt="SignalCraft logo" src="assets/brand/signalcraft-logo.light.png" width="96">
+  </picture>
 </p>
 
 # SignalCraft
