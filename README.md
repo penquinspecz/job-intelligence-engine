@@ -3,71 +3,149 @@ This repository is publicly viewable but not open source.
 See LICENSE for permitted use.
 
 # SignalCraft
-Deterministic Career Intelligence for Top Technology Companies
+
+**Deterministic Career Intelligence for Top Technology Companies**
+
+SignalCraft is a career intelligence engine that aggregates, normalizes, scores, and analyzes job postings directly from leading technology company career pages — with deterministic logic, reproducible outputs, and guardrailed AI augmentation.
+
+It is built as infrastructure, not a script.
 
 ---
 
-## Documentation
+## What SignalCraft Does
 
-- [Architecture](docs/ARCHITECTURE.md)
-- [Roadmap](docs/ROADMAP.md)
-- [Operations](docs/OPERATIONS.md)
-- [Legal & Ethics](docs/LEGAL_POSITIONING.md)
-- [License](LICENSE)
-- [Security](SECURITY.md)
+SignalCraft:
+
+- Aggregates job postings directly from official company career pages
+- Normalizes and de-duplicates roles across providers
+- Applies deterministic scoring and ranking logic
+- Tracks historical changes across runs
+- Produces reproducible, artifact-backed outputs
+- Optionally layers AI insights on top of stable, deterministic artifacts
+
+The system is snapshot-first, replayable, and explainable.
+
+Every run produces inspectable artifacts under `state/runs/<run_id>/`.
+
+Canonical pipeline entrypoint:
+`scripts/run_daily.py`
 
 ---
 
-## Positioning
+## Who It’s For
 
-SignalCraft is a deterministic job intelligence platform for serious career operators targeting top technology companies.
+SignalCraft is designed for serious job seekers targeting top technology companies who want:
 
-- Single pane of glass across elite tech company career pages.
-- Deterministic ranking with explainable scoring outputs and artifact-backed evidence.
-- AI as a last-mile intelligence layer: guardrailed, cached, and reproducible.
-- Infrastructure-grade execution: Kubernetes-native scheduling, replayable runs, and CI smoke contracts.
+- A single pane of glass across elite employer career pages
+- Deterministic ranking instead of opaque AI magic
+- Explainable scoring outputs
+- Historical tracking and change detection
+- Infrastructure-grade reliability
+- Guardrailed AI insights layered on top of real data
 
-SignalCraft is not limited to AI companies. AI-focused providers are part of the platform today, but the architecture is intentionally provider-agnostic and built to expand across leading technology employers.
+This is not a job board.
+It is an intelligence layer over official sources.
+
+---
+
+## Core Principles
+
+### Deterministic by Default
+Same inputs → same outputs.
+Every decision is logged, hashed, and replayable.
+
+### AI Is Last-Mile
+AI never replaces core logic.
+AI reads structured artifacts and produces insight.
+All AI outputs are cached, schema-validated, and guardrailed.
+
+### Legality-Conscious by Design
+SignalCraft:
+- Links directly to original employer career pages
+- Does not replace or masquerade as the source
+- Respects provider policies, rate limits, and robots decisions
+- Avoids scraping arms-race behavior
+
+See `docs/LEGAL_POSITIONING.md` for the explicit design contract.
+
+### Infrastructure-Grade Execution
+- CI + Docker smoke validation
+- Replayable run reports
+- Snapshot debugging
+- Kubernetes-native scheduling
+- Object-store publishing
+- Deterministic semantic augmentation
+
+---
+
+## High-Level Architecture
+
+SignalCraft is built as a layered system:
+
+1. **Ingestion Layer**  
+   Config-driven provider definitions  
+   Snapshot-first collection  
+   Policy-aware scraping controls  
+
+2. **Normalization + Identity Engine**  
+   Stable job identity  
+   URL normalization  
+   Deduplication across runs  
+
+3. **Deterministic Scoring Engine**  
+   Explainable heuristics  
+   Stable tie-breakers  
+   Score clamping + diagnostics  
+
+4. **History + Diff Engine**  
+   Identity-based change detection  
+   Run archival + replay  
+
+5. **AI Intelligence Layer (Optional)**  
+   Weekly insights  
+   Structured trend analysis  
+   Deterministic semantic similarity safety net  
+   Cached + schema-validated outputs  
+
+6. **Delivery Layer**  
+   Dashboard API  
+   Discord notifications  
+   Object-store publishing  
+   Kubernetes CronJobs  
+
+Detailed architecture:
+`docs/ARCHITECTURE.md`
+
+---
 
 ## What It Is Not
 
-- Not a replacement for company career sites.
-- Not a job board mirror.
-- Not an uncontrolled scraper.
-- Not AI hallucination-driven ranking.
+- Not a job board mirror
+- Not an uncontrolled scraper
+- Not AI hallucination-driven ranking
+- Not a growth-hack scraping arms race
 
-## Architecture Summary
+SignalCraft is a discovery and intelligence layer — not a replacement for official employer systems.
 
-SignalCraft is architected as a product platform, not a one-off script.
+---
 
-- Deterministic ingestion: snapshot-first/offline-capable collection with policy-aware provider controls.
-- Identity and history tracking: stable job identity, diffs, retention, and replay-ready run artifacts.
-- Replayable scoring: deterministic scoring pipeline with explainable outputs and contract-tested artifacts.
-- AI insights layer: weekly intelligence today, per-job intelligence roadmap, both behind strict guardrails.
+## Roadmap Direction
 
-Canonical pipeline entrypoint: `scripts/run_daily.py`
+SignalCraft is evolving toward:
 
-## Legality + Ethics
+- Multi-user isolation
+- Resume/profile ingestion
+- Profile-aware scoring
+- Per-job AI recommendations
+- Explainability-focused UI
+- Consumer-grade user experience
+- Expanded provider coverage across top technology companies
+- Compliance-aware partnerships
 
-SignalCraft is designed as a discovery net:
+Full roadmap:
+`docs/ROADMAP.md`
 
-- Always links users to original employer/source career pages.
-- Does not position mirrored content as the primary experience.
-- Avoids scraping arms-race behavior; policy and politeness controls are core defaults.
-- Built for compliance-minded operations, with provenance, explicit failure reasons, and deterministic evidence.
-
-See `docs/LEGAL_POSITIONING.md` for the explicit contract.
-
-## Product Roadmap (High-Level)
-
-- Multi-user isolation and candidate-aware run boundaries.
-- Resume/profile ingestion with deterministic contracts.
-- Explainability-first UI surfaces over stable backend artifacts.
-- Profile-aware AI coaching with strict schema and caching guardrails.
-- Alert channels beyond Discord (email/push/RSS) with deterministic behavior.
-- Trust signals and transparency layers for scoring, provenance, and policy decisions.
-
-Detailed roadmap: `docs/ROADMAP.md`
+---
 
 ## License
 
@@ -75,4 +153,7 @@ SignalCraft is Source Available, not open source.
 
 Use is governed by the SignalCraft Source Available License v1.0 in `LICENSE`.
 
-For commercial licensing or derivative-use permissions, contact Chris Menendez in writing.
+Commercial use, redistribution, derivative works, and competing hosted services are prohibited without written permission.
+
+For licensing inquiries:
+Contact Chris Menendez: https://www.linkedin.com/in/chmz/
