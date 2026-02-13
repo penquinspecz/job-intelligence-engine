@@ -1,4 +1,9 @@
-"""Enrich job postings by fetching job data via Ashby API/GraphQL instead of parsing HTML."""
+"""SignalCraft
+Copyright (c) 2026 Chris Menendez.
+All Rights Reserved.
+See LICENSE for permitted use.
+
+Enrich job postings by fetching job data via Ashby API/GraphQL instead of parsing HTML."""
 
 import json
 import os

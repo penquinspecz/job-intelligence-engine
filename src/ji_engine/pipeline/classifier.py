@@ -1,4 +1,9 @@
-"""
+"""SignalCraft
+Copyright (c) 2026 Chris Menendez.
+All Rights Reserved.
+See LICENSE for permitted use.
+
+
 Improved relevance scoring for job titles based on candidate profile.
 Uses weighted scoring, location gating, and negative filters to reduce false positives.
 """

@@ -1,3 +1,10 @@
+"""
+SignalCraft
+Copyright (c) 2026 Chris Menendez.
+All Rights Reserved.
+See LICENSE for permitted use.
+"""
+
 # src/ji_engine/providers/base.py
 
 from __future__ import annotations

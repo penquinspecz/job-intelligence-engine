@@ -1,4 +1,9 @@
-"""
+"""SignalCraft
+Copyright (c) 2026 Chris Menendez.
+All Rights Reserved.
+See LICENSE for permitted use.
+
+
 sitecustomize is imported automatically by Python at startup (if on sys.path).
 
 We use it to silence urllib3's LibreSSL warning on macOS builds where Python's

@@ -1,3 +1,10 @@
+"""
+SignalCraft
+Copyright (c) 2026 Chris Menendez.
+All Rights Reserved.
+See LICENSE for permitted use.
+"""
+
 from .boost import SemanticPolicy, apply_bounded_semantic_boost
 from .cache import (
     build_cache_entry,
