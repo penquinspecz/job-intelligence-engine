@@ -97,6 +97,7 @@ def test_dashboard_runs_populated(tmp_path: Path, monkeypatch) -> None:
     assert artifact.status_code == 200
     assert artifact.headers["content-type"].startswith("application/json")
 
+
 def test_dashboard_artifact_exfil_guard_rejects_invalid_mapping(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("JOBINTEL_STATE_DIR", str(tmp_path / "state"))
 
