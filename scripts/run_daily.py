@@ -1140,6 +1140,7 @@ def _persist_run_metadata(
     logs: Optional[Dict[str, Any]] = None,
     log_retention: Optional[Dict[str, Any]] = None,
     semantic_contract: Optional[Dict[str, Any]] = None,
+    candidate_input_provenance: Optional[Dict[str, Any]] = None,
 ) -> Path:
     run_report_schema_version = RUN_REPORT_SCHEMA_VERSION
     inputs: Dict[str, Dict[str, Optional[str]]] = {
@@ -1197,6 +1198,8 @@ def _persist_run_metadata(
         "taskdef": os.environ.get("JOBINTEL_TASKDEF", "unknown"),
         "ecs_task_arn": _resolve_ecs_task_arn(),
     }
+    if candidate_input_provenance is None:
+        candidate_input_provenance = _candidate_input_provenance(CANDIDATE_ID)
 
     payload = {
         "run_report_schema_version": run_report_schema_version,
@@ -1212,7 +1215,12 @@ def _persist_run_metadata(
         "stage_durations": telemetry.get("stages", {}),
         "diff_counts": diff_counts,
         "provenance_by_provider": provenance_by_provider or {},
-        "provenance": {**(provenance_by_provider or {}), "build": build_provenance},
+        "provenance": {
+            **(provenance_by_provider or {}),
+            "build": build_provenance,
+            "candidate_inputs": candidate_input_provenance,
+        },
+        "candidate_input_provenance": candidate_input_provenance,
         "selection": selection,
         "inputs": inputs,
         "scoring_inputs_by_profile": scoring_inputs_by_profile,
@@ -1257,6 +1265,18 @@ def _persist_run_metadata(
         json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8"
     )
     return path
+
+
+def _candidate_input_provenance(candidate_id: str) -> Dict[str, Any]:
+    try:
+        from ji_engine.candidates.registry import CandidateValidationError, candidate_text_input_provenance
+    except Exception:
+        return {"candidate_id": candidate_id, "text_input_artifacts": {}}
+
+    try:
+        return candidate_text_input_provenance(candidate_id)
+    except (CandidateValidationError, ValueError):
+        return {"candidate_id": candidate_id, "text_input_artifacts": {}}
 
 
 def _hash_file(path: Path) -> Optional[str]:

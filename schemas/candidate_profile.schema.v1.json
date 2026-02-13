@@ -54,6 +54,81 @@
           "maximum": 600
         }
       }
+    },
+    "text_inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "resume_text": {
+          "type": "string",
+          "maxLength": 120000
+        },
+        "linkedin_text": {
+          "type": "string",
+          "maxLength": 120000
+        },
+        "summary_text": {
+          "type": "string",
+          "maxLength": 40000
+        }
+      }
+    },
+    "text_input_artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "resume_text": {
+          "$ref": "#/$defs/text_input_artifact_pointer"
+        },
+        "linkedin_text": {
+          "$ref": "#/$defs/text_input_artifact_pointer"
+        },
+        "summary_text": {
+          "$ref": "#/$defs/text_input_artifact_pointer"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "text_input_artifact_pointer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "sha256",
+        "size_bytes",
+        "captured_at_utc",
+        "artifact_path"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "enum": [
+            "resume_text",
+            "linkedin_text",
+            "summary_text"
+          ]
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "captured_at_utc": {
+          "type": "string",
+          "minLength": 1
+        },
+        "artifact_path": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
     }
   }
 }
