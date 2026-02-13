@@ -203,26 +203,15 @@ These guarantees are non-negotiable.
 
 # Runtime Topology (Simplified)
 [Provider Registry + Policy]
-|
-v
-[Ingestion: Snapshot/Live]
-|
-v
-[Deterministic Normalization]
-|
-v
-[Identity Engine]
-|
-v
-[Scoring Engine] —–> [History + Diff Engine]
-|                           |
-|                           v
-|                    [Run Artifacts]
-|                           |
-+———––> [AI Insights Sidecar]
-|
-v
-[Delivery: API + Object Store]
+        |
+        v
+[Ingestion: Snapshot/Live] --> [Deterministic Normalization] --> [Identity Engine] --> [Scoring Engine]
+        |
+        +--> [History + Diff Engine] --> [Run Artifacts]
+                                   |
+                                   +--> [AI Insights Sidecar]
+                                   |
+                                   +--> [Delivery: API + Object Store]
 
 ---
 
