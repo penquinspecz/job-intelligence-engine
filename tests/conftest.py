@@ -19,6 +19,11 @@ def pytest_addoption(parser) -> None:
 
 
 def pytest_configure(config) -> None:
+    # Register marker in code so Docker/alternate test harnesses without pytest.ini stay consistent.
+    config.addinivalue_line(
+        "markers",
+        "aws_integration: requires live AWS credentials/network access; skipped unless --run-aws-integration is provided",
+    )
     # Test-only offline defaults: avoid AWS credential/provider discovery side effects.
     for key, value in _AWS_TEST_ENV_DEFAULTS.items():
         os.environ.setdefault(key, value)
