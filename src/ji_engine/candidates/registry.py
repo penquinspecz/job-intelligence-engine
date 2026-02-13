@@ -271,6 +271,19 @@ def _profile_skeleton(candidate_id: str, display_name: str | None = None) -> Can
     )
 
 
+def _profile_bootstrap_template(candidate_id: str, display_name: str | None = None) -> CandidateProfile:
+    safe_id = sanitize_candidate_id(candidate_id)
+    name = (display_name or safe_id).strip() or safe_id
+    return CandidateProfile(
+        schema_version=CANDIDATE_PROFILE_SCHEMA_VERSION,
+        candidate_id=safe_id,
+        display_name=name,
+        target_roles=["replace_with_target_role"],
+        preferred_locations=["replace_with_location"],
+        constraints=CandidateConstraints(),
+    )
+
+
 def add_candidate(candidate_id: str, display_name: str | None = None) -> Dict[str, str]:
     safe_id = sanitize_candidate_id(candidate_id)
 
@@ -304,6 +317,58 @@ def add_candidate(candidate_id: str, display_name: str | None = None) -> Dict[st
         "profile_path": str(profile_path),
         "candidate_dir": str(candidate_state_dir(safe_id)),
         "registry_path": str(candidate_registry_path()),
+    }
+
+
+def bootstrap_candidate(candidate_id: str, display_name: str | None = None) -> Dict[str, Any]:
+    safe_id = sanitize_candidate_id(candidate_id)
+    registry = load_registry()
+    existing_ids = {entry.candidate_id for entry in registry.candidates}
+
+    paths = candidate_state_paths(safe_id)
+    paths.root.mkdir(parents=True, exist_ok=True)
+    paths.runs.mkdir(parents=True, exist_ok=True)
+    paths.history.mkdir(parents=True, exist_ok=True)
+    paths.user_state.mkdir(parents=True, exist_ok=True)
+    paths.user_inputs.mkdir(parents=True, exist_ok=True)
+    paths.system_state.mkdir(parents=True, exist_ok=True)
+    paths.proofs_dir.mkdir(parents=True, exist_ok=True)
+    _profile_artifacts_dir(safe_id).mkdir(parents=True, exist_ok=True)
+
+    created_profile = False
+    profile_path = _profile_path(safe_id)
+    if not profile_path.exists():
+        legacy_path = _legacy_profile_path(safe_id)
+        if legacy_path.exists():
+            # Preserve existing legacy profile and mirror to canonical location.
+            profile = load_candidate_profile(safe_id)
+            profile_path = write_candidate_profile(profile)
+        else:
+            profile = _profile_bootstrap_template(safe_id, display_name)
+            profile_path = write_candidate_profile(profile)
+            created_profile = True
+    else:
+        load_candidate_profile(safe_id)
+
+    if safe_id not in existing_ids:
+        registry.candidates.append(
+            CandidateRegistryEntry(
+                candidate_id=safe_id,
+                profile_path=str(profile_path.relative_to(STATE_DIR)),
+            )
+        )
+        save_registry(registry)
+        created_registry_entry = True
+    else:
+        created_registry_entry = False
+
+    return {
+        "candidate_id": safe_id,
+        "profile_path": str(profile_path),
+        "candidate_dir": str(paths.root),
+        "registry_path": str(candidate_registry_path()),
+        "created_profile": created_profile,
+        "created_registry_entry": created_registry_entry,
     }
 
 
@@ -358,6 +423,77 @@ def candidate_text_input_provenance(candidate_id: str) -> Dict[str, Any]:
     return {
         "candidate_id": safe_id,
         "text_input_artifacts": artifacts,
+    }
+
+
+def doctor_candidate(candidate_id: str) -> Dict[str, Any]:
+    safe_id = sanitize_candidate_id(candidate_id)
+    paths = candidate_state_paths(safe_id)
+    errors: List[str] = []
+
+    directory_checks = {
+        "root": paths.root.exists(),
+        "runs": paths.runs.exists(),
+        "history": paths.history.exists(),
+        "user_state": paths.user_state.exists(),
+        "user_inputs": paths.user_inputs.exists(),
+        "system_state": paths.system_state.exists(),
+        "proofs": paths.proofs_dir.exists(),
+    }
+    for name, exists in directory_checks.items():
+        if not exists:
+            errors.append(f"missing directory: {name} ({getattr(paths, name if name != 'proofs' else 'proofs_dir')})")
+
+    profile_exists = paths.profile_path.exists() or _legacy_profile_path(safe_id).exists()
+    profile_valid = False
+    profile_error: Optional[str] = None
+    profile: Optional[CandidateProfile] = None
+    if not profile_exists:
+        profile_error = f"candidate profile missing: {paths.profile_path}"
+        errors.append(profile_error)
+    else:
+        try:
+            profile = load_candidate_profile(safe_id)
+            profile_valid = True
+        except CandidateValidationError as exc:
+            profile_error = str(exc)
+            errors.append(profile_error)
+
+    pointer_checks: Dict[str, Dict[str, Any]] = {}
+    if profile is not None:
+        for kind in ("resume_text", "linkedin_text", "summary_text"):
+            pointer = getattr(profile.text_input_artifacts, kind)
+            if pointer is None:
+                continue
+            artifact_rel = Path(pointer.artifact_path)
+            artifact_abs = (STATE_DIR / artifact_rel).resolve()
+            in_candidate_root = str(artifact_abs).startswith(str(paths.root.resolve()))
+            exists = artifact_abs.exists()
+            pointer_checks[kind] = {
+                "artifact_path": pointer.artifact_path,
+                "exists": exists,
+                "in_candidate_root": in_candidate_root,
+                "sha256": pointer.sha256,
+                "size_bytes": pointer.size_bytes,
+                "captured_at_utc": pointer.captured_at_utc,
+            }
+            if not in_candidate_root:
+                errors.append(f"artifact pointer escapes candidate root: {kind} -> {pointer.artifact_path}")
+            if not exists:
+                errors.append(f"artifact pointer missing file: {kind} -> {pointer.artifact_path}")
+
+    return {
+        "candidate_id": safe_id,
+        "ok": len(errors) == 0,
+        "directories": directory_checks,
+        "profile": {
+            "path": str(paths.profile_path),
+            "exists": profile_exists,
+            "schema_valid": profile_valid,
+            "error": profile_error,
+        },
+        "text_input_artifacts": pointer_checks,
+        "errors": sorted(errors),
     }
 
 

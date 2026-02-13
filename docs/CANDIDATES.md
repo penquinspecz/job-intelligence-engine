@@ -15,7 +15,7 @@ SignalCraft now includes a file-backed candidate registry scaffold for Milestone
   - default: `<repo>/state`
   - override: `JOBINTEL_STATE_DIR=<path>` or CLI `--state-dir <path>`
 - Deterministic registry path: `<state_dir>/candidates/registry.json`
-- Candidate profile: `<state_dir>/candidates/<candidate_id>/candidate_profile.json`
+- Candidate profile (canonical): `<state_dir>/candidates/<candidate_id>/inputs/candidate_profile.json`
 - Candidate text input artifact store (immutable): `<state_dir>/candidates/<candidate_id>/inputs/artifacts/*.json`
 - Namespaced dirs created by scaffold:
   - `<state_dir>/candidates/<candidate_id>/runs`
@@ -27,9 +27,43 @@ SignalCraft now includes a file-backed candidate registry scaffold for Milestone
 ```bash
 python scripts/candidates.py list --json
 python scripts/candidates.py add <candidate_id> --display-name "Candidate Name" --json
+python scripts/candidates.py bootstrap <candidate_id> --display-name "Candidate Name" --json
+python scripts/candidates.py doctor <candidate_id> --json
 python scripts/candidates.py validate --json
 python scripts/candidates.py ingest-text <candidate_id> --resume-file ./resume.txt --linkedin-file ./linkedin.txt --json
 ```
+
+## 60-Second Happy Path
+
+1) Bootstrap candidate scaffold + profile template:
+
+```bash
+python scripts/candidates.py bootstrap alice --display-name "Alice Example"
+```
+
+2) Ingest local text files (no network fetching):
+
+```bash
+python scripts/candidates.py ingest-text alice --resume-file ./resume.txt --linkedin-file ./linkedin.txt --summary-file ./summary.txt --json
+```
+
+3) Validate candidate scaffold/profile/pointers:
+
+```bash
+python scripts/candidates.py doctor alice --json
+```
+
+4) Run daily pipeline with candidate safety wrapper:
+
+```bash
+python -m jobintel.cli run daily --candidate-id alice --profiles cs --offline --no_post
+```
+
+Artifacts appear under:
+- `<state_dir>/candidates/alice/runs/`
+- `<state_dir>/candidates/alice/history/`
+- `<state_dir>/candidates/alice/user_state/`
+- `<state_dir>/candidates/alice/inputs/artifacts/`
 
 Override state dir for one command:
 
