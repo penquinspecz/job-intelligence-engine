@@ -1,4 +1,9 @@
-"""Load and validate candidate profile from JSON file."""
+"""SignalCraft
+Copyright (c) 2026 Chris Menendez.
+All Rights Reserved.
+See LICENSE for permitted use.
+
+Load and validate candidate profile from JSON file."""
 
 import json
 from pathlib import Path
