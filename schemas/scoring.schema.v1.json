@@ -1,0 +1,64 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "scoring config schema v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "version",
+    "algorithm_id",
+    "module_path",
+    "role_band_multipliers",
+    "profile_weights",
+    "ai_blend"
+  ],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "version": {"type": "string", "const": "v1"},
+    "algorithm_id": {"type": "string", "minLength": 1},
+    "module_path": {"type": "string", "minLength": 1},
+    "role_band_multipliers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["CS_CORE", "CS_ADJACENT", "SOLUTIONS", "OTHER"],
+      "properties": {
+        "CS_CORE": {"type": "number"},
+        "CS_ADJACENT": {"type": "number"},
+        "SOLUTIONS": {"type": "number"},
+        "OTHER": {"type": "number"}
+      }
+    },
+    "profile_weights": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "boost_cs_core",
+        "boost_cs_adjacent",
+        "boost_solutions",
+        "penalty_research_heavy",
+        "penalty_low_level",
+        "penalty_strong_swe_only",
+        "pin_manager_ai_deployment"
+      ],
+      "properties": {
+        "boost_cs_core": {"type": "integer"},
+        "boost_cs_adjacent": {"type": "integer"},
+        "boost_solutions": {"type": "integer"},
+        "penalty_research_heavy": {"type": "integer"},
+        "penalty_low_level": {"type": "integer"},
+        "penalty_strong_swe_only": {"type": "integer"},
+        "pin_manager_ai_deployment": {"type": "integer"}
+      }
+    },
+    "ai_blend": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["weight", "min_heuristic_floor", "max_ai_contribution"],
+      "properties": {
+        "weight": {"type": "number", "minimum": 0, "maximum": 1},
+        "min_heuristic_floor": {"type": ["integer", "null"], "minimum": 0},
+        "max_ai_contribution": {"type": ["integer", "null"], "minimum": 0}
+      }
+    }
+  }
+}

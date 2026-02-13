@@ -3,6 +3,7 @@
 Run reports are written to `state/runs/<run_id>.json` and copied to
 `state/runs/<run_id>/run_report.json`. They include metadata for reproducibility,
 debugging, and audit trails. They are versioned with `run_report_schema_version`.
+Run health snapshots are also written to `state/runs/<run_id>/run_health.v1.json`.
 
 ## Schema version
 `run_report_schema_version`: integer. Current version: **1**.
@@ -53,6 +54,12 @@ All run report timestamps use UTC ISO 8601 with trailing `Z` and seconds precisi
   - `keep_runs`, `runs_seen`, `runs_kept`, `log_dirs_pruned`, `pruned_log_dirs`, `reason`
   - pruning only removes `state/runs/<run_id>/logs/` for older runs; it does not delete run artifacts.
 - `scoring_inputs_by_profile`: selected scoring input metadata (path/mtime/sha256).
+- `scoring_model`: deterministic scoring contract metadata:
+  - `version` (current contract version, e.g. `v1`)
+  - `algorithm_id` (stable algorithm identifier)
+  - `config_sha256` (hash of normalized `config/scoring.v1.json`)
+  - `module_path` + `code_sha256` (scoring implementation audit pointer)
+  - `inputs` (pointer list for selected scoring input(s), profiles config, and scoring config)
 - `scoring_input_selection_by_profile`: decision metadata for scoring inputs:
   - `selected_path`
   - `candidate_paths_considered` (path/mtime/sha/exists)
@@ -67,14 +74,35 @@ All run report timestamps use UTC ISO 8601 with trailing `Z` and seconds precisi
       - `decision_timestamp` (ISO 8601)
   - `comparison_details` (e.g., newer_by_seconds, prefer_ai)
   - `decision` (human-readable rule and reason)
-- `archived_inputs_by_provider_profile`: archived copies of the selected scoring inputs and profiles config:
-  - `<provider>` → `<profile>` → `{selected_scoring_input, profile_config}`
+- `archived_inputs_by_provider_profile`: archived copies of scoring dependencies:
+  - `<provider>` → `<profile>` → `{selected_scoring_input, profile_config, scoring_config}`
   - Each archived entry includes `source_path`, `archived_path` (relative to `JOBINTEL_STATE_DIR`), `sha256`, `bytes`.
 - `delta_summary`: delta intelligence summary if available.
 - `git_sha`: best-effort git sha when available.
 - `image_tag`: container image tag if set.
 - `s3_bucket`, `s3_prefixes`, `uploaded_files_count`, `dashboard_url`: S3 publishing metadata (when enabled).
 - Diff summary artifacts are written under the run directory (`state/runs/<run_id>/diff_summary.json` and `.md`).
+
+## Run health artifact (`run_health.v1.json`)
+- `status`: `success`, `partial`, or `failed`.
+- `phases`: deterministic phase breakdown for:
+  - `snapshot_fetch`
+  - `normalize`
+  - `score`
+  - `publish`
+  - `ai_sidecar`
+- `failure_codes`: stable enum-like reason strings, including:
+  - `SNAPSHOT_MISSING`
+  - `PROVIDER_TOMBSTONED`
+  - `SCORING_CONFIG_INVALID`
+  - `SCORING_INPUT_MISSING`
+  - `PUBLISH_NO_CREDS`
+  - `AI_DISABLED`
+- `timestamps` + `durations.total_sec`: coarse run timing summary.
+- `logs` and `proof_bundle_path`: pointers to run logs and proof receipt (when present).
+
+`run_health.v1.json` is best-effort on failed runs: the runner attempts to write it before exit without mutating
+scoring outputs.
 
 ### Provider provenance additions
 Each provider entry in `provenance_by_provider` may include:
@@ -112,6 +140,7 @@ Use these paths to inspect artifacts:
   - `state/runs/<run_id>/run_report.json`
 - Run registry:
   - `state/runs/<run_id>/index.json`
+  - `state/runs/<run_id>/run_health.v1.json`
 - Ranked outputs:
   - `data/<provider>_ranked_jobs.<profile>.json`
   - `data/<provider>_ranked_jobs.<profile>.csv`
@@ -145,6 +174,7 @@ To recompute scoring outputs from archived inputs and compare hashes:
 python scripts/replay_run.py --run-id <run_id> --profile cs --strict --recalc
 ```
 - Uses archived scoring inputs + profile config from the run directory (no `data/` dependency).
+- If present, recalc also uses archived `scoring_config` from the run directory.
 - Writes regenerated outputs under `state/runs/<run_id>/_recalc/` and compares hashes to the run report.
 
 Machine-readable replay output:

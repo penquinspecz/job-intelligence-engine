@@ -97,8 +97,10 @@ def test_replay_recalc_passes(tmp_path: Path, monkeypatch) -> None:
 
     input_path = archived_dir / "selected_scoring_input.json"
     profiles_path = archived_dir / "profiles.json"
+    scoring_config_path = archived_dir / "scoring.v1.json"
     _write_input(input_path, "1")
     _write_profiles(profiles_path)
+    scoring_config_path.write_text((Path("config/scoring.v1.json")).read_text(encoding="utf-8"), encoding="utf-8")
 
     expected_outputs = _run_score_jobs(input_path, profiles_path, "cs", run_dir / "expected")
 
@@ -122,6 +124,13 @@ def test_replay_recalc_passes(tmp_path: Path, monkeypatch) -> None:
                         "archived_path": profiles_path.relative_to(state_dir).as_posix(),
                         "sha256": compute_sha256_file(profiles_path),
                         "bytes": profiles_path.stat().st_size,
+                        "hash_algo": "sha256",
+                    },
+                    "scoring_config": {
+                        "source_path": str(scoring_config_path),
+                        "archived_path": scoring_config_path.relative_to(state_dir).as_posix(),
+                        "sha256": compute_sha256_file(scoring_config_path),
+                        "bytes": scoring_config_path.stat().st_size,
                         "hash_algo": "sha256",
                     },
                 }
@@ -153,8 +162,10 @@ def test_replay_recalc_detects_mismatch(tmp_path: Path, monkeypatch) -> None:
 
     input_path = archived_dir / "selected_scoring_input.json"
     profiles_path = archived_dir / "profiles.json"
+    scoring_config_path = archived_dir / "scoring.v1.json"
     _write_input(input_path, "1")
     _write_profiles(profiles_path)
+    scoring_config_path.write_text((Path("config/scoring.v1.json")).read_text(encoding="utf-8"), encoding="utf-8")
 
     expected_outputs = _run_score_jobs(input_path, profiles_path, "cs", run_dir / "expected")
 
@@ -178,6 +189,13 @@ def test_replay_recalc_detects_mismatch(tmp_path: Path, monkeypatch) -> None:
                         "archived_path": profiles_path.relative_to(state_dir).as_posix(),
                         "sha256": compute_sha256_file(profiles_path),
                         "bytes": profiles_path.stat().st_size,
+                        "hash_algo": "sha256",
+                    },
+                    "scoring_config": {
+                        "source_path": str(scoring_config_path),
+                        "archived_path": scoring_config_path.relative_to(state_dir).as_posix(),
+                        "sha256": compute_sha256_file(scoring_config_path),
+                        "bytes": scoring_config_path.stat().st_size,
                         "hash_algo": "sha256",
                     },
                 }

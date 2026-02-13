@@ -45,6 +45,7 @@ from ji_engine.ai.provider import AIProvider, OpenAIProvider, StubProvider
 from ji_engine.ai.schema import ensure_ai_payload
 from ji_engine.config import (
     ENRICHED_JOBS_JSON,
+    REPO_ROOT,
     USER_STATE_DIR,
     ranked_families_json,
     ranked_jobs_csv,
@@ -52,6 +53,7 @@ from ji_engine.config import (
     shortlist_md,
 )
 from ji_engine.profile_loader import load_candidate_profile
+from ji_engine.scoring import ScoringConfig, ScoringConfigError, load_scoring_config
 from ji_engine.semantic.boost import SemanticPolicy, apply_bounded_semantic_boost
 from ji_engine.semantic.core import DEFAULT_SEMANTIC_MODEL_ID, EMBEDDING_BACKEND_VERSION
 from ji_engine.utils.atomic_write import atomic_write_text, atomic_write_with
@@ -433,7 +435,7 @@ def _select_ai_cache() -> AICache:
 # Tunables: role-band multipliers (this is your big lever)
 # ------------------------------------------------------------
 
-ROLE_BAND_MULTIPLIERS: Dict[str, float] = {
+DEFAULT_ROLE_BAND_MULTIPLIERS: Dict[str, float] = {
     "CS_CORE": 1.25,
     "CS_ADJACENT": 1.15,
     "SOLUTIONS": 1.05,
@@ -446,7 +448,7 @@ ROLE_BAND_MULTIPLIERS: Dict[str, float] = {
 # You can tweak these numbers anytime without touching logic.
 # ------------------------------------------------------------
 
-PROFILE_WEIGHTS = {
+DEFAULT_PROFILE_WEIGHTS = {
     "boost_cs_core": 15,
     "boost_cs_adjacent": 5,
     "boost_solutions": 2,
@@ -474,6 +476,25 @@ class AIBlendConfig:
 
 # Single source of truth for AI blend behavior. Weight can be overridden by profile.
 AI_BLEND_CONFIG = AIBlendConfig()
+ROLE_BAND_MULTIPLIERS: Dict[str, float] = dict(DEFAULT_ROLE_BAND_MULTIPLIERS)
+PROFILE_WEIGHTS: Dict[str, int] = dict(DEFAULT_PROFILE_WEIGHTS)
+
+
+def _apply_scoring_config(config: ScoringConfig) -> None:
+    """
+    Load deterministic scoring defaults from versioned config.
+    Profile selection can still override these defaults afterwards.
+    """
+    global AI_BLEND_CONFIG
+    ROLE_BAND_MULTIPLIERS.clear()
+    ROLE_BAND_MULTIPLIERS.update({k: float(v) for k, v in config.role_band_multipliers.items()})
+    PROFILE_WEIGHTS.clear()
+    PROFILE_WEIGHTS.update({k: int(v) for k, v in config.profile_weights.items()})
+    AI_BLEND_CONFIG = AIBlendConfig(
+        weight=float(config.ai_blend.weight),
+        min_heuristic_floor=config.ai_blend.min_heuristic_floor,
+        max_ai_contribution=config.ai_blend.max_ai_contribution,
+    )
 
 
 # ------------------------------------------------------------
@@ -1503,6 +1524,7 @@ def main() -> int:
     ap.add_argument("--profile", default="cs")
     ap.add_argument("--provider_id", default="openai")
     ap.add_argument("--profiles", default="config/profiles.json")
+    ap.add_argument("--scoring_config", default=str(REPO_ROOT / "config" / "scoring.v1.json"))
     ap.add_argument("--in_path", default=str(ENRICHED_JOBS_JSON))
     ap.add_argument(
         "--prefer_ai",
@@ -1596,6 +1618,13 @@ def main() -> int:
     ):
         p.parent.mkdir(parents=True, exist_ok=True)
     # ----------------------------
+
+    scoring_config_path = Path(args.scoring_config)
+    try:
+        scoring_config = load_scoring_config(scoring_config_path)
+    except ScoringConfigError as exc:
+        raise SystemExit(f"Scoring config validation failed: {exc}") from exc
+    _apply_scoring_config(scoring_config)
 
     profiles = load_profiles(args.profiles)
     apply_profile(args.profile, profiles)

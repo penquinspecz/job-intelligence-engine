@@ -27,6 +27,27 @@ Why: snapshot drift makes “local green / Docker red” failures, and breaks go
 
 Run reports capture inputs/outputs and their hashes. Replay verification re-computes hashes and compares.
 
+Scoring Determinism Contract v1:
+- Scoring uses strict, versioned config at `config/scoring.v1.json`.
+- Every run report records `scoring_model`:
+  - `version`, `algorithm_id`
+  - `config_sha256` (normalized hash)
+  - `module_path`, `code_sha256`
+  - `inputs` pointer list (selected scoring input + profiles config + scoring config)
+- Recalc replay uses archived scoring dependencies under:
+  - `state/runs/<run_id>/inputs/<provider>/<profile>/selected_scoring_input.json`
+  - `state/runs/<run_id>/inputs/<provider>/<profile>/profiles.json`
+  - `state/runs/<run_id>/inputs/<provider>/<profile>/scoring.v1.json` (when present)
+
+Breaking scoring changes policy:
+- Any scoring semantic change (rules, multipliers, blend behavior, config values) must bump scoring contract version.
+- If code/config drift occurs without version bump, drift tests fail.
+- To bump safely:
+  1) Add new versioned scoring config (for example `config/scoring.v2.json`)
+  2) Update contract metadata version/algorithm id
+  3) Refresh golden replay fixtures and drift signature intentionally
+  4) Document expected scoring semantic deltas in the PR
+
 Command:
 ```bash
 python scripts/replay_run.py --run-id <run_id> --strict

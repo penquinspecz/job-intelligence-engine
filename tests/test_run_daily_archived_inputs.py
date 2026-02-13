@@ -65,6 +65,12 @@ def test_run_daily_archives_selected_inputs_and_replay(tmp_path, monkeypatch) ->
     archived_path = state_dir / Path(archived_input["archived_path"])
     assert archived_path.exists()
     assert archived_input["sha256"] == compute_sha256_file(archived_path)
+    archived_scoring = archived["scoring_config"]
+    archived_scoring_path = state_dir / Path(archived_scoring["archived_path"])
+    assert archived_scoring_path.exists()
+    assert archived_scoring["sha256"] == compute_sha256_file(archived_scoring_path)
+    assert run_report["scoring_model"]["version"] == "v1"
+    assert run_report["scoring_model"]["algorithm_id"]
 
     # Overwrite canonical input in data dir; archived copy should remain stable.
     (data_dir / "openai_enriched_jobs.json").write_text("junk", encoding="utf-8")

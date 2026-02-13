@@ -1,0 +1,20 @@
+[
+  {
+    "job_id": "job-001",
+    "title": "Customer Success Manager, AI Deployment",
+    "location": "San Francisco, CA",
+    "apply_url": "https://example.com/job-001",
+    "jd_text": "Customer success, adoption, onboarding, implementation, stakeholder management, renewal planning.",
+    "relevance": "RELEVANT",
+    "provider": "openai"
+  },
+  {
+    "job_id": "job-002",
+    "title": "Research Scientist",
+    "location": "Remote",
+    "apply_url": "https://example.com/job-002",
+    "jd_text": "Research scientist role requiring PhD and model training on CUDA kernels.",
+    "relevance": "MAYBE",
+    "provider": "openai"
+  }
+]

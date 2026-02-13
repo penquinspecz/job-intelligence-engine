@@ -46,23 +46,31 @@ def _resolve_provider(report: Dict[str, Any]) -> str:
 
 def _resolve_archived_inputs(
     report: Dict[str, Any], provider: str, profile: str, state_dir: Path
-) -> Tuple[Optional[Path], Optional[Path]]:
+) -> Tuple[Optional[Path], Optional[Path], Optional[Path]]:
     archived = report.get("archived_inputs_by_provider_profile") or {}
     if not isinstance(archived, dict):
-        return None, None
+        return None, None, None
     by_provider = archived.get(provider)
     if not isinstance(by_provider, dict):
-        return None, None
+        return None, None, None
     by_profile = by_provider.get(profile)
     if not isinstance(by_profile, dict):
-        return None, None
+        return None, None, None
     selected = by_profile.get("selected_scoring_input")
     profile_cfg = by_profile.get("profile_config")
+    scoring_cfg = by_profile.get("scoring_config")
     if not isinstance(selected, dict) or not isinstance(profile_cfg, dict):
-        return None, None
+        return None, None, None
     selected_path = _resolve_archived_path(selected.get("archived_path"), state_dir)
     profile_path = _resolve_archived_path(profile_cfg.get("archived_path"), state_dir)
-    return (Path(selected_path) if selected_path else None, Path(profile_path) if profile_path else None)
+    scoring_path = (
+        _resolve_archived_path(scoring_cfg.get("archived_path"), state_dir) if isinstance(scoring_cfg, dict) else None
+    )
+    return (
+        Path(selected_path) if selected_path else None,
+        Path(profile_path) if profile_path else None,
+        Path(scoring_path) if scoring_path else None,
+    )
 
 
 def _resolve_expected_outputs(
@@ -100,7 +108,7 @@ def _collect_archived_entries(
     if not isinstance(by_profile, dict):
         return []
     entries: List[Tuple[str, Optional[str], Optional[str]]] = []
-    for key in ("selected_scoring_input", "profile_config"):
+    for key in ("selected_scoring_input", "profile_config", "scoring_config"):
         meta = by_profile.get(key)
         if isinstance(meta, dict):
             entries.append(
@@ -353,7 +361,7 @@ def _recalc_report(
     missing_keys: List[str] = []
 
     provider = _resolve_provider(report)
-    selected_input, profile_cfg = _resolve_archived_inputs(report, provider, profile, state_dir)
+    selected_input, profile_cfg, scoring_cfg = _resolve_archived_inputs(report, provider, profile, state_dir)
     if not selected_input or not profile_cfg:
         return (
             2,
@@ -399,6 +407,8 @@ def _recalc_report(
     flags = report.get("flags") or {}
     min_score = flags.get("min_score", 40)
     us_only = bool(flags.get("us_only", False))
+    if scoring_cfg is None:
+        scoring_cfg = Path("config/scoring.v1.json")
 
     try:
         import scripts.score_jobs as score_jobs  # local import to avoid side-effects when not recalc
@@ -411,6 +421,8 @@ def _recalc_report(
             str(profile_cfg),
             "--in_path",
             str(selected_input),
+            "--scoring_config",
+            str(scoring_cfg),
             "--out_json",
             str(out_json),
             "--out_csv",
