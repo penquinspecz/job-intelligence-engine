@@ -14,8 +14,7 @@
   ],
   "properties": {
     "schema_version": {
-      "type": "integer",
-      "enum": [1]
+      "const": 1
     },
     "candidate_id": {
       "type": "string",
