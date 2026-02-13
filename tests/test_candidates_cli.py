@@ -35,7 +35,7 @@ def test_candidate_add_creates_namespaced_dirs(tmp_path: Path, monkeypatch, caps
     assert config.candidate_history_dir("alice").exists()
     assert config.candidate_user_state_dir("alice").exists()
 
-    profile = _read(config.candidate_state_dir("alice") / "candidate_profile.json")
+    profile = _read(config.candidate_profile_path("alice"))
     assert profile["candidate_id"] == "alice"
     assert profile["display_name"] == "Alice Example"
 
@@ -80,7 +80,7 @@ def test_candidate_profile_validation(tmp_path: Path, monkeypatch, capsys) -> No
     assert rc == 0
     capsys.readouterr()
 
-    profile_path = config.candidate_state_dir("bob") / "candidate_profile.json"
+    profile_path = config.candidate_profile_path("bob")
     broken = _read(profile_path)
     broken.pop("display_name")
     profile_path.write_text(json.dumps(broken), encoding="utf-8")
