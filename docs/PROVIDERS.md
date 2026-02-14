@@ -2,6 +2,37 @@
 
 SignalCraft provider additions must stay snapshot-first, deterministic, and offline-reproducible in tests.
 
+## Enablement Contract
+
+Provider enablement is explicit and guarded. Use the contract checks before toggling `enabled=true`.
+
+Validate one provider:
+
+```bash
+make provider-validate provider=<provider_id>
+```
+
+Attempt enable (dry-run; no config edits):
+
+```bash
+make provider-enable provider=<provider_id> WHY="why this provider should be enabled now"
+```
+
+Apply enablement after checks are green:
+
+```bash
+make provider-enable provider=<provider_id> WHY="why this provider should be enabled now" I_MEAN_IT=1
+```
+
+`enable` refuses when any of these are true:
+- `careers_urls` missing/empty
+- `allowed_domains` missing/empty
+- `extraction_mode` missing/invalid
+- snapshot provider fixture missing
+- snapshot manifest missing entry or hash/bytes mismatch
+
+Guardrail: no config mutation happens unless `--i-mean-it` (or `I_MEAN_IT=1`) is supplied.
+
 ## Snapshot Baseline Updates
 
 Use `update-snapshot-manifest` only when a provider snapshot fixture was intentionally changed.
@@ -35,6 +66,15 @@ Run it when all of these are true:
 - You want CI immutability checks to pin the new baseline.
 
 Do not run it for unrelated code-only changes.
+
+## CI Failure Remediation
+
+If CI fails with snapshot contract errors (for example missing fixture/manifest mismatch):
+
+1. Run `make provider-validate provider=<provider_id>` to see the failing check.
+2. If fixture bytes changed intentionally, run `make provider-manifest-update provider=<provider_id>`.
+3. Re-run `make gate` locally.
+4. Keep providers disabled until validation + gate pass.
 
 ## PR Hygiene Note
 

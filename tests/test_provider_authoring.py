@@ -10,14 +10,16 @@ from ji_engine.utils.verification import compute_sha256_file
 from scripts import provider_authoring
 
 
-def _provider_entry(provider_id: str, snapshot_path: Path) -> dict[str, object]:
+def _provider_entry(
+    provider_id: str, snapshot_path: Path, *, enabled: bool = True, extraction_mode: str = "jsonld"
+) -> dict[str, object]:
     return {
         "provider_id": provider_id,
         "display_name": provider_id.upper(),
-        "enabled": True,
+        "enabled": enabled,
         "careers_urls": [f"https://{provider_id}.example.com/careers"],
         "allowed_domains": [f"{provider_id}.example.com"],
-        "extraction_mode": "jsonld",
+        "extraction_mode": extraction_mode,
         "mode": "snapshot",
         "snapshot_enabled": True,
         "live_enabled": False,
@@ -26,6 +28,15 @@ def _provider_entry(provider_id: str, snapshot_path: Path) -> dict[str, object]:
         "update_cadence": {"min_interval_hours": 24, "priority": "normal"},
         "politeness": {"min_delay_s": 1.0, "max_attempts": 2},
     }
+
+
+def _write_providers_config(path: Path, providers: list[dict[str, object]]) -> None:
+    payload = {"schema_version": 1, "providers": providers}
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _manifest_entry(path: Path) -> dict[str, object]:
+    return {"sha256": compute_sha256_file(path), "bytes": path.stat().st_size}
 
 
 def test_template_command_outputs_schema_valid_entry(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -89,14 +100,10 @@ def test_update_snapshot_manifest_is_provider_scoped(tmp_path: Path, capsys: pyt
     beta_snapshot.write_text("beta v1", encoding="utf-8")
 
     providers_path = tmp_path / "providers.json"
-    providers_payload = {
-        "schema_version": 1,
-        "providers": [
-            _provider_entry("alpha", alpha_snapshot),
-            _provider_entry("beta", beta_snapshot),
-        ],
-    }
-    providers_path.write_text(json.dumps(providers_payload, indent=2, sort_keys=True), encoding="utf-8")
+    _write_providers_config(
+        providers_path,
+        [_provider_entry("alpha", alpha_snapshot), _provider_entry("beta", beta_snapshot)],
+    )
 
     manifest_path = tmp_path / "snapshot_bytes.manifest.json"
     baseline_manifest = {
@@ -134,8 +141,7 @@ def test_update_snapshot_manifest_is_deterministic_for_repeated_runs(tmp_path: P
     snapshot.write_text("same bytes every run", encoding="utf-8")
 
     providers_path = tmp_path / "providers.json"
-    providers_payload = {"schema_version": 1, "providers": [_provider_entry("alpha", snapshot)]}
-    providers_path.write_text(json.dumps(providers_payload, indent=2, sort_keys=True), encoding="utf-8")
+    _write_providers_config(providers_path, [_provider_entry("alpha", snapshot)])
 
     manifest_path = tmp_path / "snapshot_bytes.manifest.json"
     manifest_path.write_text("{}\n", encoding="utf-8")
@@ -175,8 +181,7 @@ def test_update_snapshot_manifest_fails_when_snapshot_missing(tmp_path: Path) ->
     missing_snapshot = tmp_path / "data" / "alpha_snapshots" / "index.html"
 
     providers_path = tmp_path / "providers.json"
-    providers_payload = {"schema_version": 1, "providers": [_provider_entry("alpha", missing_snapshot)]}
-    providers_path.write_text(json.dumps(providers_payload, indent=2, sort_keys=True), encoding="utf-8")
+    _write_providers_config(providers_path, [_provider_entry("alpha", missing_snapshot)])
 
     manifest_path = tmp_path / "snapshot_bytes.manifest.json"
     manifest_path.write_text("{}\n", encoding="utf-8")
@@ -193,3 +198,224 @@ def test_update_snapshot_manifest_fails_when_snapshot_missing(tmp_path: Path) ->
                 str(manifest_path),
             ]
         )
+
+
+def test_validate_provider_output_is_deterministic(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    snapshot = tmp_path / "data" / "alpha_snapshots" / "index.html"
+    snapshot.parent.mkdir(parents=True, exist_ok=True)
+    snapshot.write_text("alpha fixture", encoding="utf-8")
+
+    providers_path = tmp_path / "providers.json"
+    _write_providers_config(providers_path, [_provider_entry("alpha", snapshot, enabled=False)])
+
+    manifest_path = tmp_path / "snapshot_bytes.manifest.json"
+    manifest_path.write_text(
+        json.dumps({str(snapshot): _manifest_entry(snapshot)}, indent=2, sort_keys=True), encoding="utf-8"
+    )
+
+    args = [
+        "validate-provider",
+        "--provider",
+        "alpha",
+        "--providers-config",
+        str(providers_path),
+        "--manifest-path",
+        str(manifest_path),
+        "--providers-schema",
+        str(Path("schemas/providers.schema.v1.json")),
+    ]
+    first_rc = provider_authoring.main(args)
+    first_out = capsys.readouterr().out
+    second_rc = provider_authoring.main(args)
+    second_out = capsys.readouterr().out
+
+    assert first_rc == 0
+    assert second_rc == 0
+    assert first_out == second_out
+    assert "status=PASS" in first_out
+
+
+def test_enable_refuses_without_i_mean_it(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    snapshot = tmp_path / "data" / "alpha_snapshots" / "index.html"
+    snapshot.parent.mkdir(parents=True, exist_ok=True)
+    snapshot.write_text("alpha fixture", encoding="utf-8")
+
+    providers_path = tmp_path / "providers.json"
+    _write_providers_config(providers_path, [_provider_entry("alpha", snapshot, enabled=False)])
+
+    manifest_path = tmp_path / "snapshot_bytes.manifest.json"
+    manifest_path.write_text(
+        json.dumps({str(snapshot): _manifest_entry(snapshot)}, indent=2, sort_keys=True), encoding="utf-8"
+    )
+
+    rc = provider_authoring.main(
+        [
+            "enable",
+            "--provider",
+            "alpha",
+            "--why",
+            "ready for controlled rollout",
+            "--providers-config",
+            str(providers_path),
+            "--manifest-path",
+            str(manifest_path),
+            "--providers-schema",
+            str(Path("schemas/providers.schema.v1.json")),
+        ]
+    )
+    output = capsys.readouterr().out
+
+    assert rc == 2
+    assert "ENABLEMENT CHECKLIST" in output
+    assert "refusing to edit providers config without --i-mean-it" in output
+
+    payload = json.loads(providers_path.read_text(encoding="utf-8"))
+    assert payload["providers"][0]["enabled"] is False
+
+
+def test_enable_refuses_when_snapshot_manifest_missing_or_fixture_missing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    missing_snapshot = tmp_path / "data" / "alpha_snapshots" / "index.html"
+
+    providers_path = tmp_path / "providers.json"
+    _write_providers_config(providers_path, [_provider_entry("alpha", missing_snapshot, enabled=False)])
+
+    manifest_path = tmp_path / "missing.manifest.json"
+
+    rc = provider_authoring.main(
+        [
+            "enable",
+            "--provider",
+            "alpha",
+            "--why",
+            "missing fixture should block",
+            "--providers-config",
+            str(providers_path),
+            "--manifest-path",
+            str(manifest_path),
+            "--providers-schema",
+            str(Path("schemas/providers.schema.v1.json")),
+            "--i-mean-it",
+        ]
+    )
+    output = capsys.readouterr().out
+
+    assert rc == 1
+    assert "[FAIL] snapshot_fixture_exists" in output
+    assert "[FAIL] snapshot_manifest_entry" in output
+
+    payload = json.loads(providers_path.read_text(encoding="utf-8"))
+    assert payload["providers"][0]["enabled"] is False
+
+
+def test_enable_refuses_when_extraction_mode_invalid(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    snapshot = tmp_path / "data" / "alpha_snapshots" / "index.html"
+    snapshot.parent.mkdir(parents=True, exist_ok=True)
+    snapshot.write_text("alpha fixture", encoding="utf-8")
+
+    providers_path = tmp_path / "providers.json"
+    _write_providers_config(
+        providers_path, [_provider_entry("alpha", snapshot, enabled=False, extraction_mode="bogus")]
+    )
+
+    manifest_path = tmp_path / "snapshot_bytes.manifest.json"
+    manifest_path.write_text(
+        json.dumps({str(snapshot): _manifest_entry(snapshot)}, indent=2, sort_keys=True), encoding="utf-8"
+    )
+
+    rc = provider_authoring.main(
+        [
+            "enable",
+            "--provider",
+            "alpha",
+            "--why",
+            "invalid extraction mode should fail",
+            "--providers-config",
+            str(providers_path),
+            "--manifest-path",
+            str(manifest_path),
+            "--providers-schema",
+            str(Path("schemas/providers.schema.v1.json")),
+            "--i-mean-it",
+        ]
+    )
+    output = capsys.readouterr().out
+
+    assert rc == 1
+    assert "[FAIL] extraction_mode_valid" in output
+
+
+def test_enable_sets_enabled_true_with_i_mean_it(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    snapshot = tmp_path / "data" / "alpha_snapshots" / "index.html"
+    snapshot.parent.mkdir(parents=True, exist_ok=True)
+    snapshot.write_text("alpha fixture", encoding="utf-8")
+
+    providers_path = tmp_path / "providers.json"
+    _write_providers_config(providers_path, [_provider_entry("alpha", snapshot, enabled=False)])
+
+    manifest_path = tmp_path / "snapshot_bytes.manifest.json"
+    manifest_path.write_text(
+        json.dumps({str(snapshot): _manifest_entry(snapshot)}, indent=2, sort_keys=True), encoding="utf-8"
+    )
+
+    rc = provider_authoring.main(
+        [
+            "enable",
+            "--provider",
+            "alpha",
+            "--why",
+            "all checks pass",
+            "--providers-config",
+            str(providers_path),
+            "--manifest-path",
+            str(manifest_path),
+            "--providers-schema",
+            str(Path("schemas/providers.schema.v1.json")),
+            "--i-mean-it",
+        ]
+    )
+    output = capsys.readouterr().out
+
+    assert rc == 0
+    assert "enabled provider 'alpha'" in output
+
+    payload = json.loads(providers_path.read_text(encoding="utf-8"))
+    assert payload["providers"][0]["enabled"] is True
+
+
+def test_enable_output_is_deterministic_without_i_mean_it(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    snapshot = tmp_path / "data" / "alpha_snapshots" / "index.html"
+    snapshot.parent.mkdir(parents=True, exist_ok=True)
+    snapshot.write_text("alpha fixture", encoding="utf-8")
+
+    providers_path = tmp_path / "providers.json"
+    _write_providers_config(providers_path, [_provider_entry("alpha", snapshot, enabled=False)])
+
+    manifest_path = tmp_path / "snapshot_bytes.manifest.json"
+    manifest_path.write_text(
+        json.dumps({str(snapshot): _manifest_entry(snapshot)}, indent=2, sort_keys=True), encoding="utf-8"
+    )
+
+    args = [
+        "enable",
+        "--provider",
+        "alpha",
+        "--why",
+        "dry run output determinism",
+        "--providers-config",
+        str(providers_path),
+        "--manifest-path",
+        str(manifest_path),
+        "--providers-schema",
+        str(Path("schemas/providers.schema.v1.json")),
+    ]
+
+    first_rc = provider_authoring.main(args)
+    first_out = capsys.readouterr().out
+    second_rc = provider_authoring.main(args)
+    second_out = capsys.readouterr().out
+
+    assert first_rc == 2
+    assert second_rc == 2
+    assert first_out == second_out

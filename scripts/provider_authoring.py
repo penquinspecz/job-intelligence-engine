@@ -10,6 +10,7 @@ import argparse
 import json
 import os
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
@@ -36,6 +37,31 @@ PLACEHOLDER_TEMPLATE = """<!doctype html>
 """
 
 _WARNING_BANNER = "THIS IS A DETERMINISM BASELINE CHANGE; REVIEW REQUIRED"
+_DEFAULT_PROVIDERS_CONFIG = Path("config") / "providers.json"
+_DEFAULT_MANIFEST_PATH = Path("tests") / "fixtures" / "golden" / "snapshot_bytes.manifest.json"
+_DEFAULT_SCHEMA_PATH = Path("schemas") / "providers.schema.v1.json"
+_DEFAULT_ENABLEMENT_MODE = "snapshot"
+
+
+@dataclass(frozen=True)
+class ValidationCheck:
+    name: str
+    ok: bool
+    detail: str
+
+
+@dataclass(frozen=True)
+class ProviderValidationResult:
+    provider_id: str
+    checks: tuple[ValidationCheck, ...]
+
+    @property
+    def errors(self) -> tuple[str, ...]:
+        return tuple(check.detail for check in self.checks if not check.ok)
+
+    @property
+    def ok(self) -> bool:
+        return all(check.ok for check in self.checks)
 
 
 def _atomic_write_text(path: Path, payload: str) -> None:
@@ -50,6 +76,10 @@ def _atomic_write_text(path: Path, payload: str) -> None:
             os.unlink(tmp_path)
         except FileNotFoundError:
             pass
+
+
+def _json_dump(payload: Any) -> str:
+    return json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
 
 
 def template_entry(provider_id: str) -> dict[str, Any]:
@@ -101,6 +131,35 @@ def scaffold_snapshot(provider_id: str, data_dir: Path, *, force: bool = False) 
     return index_path
 
 
+def _providers_payload(path: Path) -> tuple[dict[str, Any] | list[Any], list[dict[str, Any]]]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(payload, dict):
+        providers = payload.get("providers")
+    elif isinstance(payload, list):
+        providers = payload
+    else:
+        raise ValueError(f"providers config must be object/list: {path}")
+    if not isinstance(providers, list):
+        raise ValueError(f"providers config missing providers list: {path}")
+    typed = [entry for entry in providers if isinstance(entry, dict)]
+    if len(typed) != len(providers):
+        raise ValueError(f"providers config has non-object entries: {path}")
+    return payload, typed
+
+
+def _resolve_provider_entry_raw(
+    provider_id: str, providers_config_path: Path
+) -> tuple[dict[str, Any] | list[Any], list[dict[str, Any]], dict[str, Any]]:
+    payload, providers = _providers_payload(providers_config_path)
+    target_id = provider_id.strip().lower()
+    for entry in providers:
+        entry_id = str(entry.get("provider_id", "")).strip().lower()
+        if entry_id == target_id:
+            return payload, providers, entry
+    known = ", ".join(sorted(str(p.get("provider_id", "")).strip() for p in providers if p.get("provider_id")))
+    raise ValueError(f"unknown provider '{provider_id}'. known providers: {known}")
+
+
 def _resolve_provider_entry(provider_id: str, providers_config_path: Path) -> dict[str, Any]:
     providers = load_providers_config(providers_config_path)
     target_id = provider_id.strip().lower()
@@ -120,6 +179,243 @@ def _manifest_key(snapshot_path_raw: str, snapshot_path_resolved: Path) -> str:
         return snapshot_path_resolved.resolve().relative_to(cwd).as_posix()
     except ValueError:
         return snapshot_path_resolved.as_posix()
+
+
+def _print_warning_header() -> None:
+    border = "#" * len(_WARNING_BANNER)
+    print(border)
+    print(_WARNING_BANNER)
+    print(border)
+
+
+def _allowed_extraction_modes(schema_path: Path) -> set[str]:
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    raw = schema.get("$defs", {}).get("provider", {}).get("properties", {}).get("extraction_mode", {}).get("enum", [])
+    if not isinstance(raw, list):
+        return set()
+    return {str(mode).strip().lower() for mode in raw if str(mode).strip()}
+
+
+def _bool_default(value: Any, *, default: bool) -> bool:
+    if value is None:
+        return default
+    return bool(value)
+
+
+def validate_provider(
+    *,
+    provider_id: str,
+    providers_config_path: Path,
+    manifest_path: Path,
+    providers_schema_path: Path,
+    for_enable: bool,
+) -> ProviderValidationResult:
+    checks: list[ValidationCheck] = []
+    target_id = provider_id.strip().lower()
+
+    try:
+        _, _, raw_entry = _resolve_provider_entry_raw(target_id, providers_config_path)
+        checks.append(ValidationCheck("provider_exists", True, f"provider '{target_id}' found"))
+    except Exception as exc:
+        checks.append(ValidationCheck("provider_exists", False, str(exc)))
+        return ProviderValidationResult(provider_id=target_id, checks=tuple(checks))
+
+    careers_urls = raw_entry.get("careers_urls")
+    if isinstance(careers_urls, list) and any(str(url).strip() for url in careers_urls):
+        checks.append(ValidationCheck("careers_urls_present", True, f"careers_urls count={len(careers_urls)}"))
+    else:
+        checks.append(
+            ValidationCheck(
+                "careers_urls_present",
+                False,
+                "careers_urls must be a non-empty list for explicit provider enablement",
+            )
+        )
+
+    allowed_domains = raw_entry.get("allowed_domains")
+    if isinstance(allowed_domains, list) and any(str(host).strip() for host in allowed_domains):
+        checks.append(ValidationCheck("allowed_domains_present", True, f"allowed_domains count={len(allowed_domains)}"))
+    else:
+        checks.append(
+            ValidationCheck(
+                "allowed_domains_present",
+                False,
+                "allowed_domains must be a non-empty list for explicit provider enablement",
+            )
+        )
+
+    extraction_modes = sorted(_allowed_extraction_modes(providers_schema_path))
+    extraction_mode = str(raw_entry.get("extraction_mode") or "").strip().lower()
+    if extraction_mode and extraction_mode in extraction_modes:
+        checks.append(ValidationCheck("extraction_mode_valid", True, f"extraction_mode={extraction_mode}"))
+    elif extraction_mode:
+        checks.append(
+            ValidationCheck(
+                "extraction_mode_valid",
+                False,
+                f"invalid extraction_mode '{extraction_mode}' (allowed: {', '.join(extraction_modes)})",
+            )
+        )
+    else:
+        checks.append(
+            ValidationCheck(
+                "extraction_mode_valid",
+                False,
+                "extraction_mode is required for explicit provider enablement",
+            )
+        )
+
+    normalized_entry: dict[str, Any] | None = None
+    try:
+        normalized_entry = _resolve_provider_entry(target_id, providers_config_path)
+        checks.append(ValidationCheck("provider_schema_valid", True, "providers config schema and invariants pass"))
+    except Exception as exc:
+        checks.append(ValidationCheck("provider_schema_valid", False, str(exc)))
+
+    mode = str(raw_entry.get("mode") or _DEFAULT_ENABLEMENT_MODE).strip().lower()
+    snapshot_enabled = _bool_default(raw_entry.get("snapshot_enabled"), default=True)
+    target_enabled = True if for_enable else _bool_default(raw_entry.get("enabled"), default=True)
+    requires_snapshot_contract = mode in {"snapshot", "auto"} and snapshot_enabled and target_enabled
+
+    if not requires_snapshot_contract:
+        checks.append(
+            ValidationCheck(
+                "snapshot_contract",
+                True,
+                f"snapshot checks not required (mode={mode}, snapshot_enabled={snapshot_enabled}, enabled={target_enabled})",
+            )
+        )
+        return ProviderValidationResult(provider_id=target_id, checks=tuple(checks))
+
+    snapshot_path_raw = str(raw_entry.get("snapshot_path") or "").strip()
+    if not snapshot_path_raw and normalized_entry is not None:
+        snapshot_path_raw = str(normalized_entry.get("snapshot_path") or "").strip()
+
+    if not snapshot_path_raw:
+        checks.append(
+            ValidationCheck(
+                "snapshot_fixture_exists",
+                False,
+                "snapshot_path missing for snapshot/auto provider",
+            )
+        )
+        checks.append(
+            ValidationCheck(
+                "snapshot_manifest_entry",
+                False,
+                "cannot validate manifest without snapshot_path",
+            )
+        )
+        return ProviderValidationResult(provider_id=target_id, checks=tuple(checks))
+
+    snapshot_path = Path(snapshot_path_raw)
+    if not snapshot_path.is_absolute():
+        snapshot_path = (Path.cwd() / snapshot_path).resolve()
+
+    fixture_exists = snapshot_path.exists()
+    checks.append(
+        ValidationCheck(
+            "snapshot_fixture_exists",
+            fixture_exists,
+            f"snapshot_path={snapshot_path_raw}",
+        )
+    )
+
+    if not manifest_path.exists():
+        checks.append(
+            ValidationCheck(
+                "snapshot_manifest_entry",
+                False,
+                f"snapshot manifest not found: {manifest_path}",
+            )
+        )
+        return ProviderValidationResult(provider_id=target_id, checks=tuple(checks))
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict):
+        checks.append(
+            ValidationCheck(
+                "snapshot_manifest_entry",
+                False,
+                f"snapshot manifest must be a JSON object: {manifest_path}",
+            )
+        )
+        return ProviderValidationResult(provider_id=target_id, checks=tuple(checks))
+
+    manifest_key = _manifest_key(snapshot_path_raw, snapshot_path)
+    manifest_entry = manifest.get(manifest_key)
+    if not isinstance(manifest_entry, dict):
+        checks.append(
+            ValidationCheck(
+                "snapshot_manifest_entry",
+                False,
+                f"manifest missing entry for snapshot_path '{manifest_key}'",
+            )
+        )
+        return ProviderValidationResult(provider_id=target_id, checks=tuple(checks))
+
+    if not fixture_exists:
+        checks.append(
+            ValidationCheck(
+                "snapshot_manifest_entry",
+                False,
+                f"snapshot fixture missing at '{snapshot_path_raw}'",
+            )
+        )
+        return ProviderValidationResult(provider_id=target_id, checks=tuple(checks))
+
+    actual_bytes = snapshot_path.stat().st_size
+    actual_sha = compute_sha256_file(snapshot_path)
+    expected_bytes = manifest_entry.get("bytes")
+    expected_sha = manifest_entry.get("sha256")
+    hash_ok = actual_bytes == expected_bytes and actual_sha == expected_sha
+    checks.append(
+        ValidationCheck(
+            "snapshot_manifest_entry",
+            hash_ok,
+            (
+                f"manifest_key={manifest_key} expected_bytes={expected_bytes} actual_bytes={actual_bytes} "
+                f"expected_sha256={expected_sha} actual_sha256={actual_sha}"
+            ),
+        )
+    )
+
+    return ProviderValidationResult(provider_id=target_id, checks=tuple(checks))
+
+
+def _print_validation_result(result: ProviderValidationResult) -> None:
+    for check in result.checks:
+        status = "OK" if check.ok else "FAIL"
+        print(f"[{status}] {check.name}: {check.detail}")
+    summary = "PASS" if result.ok else "FAIL"
+    print(f"status={summary}")
+
+
+def _print_enablement_checklist(provider_id: str) -> None:
+    print("ENABLEMENT CHECKLIST")
+    print(f"1) make provider-validate provider={provider_id}")
+    print(f"2) if fixture bytes changed: make provider-manifest-update provider={provider_id}")
+    print("3) make gate")
+    print(f'4) make provider-enable provider={provider_id} WHY="<reason>" I_MEAN_IT=1')
+
+
+def _write_payload(path: Path, payload: dict[str, Any] | list[Any]) -> None:
+    _atomic_write_text(path, _json_dump(payload))
+
+
+def _enable_provider_in_config(provider_id: str, providers_config_path: Path) -> bool:
+    payload, providers, raw_entry = _resolve_provider_entry_raw(provider_id, providers_config_path)
+    if bool(raw_entry.get("enabled", True)):
+        return False
+    raw_entry["enabled"] = True
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", encoding="utf-8", delete=True) as handle:
+        handle.write(_json_dump(payload))
+        handle.flush()
+        load_providers_config(Path(handle.name))
+
+    _write_payload(providers_config_path, payload)
+    return True
 
 
 def update_snapshot_manifest_for_provider(
@@ -159,13 +455,6 @@ def update_snapshot_manifest_for_provider(
     return key, new_entry, old_entry if isinstance(old_entry, dict) else None
 
 
-def _print_warning_header() -> None:
-    border = "#" * len(_WARNING_BANNER)
-    print(border)
-    print(_WARNING_BANNER)
-    print(border)
-
-
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Provider authoring helpers")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -183,11 +472,28 @@ def main(argv: Optional[list[str]] = None) -> int:
         help="Update snapshot bytes manifest entry for one provider only",
     )
     update_parser.add_argument("--provider", required=True)
-    update_parser.add_argument("--providers-config", default=str(Path("config") / "providers.json"))
-    update_parser.add_argument(
-        "--manifest-path",
-        default=str(Path("tests") / "fixtures" / "golden" / "snapshot_bytes.manifest.json"),
+    update_parser.add_argument("--providers-config", default=str(_DEFAULT_PROVIDERS_CONFIG))
+    update_parser.add_argument("--manifest-path", default=str(_DEFAULT_MANIFEST_PATH))
+
+    validate_parser = sub.add_parser(
+        "validate-provider",
+        help="Run provider enablement contract checks without modifying config",
     )
+    validate_parser.add_argument("--provider", required=True)
+    validate_parser.add_argument("--providers-config", default=str(_DEFAULT_PROVIDERS_CONFIG))
+    validate_parser.add_argument("--manifest-path", default=str(_DEFAULT_MANIFEST_PATH))
+    validate_parser.add_argument("--providers-schema", default=str(_DEFAULT_SCHEMA_PATH))
+
+    enable_parser = sub.add_parser(
+        "enable",
+        help="Enable provider after passing explicit guardrail checks",
+    )
+    enable_parser.add_argument("--provider", required=True)
+    enable_parser.add_argument("--why", required=True)
+    enable_parser.add_argument("--providers-config", default=str(_DEFAULT_PROVIDERS_CONFIG))
+    enable_parser.add_argument("--manifest-path", default=str(_DEFAULT_MANIFEST_PATH))
+    enable_parser.add_argument("--providers-schema", default=str(_DEFAULT_SCHEMA_PATH))
+    enable_parser.add_argument("--i-mean-it", action="store_true")
 
     args = parser.parse_args(argv)
     if args.command == "template":
@@ -217,6 +523,49 @@ def main(argv: Optional[list[str]] = None) -> int:
             print(f"previous_sha256={previous.get('sha256')}")
         else:
             print("previous_entry=<none>")
+        return 0
+
+    if args.command == "validate-provider":
+        result = validate_provider(
+            provider_id=args.provider,
+            providers_config_path=Path(args.providers_config),
+            manifest_path=Path(args.manifest_path),
+            providers_schema_path=Path(args.providers_schema),
+            for_enable=True,
+        )
+        print(f"provider={result.provider_id}")
+        _print_validation_result(result)
+        return 0 if result.ok else 1
+
+    if args.command == "enable":
+        provider_id = args.provider.strip().lower()
+        why = str(args.why).strip()
+        if not why:
+            raise ValueError("--why must be non-empty")
+
+        print(f"provider={provider_id}")
+        print(f"why={why}")
+        result = validate_provider(
+            provider_id=provider_id,
+            providers_config_path=Path(args.providers_config),
+            manifest_path=Path(args.manifest_path),
+            providers_schema_path=Path(args.providers_schema),
+            for_enable=True,
+        )
+        _print_validation_result(result)
+        _print_enablement_checklist(provider_id)
+
+        if not result.ok:
+            return 1
+        if not args.i_mean_it:
+            print("refusing to edit providers config without --i-mean-it")
+            return 2
+
+        changed = _enable_provider_in_config(provider_id, Path(args.providers_config))
+        if changed:
+            print(f"enabled provider '{provider_id}' in {args.providers_config}")
+        else:
+            print(f"provider '{provider_id}' already enabled; no config changes made")
         return 0
 
     raise SystemExit(f"unknown command: {args.command}")
