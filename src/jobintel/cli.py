@@ -19,6 +19,7 @@ from typing import Dict, List, Optional
 from ji_engine.config import DEFAULT_CANDIDATE_ID, RUN_METADATA_DIR, candidate_run_metadata_dir, sanitize_candidate_id
 from ji_engine.providers.openai_provider import CAREERS_SEARCH_URL
 from ji_engine.providers.registry import load_providers_config, resolve_provider_ids
+from ji_engine.state.run_index import list_runs_as_dicts
 
 from .safety.diff import build_safety_diff_report, load_jobs_from_path, render_summary, write_report
 from .snapshots.refresh import refresh_snapshot
@@ -305,6 +306,39 @@ def _safety_diff(args: argparse.Namespace) -> int:
     return 0
 
 
+def _runs_list(args: argparse.Namespace) -> int:
+    candidate_id = sanitize_candidate_id(args.candidate_id)
+    rows = list_runs_as_dicts(candidate_id=candidate_id, limit=args.limit)
+    headers = ("RUN_ID", "CANDIDATE", "STATUS", "CREATED_AT", "SUMMARY_PATH", "HEALTH_PATH", "GIT_SHA")
+
+    table_rows: List[List[str]] = []
+    for row in rows:
+        table_rows.append(
+            [
+                str(row.get("run_id") or ""),
+                str(row.get("candidate_id") or DEFAULT_CANDIDATE_ID),
+                str(row.get("status") or ""),
+                str(row.get("created_at") or ""),
+                str(row.get("summary_path") or ""),
+                str(row.get("health_path") or ""),
+                str(row.get("git_sha") or ""),
+            ]
+        )
+
+    widths = [len(h) for h in headers]
+    for row in table_rows:
+        for idx, cell in enumerate(row):
+            widths[idx] = max(widths[idx], len(cell))
+
+    fmt = "  ".join("{:<" + str(width) + "}" for width in widths)
+    print(fmt.format(*headers))
+    print(fmt.format(*("-" * len(h) for h in headers)))
+    for row in table_rows:
+        print(fmt.format(*row))
+    print(f"ROWS={len(table_rows)}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="jobintel",
@@ -348,6 +382,19 @@ def build_parser() -> argparse.ArgumentParser:
     run_daily_cmd = run_sub.add_parser("daily", help="Run daily pipeline with candidate safety checks")
     _add_run_daily_args(run_daily_cmd)
     run_daily_cmd.set_defaults(func=_run_daily)
+
+    runs_cmd = subparsers.add_parser("runs", help="Run index helpers")
+    runs_sub = runs_cmd.add_subparsers(dest="runs_command", required=True)
+    runs_list_cmd = runs_sub.add_parser("list", help="List recent runs from local sqlite index")
+    runs_list_cmd.add_argument(
+        "--candidate-id",
+        "--candidate_id",
+        dest="candidate_id",
+        default=DEFAULT_CANDIDATE_ID,
+        help=f"Candidate namespace id (default: {DEFAULT_CANDIDATE_ID}).",
+    )
+    runs_list_cmd.add_argument("--limit", type=int, default=20, help="Maximum rows to print (default: 20).")
+    runs_list_cmd.set_defaults(func=_runs_list)
 
     safety_cmd = subparsers.add_parser("safety", help="Semantic safety net tooling")
     safety_sub = safety_cmd.add_subparsers(dest="safety_command", required=True)

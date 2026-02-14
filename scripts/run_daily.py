@@ -76,6 +76,7 @@ from ji_engine.scoring import (
 )
 from ji_engine.semantic.core import DEFAULT_SEMANTIC_MODEL_ID, EMBEDDING_BACKEND_VERSION
 from ji_engine.semantic.step import finalize_semantic_artifacts, semantic_score_artifact_path
+from ji_engine.state.run_index import append_run_record as append_run_index_record
 from ji_engine.utils.atomic_write import atomic_write_text
 from ji_engine.utils.content_fingerprint import content_fingerprint
 from ji_engine.utils.diff_report import build_diff_markdown, build_diff_report
@@ -4434,14 +4435,47 @@ def main() -> int:
             logs=run_log_pointers,
             proof_bundle_path=proof_receipt_path,
         )
+        run_summary_path: Optional[Path] = None
         try:
-            _write_run_summary_artifact(
+            run_summary_path = _write_run_summary_artifact(
                 run_id=run_id,
                 final_status=final_status,
                 run_health_path=run_health_path,
             )
         except Exception as exc:
             logger.warning("Failed to write run summary artifact: %r", exc)
+
+        # Best-effort local run index; run artifacts remain source of truth.
+        try:
+            health_status = final_status
+            health_created_at = str(telemetry.get("ended_at") or _utcnow_iso())
+            if run_health_path and run_health_path.exists():
+                try:
+                    health_payload = json.loads(run_health_path.read_text(encoding="utf-8"))
+                    if isinstance(health_payload, dict):
+                        candidate_status = health_payload.get("status")
+                        if isinstance(candidate_status, str) and candidate_status:
+                            health_status = candidate_status
+                        timestamps = health_payload.get("timestamps")
+                        if isinstance(timestamps, dict):
+                            created_at = timestamps.get("ended_at") or timestamps.get("started_at")
+                            if isinstance(created_at, str) and created_at:
+                                health_created_at = created_at
+                except Exception:
+                    pass
+            summary_path_text = _summary_path_text(run_summary_path) if run_summary_path else None
+            health_path_text = _summary_path_text(run_health_path) if run_health_path else None
+            append_run_index_record(
+                run_id=run_id,
+                candidate_id=CANDIDATE_ID,
+                git_sha=_best_effort_git_sha(),
+                status=health_status,
+                created_at=health_created_at,
+                summary_path=summary_path_text,
+                health_path=health_path_text,
+            )
+        except Exception as exc:
+            logger.warning("Failed to append local run index row: %r", exc)
         if s3_failed:
             raise SystemExit(s3_exit_code or 2)
         return final_status

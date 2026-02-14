@@ -70,9 +70,11 @@ def test_run_summary_written_with_hashes_on_success(tmp_path: Path, monkeypatch:
     paths = _setup_env(monkeypatch, tmp_path)
 
     import ji_engine.config as config
+    import ji_engine.state.run_index as run_index
     import scripts.run_daily as run_daily
 
     config = importlib.reload(config)
+    run_index = importlib.reload(run_index)
     run_daily = importlib.reload(run_daily)
     run_daily.USE_SUBPROCESS = False
 
@@ -107,6 +109,12 @@ def test_run_summary_written_with_hashes_on_success(tmp_path: Path, monkeypatch:
     assert ranked_json[0]["sha256"]
 
     assert payload["quicklinks"]["run_dir"] in summary_path.as_posix()
+    indexed = run_index.list_runs_as_dicts(candidate_id="local", limit=5)
+    assert indexed
+    assert indexed[0]["run_id"] == payload["run_id"]
+    assert indexed[0]["status"] == "success"
+    assert indexed[0]["summary_path"] == payload["quicklinks"]["run_dir"] + "/run_summary.v1.json"
+    assert indexed[0]["health_path"] == payload["quicklinks"]["run_dir"] + "/run_health.v1.json"
 
 
 def test_run_summary_is_pointer_only_and_excludes_raw_profile_text(tmp_path: Path, monkeypatch: Any) -> None:

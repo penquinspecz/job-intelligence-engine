@@ -120,3 +120,42 @@ def test_cli_run_daily_prints_run_summary_path_when_present(tmp_path, monkeypatc
     assert rc == 0
     out = capsys.readouterr().out
     assert f"RUN_SUMMARY_PATH={run_summary_path}" in out
+
+
+def test_cli_runs_list_prints_stable_table(monkeypatch, capsys):
+    monkeypatch.setattr(
+        cli,
+        "list_runs_as_dicts",
+        lambda candidate_id, limit: [
+            {
+                "run_id": "2026-02-14T16:55:02Z",
+                "candidate_id": "local",
+                "status": "success",
+                "created_at": "2026-02-14T16:55:02Z",
+                "summary_path": "state/runs/20260214T165502Z/run_summary.v1.json",
+                "health_path": "state/runs/20260214T165502Z/run_health.v1.json",
+                "git_sha": "abc123",
+            },
+            {
+                "run_id": "2026-02-14T16:55:01Z",
+                "candidate_id": "local",
+                "status": "failed",
+                "created_at": "2026-02-14T16:55:01Z",
+                "summary_path": "state/runs/20260214T165501Z/run_summary.v1.json",
+                "health_path": "state/runs/20260214T165501Z/run_health.v1.json",
+                "git_sha": "def456",
+            },
+        ],
+    )
+    rc = cli.main(["runs", "list", "--candidate-id", "local", "--limit", "2"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    lines = [line for line in out.splitlines() if line]
+    assert lines[0].startswith("RUN_ID")
+    assert "CANDIDATE" in lines[0]
+    assert "SUMMARY_PATH" in lines[0]
+    assert "HEALTH_PATH" in lines[0]
+    assert "GIT_SHA" in lines[0]
+    assert lines[2].startswith("2026-02-14T16:55:02Z")
+    assert lines[3].startswith("2026-02-14T16:55:01Z")
+    assert lines[-1] == "ROWS=2"

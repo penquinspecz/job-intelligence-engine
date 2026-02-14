@@ -144,6 +144,23 @@ Run metadata index (Milestone 13):
 - Default behavior rebuilds `candidate_id=local`.
 - Use this after manual state repair, index corruption, or migration checks.
 
+Local run index (SQLite, deterministic append-only metadata):
+- Path: `state/run_index.sqlite3`
+- Fields: `run_id`, `candidate_id`, `git_sha`, `status`, `created_at`, `summary_path`, `health_path`
+- No raw job content and no candidate text is stored in this index.
+
+List runs quickly from CLI:
+
+```bash
+python -m jobintel.cli runs list --candidate-id local --limit 20
+```
+
+Reset local run index (safe; artifacts remain source of truth):
+
+```bash
+rm -f state/run_index.sqlite3
+```
+
 Rebuild local candidate index:
 
 ```bash
