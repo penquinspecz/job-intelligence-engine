@@ -901,6 +901,73 @@ def _ranked_output_pointers(run_report_payload: Dict[str, Any]) -> Dict[str, Lis
     return buckets
 
 
+def _primary_artifact_filename(output_key: str, provider: str, profile: str) -> Optional[str]:
+    mapping = {
+        "ranked_json": _provider_ranked_jobs_json(provider, profile).name,
+        "ranked_csv": _provider_ranked_jobs_csv(provider, profile).name,
+        "shortlist_md": _provider_shortlist_md(provider, profile).name,
+    }
+    return mapping.get(output_key)
+
+
+def _primary_artifacts(
+    run_id: str, ranked_outputs: Dict[str, List[Dict[str, Any]]]
+) -> List[Dict[str, Optional[str] | Optional[int]]]:
+    primary: List[Dict[str, Optional[str] | Optional[int]]] = []
+    run_dir = _run_registry_dir(run_id)
+    for output_key in ("ranked_json", "ranked_csv", "shortlist_md"):
+        entries = ranked_outputs.get(output_key)
+        if not isinstance(entries, list) or not entries:
+            continue
+        ordered = sorted(
+            (
+                entry
+                for entry in entries
+                if isinstance(entry, dict)
+                and isinstance(entry.get("provider"), str)
+                and isinstance(entry.get("profile"), str)
+            ),
+            key=lambda entry: (
+                str(entry.get("provider")),
+                str(entry.get("profile")),
+                str(entry.get("path") or ""),
+            ),
+        )
+        if not ordered:
+            continue
+        entry = ordered[0]
+        provider = str(entry["provider"])
+        profile = str(entry["profile"])
+        filename = _primary_artifact_filename(output_key, provider, profile)
+        if filename is None:
+            continue
+
+        run_local = run_dir / provider / profile / filename
+        if run_local.exists():
+            path_text = _summary_path_text(run_local)
+            bytes_value: Optional[int] = None
+            try:
+                bytes_value = run_local.stat().st_size
+            except OSError:
+                bytes_value = None
+        else:
+            path_text = str(entry.get("path") or "")
+            bytes_value = entry.get("bytes") if isinstance(entry.get("bytes"), int) else None
+
+        primary.append(
+            {
+                "artifact_key": output_key,
+                "provider": provider,
+                "profile": profile,
+                "path": path_text,
+                # Reuse existing pointer hash from run report path resolution.
+                "sha256": entry.get("sha256") if isinstance(entry.get("sha256"), str) else None,
+                "bytes": bytes_value,
+            }
+        )
+    return primary
+
+
 def _extract_scoring_config_reference(run_report_payload: Dict[str, Any]) -> Dict[str, Any]:
     scoring_model = run_report_payload.get("scoring_model")
     scoring_model_sha = None
@@ -981,6 +1048,7 @@ def _build_run_summary_payload(
 ) -> Dict[str, Any]:
     report_payload = run_report_payload or {}
     ranked_outputs = _ranked_output_pointers(report_payload)
+    primary_artifacts = _primary_artifacts(run_id, ranked_outputs)
     quicklinks = {
         "run_dir": _summary_path_text(_run_registry_dir(run_id)),
         "run_report": run_report_pointer.get("path"),
@@ -1019,6 +1087,7 @@ def _build_run_summary_payload(
         },
         "run_report": run_report_pointer,
         "ranked_outputs": ranked_outputs,
+        "primary_artifacts": primary_artifacts,
         "costs": costs_pointer,
         "scoring_config": _extract_scoring_config_reference(report_payload),
         "snapshot_manifest": _snapshot_manifest_reference(report_payload),

@@ -106,6 +106,14 @@ def test_run_summary_written_with_hashes_on_success(tmp_path: Path, monkeypatch:
     assert ranked_json[0]["profile"] == "cs"
     assert ranked_json[0]["sha256"]
 
+    primary = payload["primary_artifacts"]
+    assert [item["artifact_key"] for item in primary] == ["ranked_json", "ranked_csv", "shortlist_md"]
+    run_dir = payload["quicklinks"]["run_dir"]
+    assert isinstance(run_dir, str) and run_dir
+    for item in primary:
+        assert item["path"].startswith(f"{run_dir}/")
+        assert item["sha256"]
+
     assert payload["quicklinks"]["run_dir"] in summary_path.as_posix()
 
 

@@ -705,6 +705,8 @@ python scripts/user_state.py export --profile cs --out /tmp/user_state.cs.json
 
 A “Quality Gates” section:
 
+Fast feedback loop: `make ci-fast` (ruff + pytest).
+
 Developer fast loop: `make gate-fast` (pytest only).
 
 Source-of-truth gate: `make gate-truth` (includes Docker no-cache).

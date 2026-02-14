@@ -12,6 +12,7 @@
     "run_health",
     "run_report",
     "ranked_outputs",
+    "primary_artifacts",
     "costs",
     "scoring_config",
     "snapshot_manifest",
@@ -106,6 +107,12 @@
         }
       },
       "additionalProperties": false
+    },
+    "primary_artifacts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/primary_artifact_pointer"
+      }
     },
     "costs": {
       "$ref": "#/$defs/file_pointer"
@@ -286,6 +293,49 @@
             "string",
             "null"
           ]
+        },
+        "sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bytes": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "primary_artifact_pointer": {
+      "type": "object",
+      "required": [
+        "artifact_key",
+        "provider",
+        "profile",
+        "path",
+        "sha256",
+        "bytes"
+      ],
+      "properties": {
+        "artifact_key": {
+          "type": "string",
+          "enum": [
+            "ranked_json",
+            "ranked_csv",
+            "shortlist_md"
+          ]
+        },
+        "provider": {
+          "type": "string"
+        },
+        "profile": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
         },
         "sha256": {
           "type": [

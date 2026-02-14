@@ -116,6 +116,17 @@ scoring outputs.
 - It intentionally excludes raw candidate text (resume/linkedin/summary bodies).
 - Schema: `schemas/run_summary.schema.v1.json`.
 
+### How to locate outputs quickly
+- Run one command:
+  - `python -m jobintel.cli run daily --candidate-id <id> --profiles cs --offline --no_post`
+- After the run starts, CLI prints a deterministic `RUN_RECEIPT` block with:
+  - `run_id`
+  - `run_dir`
+  - `run_summary`
+  - `run_health`
+  - `primary_artifact_1..3` (canonical `ranked_json`, `ranked_csv`, `shortlist_md` pointers)
+- `run_summary.v1.json` also includes `primary_artifacts` for machine-readable pointer lookups.
+
 ### Provider provenance additions
 Each provider entry in `provenance_by_provider` may include:
 - `live_error_type`: one of `success`, `transient_error`, `unavailable`, `invalid_response` (when live was attempted).

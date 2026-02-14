@@ -201,7 +201,7 @@ def _run_daily(args: argparse.Namespace) -> int:
         print(result.stdout, end="")
     if result.stderr:
         print(result.stderr, end="", file=sys.stderr)
-    _print_run_summary_path_if_available(safe_candidate_id, result.stdout or "")
+    _print_run_receipt_if_available(safe_candidate_id, result.stdout or "")
     return result.returncode
 
 
@@ -214,6 +214,48 @@ def _run_summary_path(candidate_id: str, run_id: str) -> Path:
     return run_root / _sanitize_run_id_for_path(run_id) / "run_summary.v1.json"
 
 
+def _run_dir(candidate_id: str, run_id: str) -> Path:
+    run_root = RUN_METADATA_DIR if candidate_id == DEFAULT_CANDIDATE_ID else candidate_run_metadata_dir(candidate_id)
+    return run_root / _sanitize_run_id_for_path(run_id)
+
+
+def _run_health_path(candidate_id: str, run_id: str) -> Path:
+    return _run_dir(candidate_id, run_id) / "run_health.v1.json"
+
+
+def _read_json_dict(path: Path) -> Optional[Dict[str, object]]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _absolute_path_text(path_value: str) -> str:
+    candidate = Path(path_value)
+    if candidate.is_absolute():
+        return str(candidate)
+    return str((REPO_ROOT / candidate).resolve())
+
+
+def _primary_artifact_paths(summary_payload: Optional[Dict[str, object]]) -> List[str]:
+    if not summary_payload:
+        return []
+    artifacts = summary_payload.get("primary_artifacts")
+    if not isinstance(artifacts, list):
+        return []
+    paths: List[str] = []
+    for entry in artifacts:
+        if not isinstance(entry, dict):
+            continue
+        raw_path = entry.get("path")
+        if isinstance(raw_path, str) and raw_path.strip():
+            paths.append(_absolute_path_text(raw_path))
+        if len(paths) >= 3:
+            break
+    return paths
+
+
 def _extract_run_id(stdout: str) -> Optional[str]:
     for line in stdout.splitlines():
         if line.startswith("JOBINTEL_RUN_ID="):
@@ -223,20 +265,45 @@ def _extract_run_id(stdout: str) -> Optional[str]:
     return None
 
 
-def _print_run_summary_path_if_available(candidate_id: str, stdout: str) -> None:
+def _print_run_receipt_if_available(candidate_id: str, stdout: str) -> None:
     run_id = _extract_run_id(stdout)
     if not run_id:
         return
-    path = _run_summary_path(candidate_id, run_id)
-    if not path.exists():
+    run_dir = _run_dir(candidate_id, run_id)
+    summary_path = _run_summary_path(candidate_id, run_id)
+    health_path = _run_health_path(candidate_id, run_id)
+    if not summary_path.exists() and not health_path.exists():
         return
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return
-    status = payload.get("status") if isinstance(payload, dict) else None
-    if status in {"success", "partial"}:
-        print(f"RUN_SUMMARY_PATH={path}")
+    summary_payload = _read_json_dict(summary_path) if summary_path.exists() else None
+    health_payload = _read_json_dict(health_path) if health_path.exists() else None
+    status = None
+    if isinstance(summary_payload, dict):
+        value = summary_payload.get("status")
+        if isinstance(value, str) and value.strip():
+            status = value
+    if status is None and isinstance(health_payload, dict):
+        value = health_payload.get("status")
+        if isinstance(value, str) and value.strip():
+            status = value
+
+    lines = [f"run_id={run_id}", f"run_dir={run_dir}"]
+    if status is not None:
+        lines.append(f"status={status}")
+    if summary_path.exists():
+        lines.append(f"run_summary={summary_path}")
+    if health_path.exists():
+        lines.append(f"run_health={health_path}")
+    for idx, path in enumerate(_primary_artifact_paths(summary_payload), start=1):
+        lines.append(f"primary_artifact_{idx}={path}")
+
+    print("RUN_RECEIPT_BEGIN")
+    for line in lines:
+        print(line)
+    print("RUN_RECEIPT_END")
+
+    # Backward-compatibility for existing consumers.
+    if summary_path.exists() and status in {"success", "partial"}:
+        print(f"RUN_SUMMARY_PATH={summary_path}")
 
 
 def _validate_candidate_for_run(candidate_id: str) -> str:
