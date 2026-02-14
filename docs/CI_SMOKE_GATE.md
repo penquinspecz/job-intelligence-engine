@@ -6,28 +6,41 @@ It describes exactly what CI runs, what each step proves, and how to debug failu
 ## CI Step Order
 
 1. `actions/checkout@v4`
-2. `actions/setup-python@v5` (`python-version: 3.14.3`, pip cache keyed by `requirements.txt`)
-3. **Install deps**
+2. `actions/setup-python@v5` (`python-version: 3.14.3`, pip cache keyed by `requirements.txt`, `requirements-dev.txt`, `pyproject.toml`)
+3. **Restore `.venv` cache**
+   - gate key: `venv-v2-gate-${runner.os}-py3.14.3-${hashFiles(requirements.txt,requirements-dev.txt,pyproject.toml)}`
+   - lint key: `venv-v2-lint-${runner.os}-py3.14.3-${hashFiles(requirements.txt,requirements-dev.txt,pyproject.toml)}`
+4. **Install deps (cache miss only)**
    - `python -m venv .venv`
    - `.venv/bin/python -m pip install --upgrade pip==25.0.1 setuptools wheel pip-tools==7.4.1`
-   - `.venv/bin/python -m pip install -r requirements.txt`
+   - `.venv/bin/python -m pip install -r requirements.txt -r requirements-dev.txt`
    - `.venv/bin/python -m pip install -e .`
-   - `.venv/bin/python -m pip install -e ".[dev]"`
-4. **Gate**
+5. **Gate**
    - `make gate-ci`
-5. **Determinism contract checks**
+6. **Determinism contract checks**
    - inline fixture writes `/tmp/jobintel_ci_state/runs/ci-run/run_report.json`
    - `.venv/bin/python scripts/publish_s3.py --run-dir /tmp/jobintel_ci_state/runs/ci-run --plan --json`
    - `.venv/bin/python scripts/replay_run.py --run-dir /tmp/jobintel_ci_state/runs/ci-run --profile cs --strict --json`
-6. **CronJob smoke (offline)**
+7. **CronJob smoke (offline)**
    - `make cronjob-smoke`
-7. **Roadmap discipline guard (warn-only)**
+8. **Roadmap discipline guard (warn-only)**
    - `.venv/bin/python scripts/check_roadmap_discipline.py`
    - `continue-on-error: true`
 
 Sources:
 - `.github/workflows/ci.yml` (unit + determinism + cronjob smoke)
 - `.github/workflows/docker-smoke.yml` (containerized smoke gate)
+
+## Cache Behavior
+
+- Cache hit:
+  - `.venv` is restored and CI skips dependency installation.
+  - `gate` starts directly at `make gate-ci`.
+- Cache miss:
+  - CI rebuilds `.venv` from pinned lockfiles and then runs the full gate.
+- Cache invalidation:
+  - any change to `requirements.txt`, `requirements-dev.txt`, or `pyproject.toml` rotates the cache key.
+  - key prefix bumps (for example `v2`) intentionally force a clean rebuild after cache-shape changes.
 
 ## Gate Contracts
 
