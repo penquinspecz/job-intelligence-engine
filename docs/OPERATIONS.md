@@ -34,35 +34,35 @@ make doctor
 GitHub CLI reliability (flaky DNS/API environments):
 
 ```bash
-scripts/gh_retry.sh pr checks <pr-number> --watch
+gh pr checks <pr-number> --watch
+make gh-checks PR=<pr-number>
 scripts/gh_retry.sh pr merge <pr-number> --merge --delete-branch
-scripts/gh_retry.sh pr view <pr-number>
 ```
 
-- Symptom:
-  - `gh` intermittently fails with `error connecting to api.github.com`
-  - `curl` or `git` may also show `Could not resolve host: github.com`
-- Wrapper retries transient DNS/network failures only (for example `error connecting to api.github.com`).
-- Non-network failures (invalid args, permission, failed checks) fail immediately.
-- Retry controls:
-  - `GH_RETRY_MAX_ATTEMPTS` (default `4`)
-  - `GH_RETRY_SLEEP_SECONDS` (default `2`)
+Strict escalation ladder:
 
-Health probe (quick triage):
+1. Plain `gh` (fast path)
+   - Use direct commands first:
+     - `gh pr view <pr-number>`
+     - `gh pr checks <pr-number> --watch`
+2. Bounded retry wrapper
+   - Retry only transient DNS/network faults:
+     - `scripts/gh_retry.sh pr checks <pr-number> --watch`
+     - `make gh-checks PR=<pr-number>`
+   - Retry controls:
+     - `GH_RETRY_MAX_ATTEMPTS` (default `4`)
+     - `GH_RETRY_SLEEP_SECONDS` (default `2`)
+   - Non-network failures (bad args, permissions, red checks) fail immediately.
+3. Elevated network execution
+   - If step 2 still fails with DNS/API errors, re-run the exact same command in elevated network mode.
+   - Keep command text unchanged; only execution mode changes.
+4. Manual browser fallback
+   - PR create URL: `https://github.com/penquinspecz/SignalCraft/pull/new/<branch>`
+   - PR checks page: open the PR in browser and verify required checks are green before merge.
 
-```bash
-curl -I https://api.github.com
-curl -I https://github.com
-gh auth status
-```
-
-If health probe fails, switch to elevated network execution in this environment:
-- Re-run `gh`/`curl` operations with elevated network execution (the same host/elevated mode used for successful `gh api .../rate_limit` checks).
-- Keep commands identical; only execution mode changes.
-
-Fallback mode when `gh` is unavailable:
-- PR creation: open manual URL `https://github.com/penquinspecz/SignalCraft/pull/new/<branch>`
-- Checks: open PR checks page in browser and confirm required checks are green before merge.
+Failure symptoms that should trigger escalation:
+- `gh`: `error connecting to api.github.com`
+- `curl`/`git`: `Could not resolve host: github.com`
 
 `make doctor` fails closed for:
 - dirty git status

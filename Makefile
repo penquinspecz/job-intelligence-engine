@@ -1,4 +1,4 @@
-.PHONY: test lint format-check gates gate gate-fast gate-truth gate-ci docker-build docker-run-local report snapshot snapshot-openai smoke image smoke-fast smoke-ci image-ci ci ci-local docker-ok daily debug-snapshots explain-smoke dashboard weekly publish-last aws-env-check aws-deploy aws-smoke aws-first-run aws-schedule-status aws-oneoff-run aws-bootstrap aws-bootstrap-help deps deps-sync deps-check snapshot-guard verify-snapshots install-hooks replay gate-replay verify-publish verify-publish-live cronjob-smoke k8s-render k8s-validate k8s-commands k8s-run-once preflight eks-proof-run-help proof-run-vars tf-eks-apply-vars eks-proof-run aws-discover-subnets dr-plan dr-apply dr-validate dr-destroy dr-restore-check tofu-eks-vars tofu-eks-guardrails tofu-eks-plan ops-eks-plan doctor
+.PHONY: test lint format-check gates gate gate-fast gate-truth gate-ci docker-build docker-run-local report snapshot snapshot-openai smoke image smoke-fast smoke-ci image-ci ci ci-local docker-ok daily debug-snapshots explain-smoke dashboard weekly publish-last aws-env-check aws-deploy aws-smoke aws-first-run aws-schedule-status aws-oneoff-run aws-bootstrap aws-bootstrap-help deps deps-sync deps-check snapshot-guard verify-snapshots install-hooks replay gate-replay verify-publish verify-publish-live cronjob-smoke k8s-render k8s-validate k8s-commands k8s-run-once preflight eks-proof-run-help proof-run-vars tf-eks-apply-vars eks-proof-run aws-discover-subnets dr-plan dr-apply dr-validate dr-destroy dr-restore-check tofu-eks-vars tofu-eks-guardrails tofu-eks-plan ops-eks-plan doctor gh-checks
 
 # Prefer repo venv if present; fall back to system python3.
 PY ?= .venv/bin/python
@@ -53,6 +53,10 @@ test:
 
 doctor:
 	$(PY) scripts/doctor.py
+
+gh-checks:
+	@if [ -z "$(PR)" ]; then echo "Usage: make gh-checks PR=<pr-number>"; exit 2; fi
+	./scripts/gh_retry.sh pr checks $(PR) --watch
 
 lint:
 	$(PY) -m ruff check src scripts tests
