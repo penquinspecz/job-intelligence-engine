@@ -31,6 +31,24 @@ If it fails:
 - `python scripts/k8s_render.py --overlay onprem-pi --stdout --limit 80`
 - `kubectl -n jobintel get events --sort-by=.metadata.creationTimestamp | tail -n 50`
 
+### Rehearsal receipt
+
+Dry-run rehearsal writes a deterministic receipt only when enabled:
+
+```bash
+WRITE_RECEIPT=1 make onprem-rehearsal
+```
+
+Expected output includes:
+- `REHEARSAL_RECEIPT_PATH=<...>/onprem_rehearsal_receipt.v1.json`
+- `NEXT_STEPS_BEGIN ... NEXT_STEPS_END` with copy/paste follow-ups.
+
+Receipt location:
+- `state/rehearsals/<run_id>/onprem_rehearsal_receipt.v1.json`
+
+Schema:
+- `schemas/onprem_rehearsal_receipt.schema.v1.json`
+
 ## 2) Verify CronJob + dashboard + persistence
 
 ```bash

@@ -10,6 +10,7 @@ import argparse
 import json
 import os
 import re
+import sqlite3
 import subprocess
 import tempfile
 from datetime import UTC, datetime
@@ -28,6 +29,7 @@ except ModuleNotFoundError:
 
 OVERLAY_NAME = "onprem-pi"
 APPLY_CMD = ["kubectl", "apply", "-k", f"ops/k8s/overlays/{OVERLAY_NAME}"]
+RUN_INDEX_PATH = STATE_DIR / "run_index.sqlite3"
 FAILURE_CODES = {
     "DOCTOR_FAILED",
     "OVERLAY_RENDER_FAILED",
@@ -215,6 +217,54 @@ def _write_receipt(payload: dict[str, Any], *, run_id: str) -> Path:
     return target
 
 
+def _append_rehearsal_index_row(
+    *,
+    run_id: str,
+    created_at: str,
+    status: str,
+    receipt_path: Path | None,
+) -> None:
+    # Optional integration: only write if local run index already exists.
+    if not RUN_INDEX_PATH.exists():
+        return
+    RUN_INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(RUN_INDEX_PATH)
+    try:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS onprem_rehearsal_index_v1(
+                run_id TEXT PRIMARY KEY,
+                created_at TEXT NOT NULL,
+                status TEXT NOT NULL,
+                receipt_path TEXT NULL
+            );
+            """
+        )
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO onprem_rehearsal_index_v1(run_id, created_at, status, receipt_path)
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                run_id,
+                created_at,
+                status,
+                str(receipt_path) if receipt_path else None,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _print_next_steps(overlay: str) -> None:
+    print("NEXT_STEPS_BEGIN")
+    print("1) kubectl apply -k ops/k8s/overlays/" + overlay)
+    print("2) kubectl get pods -n jobintel -o wide")
+    print("3) See ingress/dashboard notes: ops/onprem/RUNBOOK_DEPLOY.md")
+    print("NEXT_STEPS_END")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="On-prem Pi deployment rehearsal (dry-run by default)")
     parser.add_argument("--overlay", default=OVERLAY_NAME, choices=[OVERLAY_NAME])
@@ -235,6 +285,7 @@ def main(argv: list[str] | None = None) -> int:
     manifest_sha = compute_sha256_bytes(b"")
     status = "failed"
     failure_code: str | None = None
+    receipt_output_path: Path | None = None
 
     print(WARNING_BANNER)
 
@@ -286,13 +337,26 @@ def main(argv: list[str] | None = None) -> int:
         )
         try:
             output_path = _write_receipt(receipt, run_id=run_id)
-            print(f"receipt: {output_path}")
+            receipt_output_path = output_path
+            print(f"REHEARSAL_RECEIPT_PATH={output_path}")
         except RehearsalError as exc:
             print(f"[onprem-rehearsal] ERROR({exc.code}): {exc}")
             return 1
         except Exception as exc:  # pragma: no cover - defensive fallback
             print(f"[onprem-rehearsal] ERROR(RECEIPT_WRITE_FAILED): {exc}")
             return 1
+
+    try:
+        _append_rehearsal_index_row(
+            run_id=run_id,
+            created_at=run_id,
+            status=status,
+            receipt_path=receipt_output_path,
+        )
+    except Exception as exc:
+        print(f"[onprem-rehearsal] WARN(INDEX_APPEND_FAILED): {exc}")
+
+    _print_next_steps(args.overlay)
 
     return 0 if status == "success" else 1
 
