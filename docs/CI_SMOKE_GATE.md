@@ -8,6 +8,7 @@ It describes exactly what CI runs, what each step proves, and how to debug failu
 1. `actions/checkout@v4`
 2. `actions/setup-python@v5` (`python-version: 3.14.3`, pip cache keyed by `requirements.txt`, `requirements-dev.txt`, `pyproject.toml`)
 3. **Restore `.venv` cache**
+   - fast key: `venv-v2-fast-${runner.os}-py3.14.3-${hashFiles(requirements.txt,requirements-dev.txt,pyproject.toml)}`
    - gate key: `venv-v2-gate-${runner.os}-py3.14.3-${hashFiles(requirements.txt,requirements-dev.txt,pyproject.toml)}`
    - lint key: `venv-v2-lint-${runner.os}-py3.14.3-${hashFiles(requirements.txt,requirements-dev.txt,pyproject.toml)}`
 4. **Install deps (cache miss only)**
@@ -15,15 +16,17 @@ It describes exactly what CI runs, what each step proves, and how to debug failu
    - `.venv/bin/python -m pip install --upgrade pip==25.0.1 setuptools wheel pip-tools==7.4.1`
    - `.venv/bin/python -m pip install -r requirements.txt -r requirements-dev.txt`
    - `.venv/bin/python -m pip install -e .`
-5. **Gate**
+5. **Fast feedback (PR-only)**
+   - `make ci-fast` (`ruff` + `pytest`)
+6. **Gate**
    - `make gate-ci`
-6. **Determinism contract checks**
+7. **Determinism contract checks**
    - inline fixture writes `/tmp/jobintel_ci_state/runs/ci-run/run_report.json`
    - `.venv/bin/python scripts/publish_s3.py --run-dir /tmp/jobintel_ci_state/runs/ci-run --plan --json`
    - `.venv/bin/python scripts/replay_run.py --run-dir /tmp/jobintel_ci_state/runs/ci-run --profile cs --strict --json`
-7. **CronJob smoke (offline)**
+8. **CronJob smoke (offline)**
    - `make cronjob-smoke`
-8. **Roadmap discipline guard (warn-only)**
+9. **Roadmap discipline guard (warn-only)**
    - `.venv/bin/python scripts/check_roadmap_discipline.py`
    - `continue-on-error: true`
 
@@ -35,6 +38,7 @@ Sources:
 
 - Cache hit:
   - `.venv` is restored and CI skips dependency installation.
+  - `fast` starts directly at `make ci-fast`.
   - `gate` starts directly at `make gate-ci`.
 - Cache miss:
   - CI rebuilds `.venv` from pinned lockfiles and then runs the full gate.
@@ -44,22 +48,29 @@ Sources:
 
 ## Gate Contracts
 
-### 1) `make gate-ci` contract
+### 1) `make ci-fast` contract
 
-`make gate-ci` expands to `gate-truth` -> `gate-fast`:
-
+- `ruff check src scripts tests`
 - `pytest -q`
+
+Use this for fast PR feedback only. It does not replace the full merge gate.
+
+### 2) `make gate-ci` contract
+
+`make gate-ci` expands to `gate-truth` -> `gate`:
+
+- `pytest -q` via `make gate`
   - proves unit/integration suite passes in CI image/runtime.
-- `python scripts/verify_snapshots_immutable.py`
+- `python scripts/verify_snapshots_immutable.py` via `make gate`
   - proves snapshot bytes match pinned manifest.
-- `python scripts/replay_smoke_fixture.py`
-  - proves replay path can validate deterministic run artifacts.
-- `docker build --no-cache --build-arg RUN_TESTS=1 -t jobintel:tests .`
+- `CAREERS_MODE=SNAPSHOT python scripts/replay_smoke_fixture.py` via `make gate`
+  - proves replay path can validate deterministic run artifacts in fixture-only mode.
+- `docker build --no-cache --build-arg RUN_TESTS=1 -t jobintel:tests .` via `make gate-truth`
   - proves Docker build contract and in-image test path.
 
-Source: `Makefile` targets `gate-fast`, `gate-truth`, `gate-ci`.
+Source: `Makefile` targets `ci-fast`, `gate`, `gate-truth`, `gate-ci`.
 
-### 2) Determinism contract checks
+### 3) Determinism contract checks
 
 - Creates a minimal run fixture at `/tmp/jobintel_ci_state/runs/ci-run`.
 - Writes `run_report.json` with verifiable artifact hash fields.
@@ -73,7 +84,7 @@ Expected evidence:
 
 Source: inline script + commands in `.github/workflows/ci.yml`.
 
-### 3) `make cronjob-smoke` contract
+### 4) `make cronjob-smoke` contract
 
 - Runs `scripts/cronjob_simulate.py` with temp `JOBINTEL_DATA_DIR` and `JOBINTEL_STATE_DIR`.
 - Forces deterministic run id: `JOBINTEL_CRONJOB_RUN_ID=2026-01-01T00:00:00Z`.
@@ -91,7 +102,7 @@ Expected evidence:
 
 Source: `Makefile` target `cronjob-smoke`.
 
-### 4) Required artifact checklist (docker smoke)
+### 5) Required artifact checklist (docker smoke)
 
 Validate artifact layout offline:
 
@@ -110,14 +121,14 @@ Required files:
 - `smoke_artifacts/openai_ranked_jobs.cs.json`
 - `smoke_artifacts/openai_ranked_jobs.cs.csv`
 
-### 5) Roadmap guard (warn-only) contract
+### 6) Roadmap guard (warn-only) contract
 
 - Runs `scripts/check_roadmap_discipline.py`.
 - Findings are logged but do not fail CI yet (`continue-on-error: true`).
 
 Source: `.github/workflows/ci.yml`.
 
-### 5) Docker smoke gate (containerized)
+### 7) Docker smoke gate (containerized)
 
 Workflow: `.github/workflows/docker-smoke.yml`
 
@@ -148,6 +159,14 @@ Required artifacts (in `smoke_artifacts/`):
 - `openai_top.cs.md` (may be empty, must exist)
 
 ## Failure Modes And What To Inspect
+
+### Failure: `make ci-fast`
+
+Inspect:
+
+```bash
+make ci-fast
+```
 
 ### Failure: `make gate-ci` in `pytest -q`
 

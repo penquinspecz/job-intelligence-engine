@@ -1,5 +1,4 @@
-.PHONY: test lint format-check gates gate gate-fast gate-truth gate-ci docker-build docker-run-local report snapshot snapshot-openai smoke image smoke-fast smoke-ci image-ci ci ci-local docker-ok daily debug-snapshots explain-smoke dashboard weekly publish-last aws-env-check aws-deploy aws-smoke aws-first-run aws-schedule-status aws-oneoff-run aws-bootstrap aws-bootstrap-help deps deps-sync deps-check snapshot-guard verify-snapshots install-hooks replay gate-replay verify-publish verify-publish-live cronjob-smoke k8s-render k8s-validate k8s-commands k8s-run-once preflight eks-proof-run-help proof-run-vars tf-eks-apply-vars eks-proof-run aws-discover-subnets dr-plan dr-apply dr-validate dr-destroy dr-restore-check tofu-eks-vars tofu-eks-guardrails tofu-eks-plan ops-eks-plan doctor gh-checks provider-template provider-scaffold provider-manifest-update
-.PHONY: test lint format-check gates gate gate-fast gate-truth gate-ci docker-build docker-run-local report snapshot snapshot-openai smoke image smoke-fast smoke-ci image-ci ci ci-local docker-ok daily debug-snapshots explain-smoke dashboard weekly publish-last aws-env-check aws-deploy aws-smoke aws-first-run aws-schedule-status aws-oneoff-run aws-bootstrap aws-bootstrap-help deps deps-sync deps-check snapshot-guard verify-snapshots install-hooks replay gate-replay verify-publish verify-publish-live cronjob-smoke k8s-render k8s-validate k8s-commands k8s-run-once preflight eks-proof-run-help proof-run-vars tf-eks-apply-vars eks-proof-run aws-discover-subnets dr-plan dr-apply dr-validate dr-destroy dr-restore-check tofu-eks-vars tofu-eks-guardrails tofu-eks-plan ops-eks-plan doctor onprem-rehearsal gh-checks provider-template provider-scaffold provider-manifest-update provider-validate provider-enable
+.PHONY: test lint format-check gates gate gate-fast gate-truth gate-ci ci-fast docker-build docker-run-local report snapshot snapshot-openai smoke image smoke-fast smoke-ci image-ci ci ci-local docker-ok daily debug-snapshots explain-smoke dashboard weekly publish-last aws-env-check aws-deploy aws-smoke aws-first-run aws-schedule-status aws-oneoff-run aws-bootstrap aws-bootstrap-help deps deps-sync deps-check snapshot-guard verify-snapshots install-hooks replay gate-replay verify-publish verify-publish-live cronjob-smoke k8s-render k8s-validate k8s-commands k8s-run-once preflight eks-proof-run-help proof-run-vars tf-eks-apply-vars eks-proof-run aws-discover-subnets dr-plan dr-apply dr-validate dr-destroy dr-restore-check tofu-eks-vars tofu-eks-guardrails tofu-eks-plan ops-eks-plan doctor onprem-rehearsal gh-checks provider-template provider-scaffold provider-manifest-update provider-validate provider-enable
 
 # Prefer repo venv if present; fall back to system python3.
 PY ?= .venv/bin/python
@@ -132,20 +131,28 @@ gates: format-check lint deps-check test snapshot-guard
 gate-fast:
 	@echo "==> pytest"
 	$(PY) -m pytest -q
+
+ci-fast:
+	@echo "==> ruff"
+	$(PY) -m ruff check src scripts tests
+	@echo "==> pytest"
+	$(PY) -m pytest -q
+
+gate:
+	@echo "==> pytest"
+	$(PY) -m pytest -q
 	@echo "==> snapshot immutability"
 	PYTHONPATH=src $(PY) scripts/verify_snapshots_immutable.py
 	@echo "==> replay smoke"
-	PYTHONPATH=src $(PY) scripts/replay_smoke_fixture.py
+	CAREERS_MODE=SNAPSHOT PYTHONPATH=src $(PY) scripts/replay_smoke_fixture.py
 
-gate-truth: gate-fast
+gate-truth: gate
 	@echo "==> docker build (no-cache, RUN_TESTS=1)"
 	@if [ "$${DOCKER_BUILDKIT:-1}" = "0" ]; then \
 		echo "BuildKit is required (Dockerfile uses RUN --mount=type=cache). Set DOCKER_BUILDKIT=1."; \
 		exit 1; \
 	fi
 	@DOCKER_BUILDKIT=1 docker build --no-cache --build-arg RUN_TESTS=1 -t jobintel:tests .
-
-gate: gate-fast
 
 gate-ci: gate-truth
 

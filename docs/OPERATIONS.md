@@ -705,9 +705,11 @@ python scripts/user_state.py export --profile cs --out /tmp/user_state.cs.json
 
 A “Quality Gates” section:
 
-Developer default: `make gate` (alias for `gate-fast`).
+Developer fast loop: `make gate-fast` (pytest only).
 
 Source-of-truth gate: `make gate-truth` (includes Docker no-cache).
+
+Developer full gate: `make gate` (pytest + snapshot immutability + replay smoke).
 
 CI uses `make gate-ci` (alias for `gate-truth`).
 
