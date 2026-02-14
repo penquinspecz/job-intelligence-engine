@@ -419,3 +419,146 @@ def test_enable_output_is_deterministic_without_i_mean_it(tmp_path: Path, capsys
     assert first_rc == 2
     assert second_rc == 2
     assert first_out == second_out
+
+
+def test_append_template_refuses_without_i_mean_it(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    config_path = tmp_path / "providers.json"
+    _write_providers_config(config_path, [])
+
+    rc = provider_authoring.main(
+        [
+            "append-template",
+            "--provider",
+            "acme",
+            "--config",
+            str(config_path),
+            "--why",
+            "initial template for review",
+            "--careers-url",
+            "https://acme.example.com/careers",
+            "--allowed-domain",
+            "acme.example.com",
+        ]
+    )
+    output = capsys.readouterr().out
+    assert rc == 2
+    assert "refusing to edit providers config without --i-mean-it" in output
+    payload = json.loads(config_path.read_text(encoding="utf-8"))
+    assert payload["providers"] == []
+
+
+def test_append_template_refuses_if_provider_exists(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    snapshot = tmp_path / "data" / "alpha_snapshots" / "index.html"
+    snapshot.parent.mkdir(parents=True, exist_ok=True)
+    snapshot.write_text("fixture", encoding="utf-8")
+    config_path = tmp_path / "providers.json"
+    _write_providers_config(config_path, [_provider_entry("alpha", snapshot)])
+
+    rc = provider_authoring.main(
+        [
+            "append-template",
+            "--provider",
+            "alpha",
+            "--config",
+            str(config_path),
+            "--why",
+            "should fail duplicate",
+            "--careers-url",
+            "https://alpha.example.com/careers",
+            "--allowed-domain",
+            "alpha.example.com",
+            "--i-mean-it",
+        ]
+    )
+    output = capsys.readouterr().out
+    assert rc == 1
+    assert "already exists" in output
+
+
+def test_append_template_refuses_without_required_domains_or_urls(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config_path = tmp_path / "providers.json"
+    _write_providers_config(config_path, [])
+
+    rc = provider_authoring.main(
+        [
+            "append-template",
+            "--provider",
+            "acme",
+            "--config",
+            str(config_path),
+            "--why",
+            "missing lists should fail",
+            "--i-mean-it",
+        ]
+    )
+    output = capsys.readouterr().out
+    assert rc == 1
+    assert "careers_urls must be provided" in output
+
+
+def test_append_template_appends_disabled_provider_deterministically(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    beta_snapshot = tmp_path / "data" / "beta_snapshots" / "index.html"
+    beta_snapshot.parent.mkdir(parents=True, exist_ok=True)
+    beta_snapshot.write_text("fixture", encoding="utf-8")
+    config_path = tmp_path / "providers.json"
+    _write_providers_config(config_path, [_provider_entry("beta", beta_snapshot, enabled=False)])
+
+    rc = provider_authoring.main(
+        [
+            "append-template",
+            "--provider",
+            "alpha",
+            "--config",
+            str(config_path),
+            "--why",
+            "review gate",
+            "--careers-url",
+            "https://alpha.example.com/careers",
+            "--allowed-domain",
+            "alpha.example.com",
+            "--i-mean-it",
+        ]
+    )
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "enabled=false (hard guardrail)" in output
+    assert "entry_enabled=False" in output
+
+    payload = json.loads(config_path.read_text(encoding="utf-8"))
+    providers = payload["providers"]
+    assert [entry["provider_id"] for entry in providers] == ["alpha", "beta"]
+    alpha = providers[0]
+    assert alpha["enabled"] is False
+    assert alpha["mode"] == "snapshot"
+    assert alpha["snapshot_enabled"] is True
+    assert alpha["live_enabled"] is False
+    assert alpha["update_cadence"]["schedule_hint"] == "authoring_reason:review gate"
+
+    first_bytes = config_path.read_bytes()
+
+    second_config = tmp_path / "providers_2.json"
+    _write_providers_config(second_config, [_provider_entry("beta", beta_snapshot, enabled=False)])
+    rc2 = provider_authoring.main(
+        [
+            "append-template",
+            "--provider",
+            "alpha",
+            "--config",
+            str(second_config),
+            "--why",
+            "review gate",
+            "--careers-url",
+            "https://alpha.example.com/careers",
+            "--allowed-domain",
+            "alpha.example.com",
+            "--i-mean-it",
+        ]
+    )
+    assert rc2 == 0
+    capsys.readouterr()
+    second_bytes = second_config.read_bytes()
+    assert first_bytes == second_bytes

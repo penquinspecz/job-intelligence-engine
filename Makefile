@@ -1,5 +1,5 @@
 .PHONY: test lint format-check gates gate gate-fast gate-truth gate-ci docker-build docker-run-local report snapshot snapshot-openai smoke image smoke-fast smoke-ci image-ci ci ci-local docker-ok daily debug-snapshots explain-smoke dashboard weekly publish-last aws-env-check aws-deploy aws-smoke aws-first-run aws-schedule-status aws-oneoff-run aws-bootstrap aws-bootstrap-help deps deps-sync deps-check snapshot-guard verify-snapshots install-hooks replay gate-replay verify-publish verify-publish-live cronjob-smoke k8s-render k8s-validate k8s-commands k8s-run-once preflight eks-proof-run-help proof-run-vars tf-eks-apply-vars eks-proof-run aws-discover-subnets dr-plan dr-apply dr-validate dr-destroy dr-restore-check tofu-eks-vars tofu-eks-guardrails tofu-eks-plan ops-eks-plan doctor gh-checks provider-template provider-scaffold provider-manifest-update
-.PHONY: test lint format-check gates gate gate-fast gate-truth gate-ci docker-build docker-run-local report snapshot snapshot-openai smoke image smoke-fast smoke-ci image-ci ci ci-local docker-ok daily debug-snapshots explain-smoke dashboard weekly publish-last aws-env-check aws-deploy aws-smoke aws-first-run aws-schedule-status aws-oneoff-run aws-bootstrap aws-bootstrap-help deps deps-sync deps-check snapshot-guard verify-snapshots install-hooks replay gate-replay verify-publish verify-publish-live cronjob-smoke k8s-render k8s-validate k8s-commands k8s-run-once preflight eks-proof-run-help proof-run-vars tf-eks-apply-vars eks-proof-run aws-discover-subnets dr-plan dr-apply dr-validate dr-destroy dr-restore-check tofu-eks-vars tofu-eks-guardrails tofu-eks-plan ops-eks-plan doctor onprem-rehearsal gh-checks provider-template provider-scaffold provider-manifest-update provider-validate provider-enable
+.PHONY: test lint format-check gates gate gate-fast gate-truth gate-ci docker-build docker-run-local report snapshot snapshot-openai smoke image smoke-fast smoke-ci image-ci ci ci-local docker-ok daily debug-snapshots explain-smoke dashboard weekly publish-last aws-env-check aws-deploy aws-smoke aws-first-run aws-schedule-status aws-oneoff-run aws-bootstrap aws-bootstrap-help deps deps-sync deps-check snapshot-guard verify-snapshots install-hooks replay gate-replay verify-publish verify-publish-live cronjob-smoke k8s-render k8s-validate k8s-commands k8s-run-once preflight eks-proof-run-help proof-run-vars tf-eks-apply-vars eks-proof-run aws-discover-subnets dr-plan dr-apply dr-validate dr-destroy dr-restore-check tofu-eks-vars tofu-eks-guardrails tofu-eks-plan ops-eks-plan doctor onprem-rehearsal gh-checks provider-template provider-scaffold provider-manifest-update provider-validate provider-enable provider-append
 
 # Prefer repo venv if present; fall back to system python3.
 PY ?= .venv/bin/python
@@ -84,6 +84,16 @@ provider-enable:
 	@flags=""; \
 	if [ "$(I_MEAN_IT)" = "1" ]; then flags="--i-mean-it"; fi; \
 	PYTHONPATH=src $(PY) scripts/provider_authoring.py enable --provider "$(provider)" --why "$(WHY)" $$flags
+
+provider-append:
+	@if [ -z "$(provider)" ]; then echo "Usage: make provider-append provider=<provider_id> CONFIG=config/providers.json WHY=\"<reason>\" [CAREERS_URLS=...] [ALLOWED_DOMAINS=...] [I_MEAN_IT=1]"; exit 2; fi
+	@if [ -z "$(WHY)" ]; then echo "Usage: make provider-append provider=<provider_id> CONFIG=config/providers.json WHY=\"<reason>\" [CAREERS_URLS=...] [ALLOWED_DOMAINS=...] [I_MEAN_IT=1]"; exit 2; fi
+	@flags=""; \
+	if [ -n "$(CAREERS_URLS)" ]; then flags="$$flags --careers-url \"$(CAREERS_URLS)\""; fi; \
+	if [ -n "$(ALLOWED_DOMAINS)" ]; then flags="$$flags --allowed-domain \"$(ALLOWED_DOMAINS)\""; fi; \
+	if [ "$(I_MEAN_IT)" = "1" ]; then flags="$$flags --i-mean-it"; fi; \
+	cfg="$(if $(CONFIG),$(CONFIG),config/providers.json)"; \
+	eval "PYTHONPATH=src $(PY) scripts/provider_authoring.py append-template --provider \"$(provider)\" --config \"$$cfg\" --why \"$(WHY)\" $$flags"
 
 lint:
 	$(PY) -m ruff check src scripts tests
