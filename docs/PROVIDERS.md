@@ -2,6 +2,34 @@
 
 SignalCraft provider additions must stay snapshot-first, deterministic, and offline-reproducible in tests.
 
+## How To Add Provider Entry Safely
+
+Use append-template to add a disabled provider stub with explicit intent.
+
+```bash
+make provider-append provider=<provider_id> CONFIG=config/providers.json WHY="why this provider is being added" I_MEAN_IT=1 CAREERS_URLS="https://example.com/careers" ALLOWED_DOMAINS="example.com"
+```
+
+Equivalent direct command:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/provider_authoring.py append-template \
+  --provider <provider_id> \
+  --config config/providers.json \
+  --why "why this provider is being added" \
+  --careers-url "https://example.com/careers" \
+  --allowed-domain "example.com" \
+  --i-mean-it
+```
+
+Guardrails:
+- refuses without `--i-mean-it`
+- refuses if provider id already exists
+- refuses if `careers_urls` / `allowed_domains` are empty
+- appends `enabled=false` always (never auto-enables)
+- emits deterministic provider ordering in config output
+- prints follow-up commands for validate/manifest/gate/enable workflow
+
 ## Enablement Contract
 
 Provider enablement is explicit and guarded. Use the contract checks before toggling `enabled=true`.

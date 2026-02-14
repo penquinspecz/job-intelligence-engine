@@ -9,6 +9,7 @@ except ModuleNotFoundError:
 import argparse
 import json
 import os
+import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -102,6 +103,49 @@ def template_entry(provider_id: str) -> dict[str, Any]:
         "update_cadence": {
             "min_interval_hours": 24,
             "priority": "normal",
+        },
+        "politeness": {
+            "min_delay_s": 1.0,
+            "max_attempts": 2,
+        },
+    }
+
+
+def _template_entry_disabled(
+    provider_id: str,
+    *,
+    careers_urls: list[str],
+    allowed_domains: list[str],
+    why: str,
+    extraction_mode: str = "jsonld",
+) -> dict[str, Any]:
+    pid = provider_id.strip().lower()
+    if not pid:
+        raise ValueError("provider_id must be non-empty")
+    if not careers_urls:
+        raise ValueError("careers_urls must be non-empty")
+    if not allowed_domains:
+        raise ValueError("allowed_domains must be non-empty")
+    reason = why.strip()
+    if not reason:
+        raise ValueError("--why must be non-empty")
+    snapshot_dir = f"data/{pid}_snapshots"
+    return {
+        "provider_id": pid,
+        "display_name": f"{pid} (pending)",
+        "enabled": False,
+        "careers_urls": careers_urls,
+        "allowed_domains": allowed_domains,
+        "extraction_mode": extraction_mode,
+        "mode": "snapshot",
+        "snapshot_enabled": True,
+        "live_enabled": False,
+        "snapshot_dir": snapshot_dir,
+        "snapshot_path": f"{snapshot_dir}/index.html",
+        "update_cadence": {
+            "min_interval_hours": 24,
+            "priority": "normal",
+            "schedule_hint": f"authoring_reason:{reason}",
         },
         "politeness": {
             "min_delay_s": 1.0,
@@ -399,6 +443,112 @@ def _print_enablement_checklist(provider_id: str) -> None:
     print(f'4) make provider-enable provider={provider_id} WHY="<reason>" I_MEAN_IT=1')
 
 
+def _print_append_checklist(provider_id: str) -> None:
+    print("FOLLOW-UP CHECKLIST")
+    print(f"1) make provider-validate provider={provider_id}")
+    print(f"2) if snapshot fixture was added or changed: make provider-manifest-update provider={provider_id}")
+    print("3) make gate")
+    print(f'4) make provider-enable provider={provider_id} WHY="<reason>" I_MEAN_IT=1')
+
+
+def _split_csv_values(raw_values: Optional[list[str]]) -> list[str]:
+    if not raw_values:
+        return []
+    out: list[str] = []
+    for raw in raw_values:
+        for part in str(raw).split(","):
+            value = part.strip()
+            if value:
+                out.append(value)
+    return out
+
+
+def _interactive_values(name: str) -> list[str]:
+    if not sys.stdin.isatty():
+        return []
+    prompt = f"Enter {name} (comma-separated): "
+    try:
+        entered = input(prompt)
+    except EOFError:
+        return []
+    return _split_csv_values([entered])
+
+
+def _collect_required_urls(raw_values: Optional[list[str]]) -> list[str]:
+    values = _split_csv_values(raw_values)
+    if not values:
+        values = _interactive_values("careers_urls")
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if value not in seen:
+            seen.add(value)
+            deduped.append(value)
+    if not deduped:
+        raise ValueError("careers_urls must be provided via --careers-url or interactive prompt")
+    return deduped
+
+
+def _collect_required_domains(raw_values: Optional[list[str]]) -> list[str]:
+    values = _split_csv_values(raw_values)
+    if not values:
+        values = _interactive_values("allowed_domains")
+    deduped = sorted({value.strip().lower() for value in values if value.strip()})
+    if not deduped:
+        raise ValueError("allowed_domains must be provided via --allowed-domain or interactive prompt")
+    return deduped
+
+
+def _provider_exists(provider_id: str, providers: list[dict[str, Any]]) -> bool:
+    target = provider_id.strip().lower()
+    for entry in providers:
+        candidate = str(entry.get("provider_id") or "").strip().lower()
+        if candidate == target:
+            return True
+    return False
+
+
+def append_template_provider_entry(
+    *,
+    provider_id: str,
+    providers_config_path: Path,
+    why: str,
+    careers_urls: list[str],
+    allowed_domains: list[str],
+    extraction_mode: str = "jsonld",
+) -> tuple[dict[str, Any], int]:
+    payload, providers = _providers_payload(providers_config_path)
+    safe_provider_id = provider_id.strip().lower()
+    if _provider_exists(safe_provider_id, providers):
+        raise ValueError(f"provider '{safe_provider_id}' already exists in {providers_config_path}")
+
+    new_entry = _template_entry_disabled(
+        safe_provider_id,
+        careers_urls=careers_urls,
+        allowed_domains=allowed_domains,
+        why=why,
+        extraction_mode=extraction_mode,
+    )
+    _validate_template(new_entry)
+
+    providers.append(new_entry)
+    providers.sort(key=lambda item: str(item.get("provider_id") or "").strip().lower())
+    if isinstance(payload, dict):
+        payload["providers"] = providers
+    elif isinstance(payload, list):
+        payload[:] = providers
+    else:
+        raise ValueError(f"providers config must be object/list: {providers_config_path}")
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", encoding="utf-8", delete=True) as handle:
+        handle.write(_json_dump(payload))
+        handle.flush()
+        load_providers_config(Path(handle.name))
+
+    _write_payload(providers_config_path, payload)
+    return new_entry, len(providers)
+
+
 def _write_payload(path: Path, payload: dict[str, Any] | list[Any]) -> None:
     _atomic_write_text(path, _json_dump(payload))
 
@@ -495,6 +645,18 @@ def main(argv: Optional[list[str]] = None) -> int:
     enable_parser.add_argument("--providers-schema", default=str(_DEFAULT_SCHEMA_PATH))
     enable_parser.add_argument("--i-mean-it", action="store_true")
 
+    append_parser = sub.add_parser(
+        "append-template",
+        help="Append a disabled provider template into a providers config file",
+    )
+    append_parser.add_argument("--provider", required=True)
+    append_parser.add_argument("--config", required=True)
+    append_parser.add_argument("--why", required=True)
+    append_parser.add_argument("--careers-url", action="append", dest="careers_urls")
+    append_parser.add_argument("--allowed-domain", action="append", dest="allowed_domains")
+    append_parser.add_argument("--extraction-mode", default="jsonld")
+    append_parser.add_argument("--i-mean-it", action="store_true")
+
     args = parser.parse_args(argv)
     if args.command == "template":
         entry = template_entry(args.provider_id)
@@ -566,6 +728,47 @@ def main(argv: Optional[list[str]] = None) -> int:
             print(f"enabled provider '{provider_id}' in {args.providers_config}")
         else:
             print(f"provider '{provider_id}' already enabled; no config changes made")
+        return 0
+
+    if args.command == "append-template":
+        provider_id = args.provider.strip().lower()
+        why = str(args.why).strip()
+        if not why:
+            raise ValueError("--why must be non-empty")
+        config_path = Path(args.config)
+
+        print(f"provider={provider_id}")
+        print(f"config={config_path}")
+        print(f"why={why}")
+        print("enabled=false (hard guardrail)")
+        _print_append_checklist(provider_id)
+
+        try:
+            careers_urls = _collect_required_urls(args.careers_urls)
+            allowed_domains = _collect_required_domains(args.allowed_domains)
+        except ValueError as exc:
+            print(f"refusing append-template: {exc}")
+            return 1
+
+        if not args.i_mean_it:
+            print("refusing to edit providers config without --i-mean-it")
+            return 2
+
+        try:
+            new_entry, total_count = append_template_provider_entry(
+                provider_id=provider_id,
+                providers_config_path=config_path,
+                why=why,
+                careers_urls=careers_urls,
+                allowed_domains=allowed_domains,
+                extraction_mode=str(args.extraction_mode).strip().lower(),
+            )
+        except Exception as exc:
+            print(f"refusing append-template: {exc}")
+            return 1
+
+        print(f"appended disabled provider '{provider_id}' to {config_path} providers_count={total_count}")
+        print(f"entry_enabled={new_entry.get('enabled')}")
         return 0
 
     raise SystemExit(f"unknown command: {args.command}")
