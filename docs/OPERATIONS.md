@@ -199,6 +199,7 @@ Provider registry (Milestone 5 foundation):
 - Canonical file: `config/providers.json` (schema: `schemas/providers.schema.v1.json`)
 - Authoring workflow: `docs/PROVIDERS.md`
 - Registry loader: `src/ji_engine/providers/registry.py`
+- Authoring guide: `docs/PROVIDERS.md` ("add a provider in 10 minutes")
 - Schema validation is enforced at load time (unknown keys fail closed).
 - Provider selection resolver used by both:
   - `scripts/run_scrape.py`
@@ -228,6 +229,13 @@ How to add a provider (deterministic path):
      - `llm_fallback.enabled=true` + `llm_fallback.cache_dir` (required)
      - `llm_fallback.temperature=0` (enforced)
 2. Add/update snapshot fixture under `data/<provider_id>_snapshots/`.
+   - Scaffold quickly:
+     - `make provider-scaffold provider=<provider_id>`
+     - `make provider-template provider=<provider_id>`
+   - Snapshot-only first:
+     - `mode: "snapshot"`
+     - `live_enabled: false`
+     - explicit `allowed_domains`
    - CI enforces snapshot fixture existence for enabled snapshot providers.
    - If snapshot bytes changed intentionally, run:
      `make provider-manifest-update provider=<provider_id>`

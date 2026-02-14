@@ -4,11 +4,28 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from ji_engine.providers.registry import load_providers_config
 from ji_engine.utils.verification import compute_sha256_bytes
+
+
+def _required_snapshot_manifest_paths(providers_config_path: Path) -> list[str]:
+    providers = load_providers_config(providers_config_path)
+    required: set[str] = set()
+    for provider in providers:
+        if not provider.get("enabled", True):
+            continue
+        if not provider.get("snapshot_enabled", True):
+            continue
+        mode = str(provider.get("mode") or "snapshot").strip().lower()
+        if mode not in {"snapshot", "auto"}:
+            continue
+        required.add(str(provider["snapshot_path"]))
+    return sorted(required)
 
 
 def main() -> int:
     manifest_path = Path("tests/fixtures/golden/snapshot_bytes.manifest.json")
+    providers_config_path = Path("config/providers.json")
     if not manifest_path.exists():
         print(f"Missing manifest: {manifest_path}")
         return 2
@@ -38,6 +55,16 @@ def main() -> int:
                     ]
                 )
             )
+
+    missing_manifest_entries: list[str] = []
+    for required_path in _required_snapshot_manifest_paths(providers_config_path):
+        if required_path not in manifest:
+            missing_manifest_entries.append(required_path)
+    if missing_manifest_entries:
+        mismatches.append(
+            "Manifest missing enabled snapshot provider fixture entries:\n"
+            + "\n".join(f"- {path}" for path in missing_manifest_entries)
+        )
 
     if mismatches:
         print("\nPinned snapshot bytes changed.")

@@ -3,8 +3,32 @@
     "bytes": 818,
     "sha256": "3c2f5fcfa255fe7115675c6cc0fb4d3f3db5b8442aac2ad63fb96cf93f18c250"
   },
+  "data/cohere_snapshots/index.html": {
+    "bytes": 1590,
+    "sha256": "3539f09a4c0e695b0950fb8187ff6e6db2cb0463d6fd28b2a7052c6bcc19b35d"
+  },
+  "data/huggingface_snapshots/index.html": {
+    "bytes": 1940,
+    "sha256": "e707d5492b081c43e87dc660fd4134983c3b2caca1a43890282da7b7bc17c238"
+  },
+  "data/mistral_snapshots/index.html": {
+    "bytes": 1590,
+    "sha256": "8bbedb1626e75074b72cd529345a1cd2764688b63a53a220208cb0f0a5c7525e"
+  },
   "data/openai_snapshots/index.html": {
     "bytes": 504376,
     "sha256": "db859f209b7e1eeeaa385d9dab87d02f9ee72217e5afa57edebc21932b586ffc"
+  },
+  "data/perplexity_snapshots/index.html": {
+    "bytes": 1528,
+    "sha256": "d551252792f03d7aa864fc08d7c9455a4e0811a1388b09911014c8781b66a3ab"
+  },
+  "data/replit_snapshots/index.html": {
+    "bytes": 914,
+    "sha256": "f5026bb25896c19492a2cf9db0389bed4f03af93e0cc7cccc4b00b89b25f9fcd"
+  },
+  "data/scaleai_snapshots/index.html": {
+    "bytes": 924,
+    "sha256": "a3cef755cd17abd623be630eaf863b0a2b1c83ee3bf391b80a33e619f152f88a"
   }
 }

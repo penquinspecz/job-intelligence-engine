@@ -117,7 +117,7 @@
         "max_attempts": 2
       },
       "display_name": "xAI",
-      "enabled": true
+      "enabled": false
     },
     {
       "provider_id": "cohere",

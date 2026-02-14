@@ -47,6 +47,10 @@ COPY --chown=app:app data/openai_snapshots/ /app/data/openai_snapshots/
 COPY --chown=app:app data/anthropic_snapshots/ /app/data/anthropic_snapshots/
 COPY --chown=app:app data/scaleai_snapshots/ /app/data/scaleai_snapshots/
 COPY --chown=app:app data/replit_snapshots/ /app/data/replit_snapshots/
+COPY --chown=app:app data/cohere_snapshots/ /app/data/cohere_snapshots/
+COPY --chown=app:app data/huggingface_snapshots/ /app/data/huggingface_snapshots/
+COPY --chown=app:app data/mistral_snapshots/ /app/data/mistral_snapshots/
+COPY --chown=app:app data/perplexity_snapshots/ /app/data/perplexity_snapshots/
 COPY --chown=app:app data/candidate_profile.json /app/data/candidate_profile.json
 
 # Install dev/test extras only when running tests in CI (moto, pytest, etc.)
