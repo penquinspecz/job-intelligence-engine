@@ -16,6 +16,10 @@ Golden Path runbooks:
 - Deploy: `ops/onprem/RUNBOOK_DEPLOY.md`
 - Managed DNS and exposure posture: `ops/onprem/RUNBOOK_DNS.md`
 
+Rehearsal receipt references:
+- Receipt path: `state/rehearsals/<run_id>/onprem_rehearsal_receipt.v1.json`
+- Schema: `schemas/onprem_rehearsal_receipt.schema.v1.json`
+
 ## Hardware
 
 - Recommended: 3 nodes total.

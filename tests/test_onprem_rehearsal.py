@@ -105,6 +105,28 @@ def test_receipt_schema_valid_when_enabled(tmp_path: Path, monkeypatch: pytest.M
     assert payload["failure_code"] is None
 
 
+def test_rehearsal_output_prints_receipt_and_next_steps(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    _set_fake_runner(monkeypatch, _manifest_with_required_resources())
+    monkeypatch.setattr(onprem_rehearsal, "STATE_DIR", tmp_path / "state")
+    monkeypatch.setenv("WRITE_RECEIPT", "1")
+
+    rc = onprem_rehearsal.main(["--run-id", "20260214T120000Z"])
+    assert rc == 0
+
+    out = capsys.readouterr().out
+    lines = [line for line in out.splitlines() if line]
+    assert any(line.startswith("REHEARSAL_RECEIPT_PATH=") for line in lines)
+    assert "NEXT_STEPS_BEGIN" in lines
+    assert "1) kubectl apply -k ops/k8s/overlays/onprem-pi" in lines
+    assert "2) kubectl get pods -n jobintel -o wide" in lines
+    assert "3) See ingress/dashboard notes: ops/onprem/RUNBOOK_DEPLOY.md" in lines
+    assert "NEXT_STEPS_END" in lines
+    # Bounded output: keep UX compact and deterministic.
+    assert len(lines) <= 30
+
+
 def test_receipt_stable_across_runs_with_same_input(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _set_fake_runner(monkeypatch, _manifest_with_required_resources())
     monkeypatch.setattr(onprem_rehearsal, "STATE_DIR", tmp_path / "state")
@@ -141,3 +163,30 @@ metadata:
     _validate_receipt(payload)
     assert payload["status"] == "failed"
     assert payload["failure_code"] == "OVERLAY_RESOURCES_MISSING"
+
+
+def test_optional_run_index_integration_when_db_exists(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_fake_runner(monkeypatch, _manifest_with_required_resources())
+    monkeypatch.setattr(onprem_rehearsal, "STATE_DIR", tmp_path / "state")
+    monkeypatch.setenv("WRITE_RECEIPT", "1")
+    monkeypatch.setattr(onprem_rehearsal, "RUN_INDEX_PATH", tmp_path / "state" / "run_index.sqlite3")
+    onprem_rehearsal.RUN_INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
+    onprem_rehearsal.RUN_INDEX_PATH.write_bytes(b"")
+
+    rc = onprem_rehearsal.main(["--run-id", "20260214T120000Z"])
+    assert rc == 0
+
+    import sqlite3
+
+    conn = sqlite3.connect(onprem_rehearsal.RUN_INDEX_PATH)
+    try:
+        row = conn.execute(
+            "SELECT run_id, status, receipt_path FROM onprem_rehearsal_index_v1 WHERE run_id = ?",
+            ("20260214T120000Z",),
+        ).fetchone()
+    finally:
+        conn.close()
+    assert row is not None
+    assert row[0] == "20260214T120000Z"
+    assert row[1] == "success"
+    assert isinstance(row[2], str) and row[2].endswith("onprem_rehearsal_receipt.v1.json")
