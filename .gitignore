@@ -23,6 +23,8 @@ data/jobs_enriched.json
 # Runtime state
 data/state/
 state/
+!src/ji_engine/state/
+!src/ji_engine/state/*.py
 
 # Generated job data artifacts
 data/openai_*_jobs.json
