@@ -20,14 +20,15 @@ If it fails:
 ## 1) One-command deploy (kustomize source of truth)
 
 ```bash
-kubectl apply -k ops/k8s/jobintel/overlays/onprem
+make onprem-rehearsal
+kubectl apply -k ops/k8s/overlays/onprem-pi
 ```
 
 Success criteria:
 - Apply exits zero and creates/updates namespace resources.
 
 If it fails:
-- `kubectl kustomize ops/k8s/jobintel/overlays/onprem | head -n 80`
+- `python scripts/k8s_render.py --overlay onprem-pi --stdout --limit 80`
 - `kubectl -n jobintel get events --sort-by=.metadata.creationTimestamp | tail -n 50`
 
 ## 2) Verify CronJob + dashboard + persistence

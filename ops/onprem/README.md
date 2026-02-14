@@ -8,8 +8,13 @@ This directory is the on-prem operations scaffold for SignalCraft primary runtim
 2. Attach USB3 SSD to the server node and mount it (`ops/onprem/mount-ssd.sh`).
 3. Install k3s server (`ops/onprem/install-k3s-server.sh`).
 4. Join agent nodes (`ops/onprem/install-k3s-agent.sh`).
-5. Deploy manifests from `ops/k8s/jobintel/overlays/onprem`.
-6. Access dashboard over VPN + internal TLS.
+5. Rehearse deploy preflights (dry-run, no apply): `make onprem-rehearsal`.
+6. Apply manifests only after preflight passes: `kubectl apply -k ops/k8s/overlays/onprem-pi`.
+7. Access dashboard over VPN + internal TLS.
+
+Golden Path runbooks:
+- Deploy: `ops/onprem/RUNBOOK_DEPLOY.md`
+- Managed DNS and exposure posture: `ops/onprem/RUNBOOK_DNS.md`
 
 ## Hardware
 
@@ -48,12 +53,26 @@ Security constraints to keep:
 ## Storage choice
 
 - Default storage class: `local-path` (bundled with k3s).
+- Default `local-path-provisioner` path on k3s is `/var/lib/rancher/k3s/storage`.
+- For write-heavy state, point provisioner paths to SSD/NVMe mountpoints (for example `/mnt/nvme0n1/k3s-storage`), not SD cards.
 - On-prem overlay provisions PVCs for `/app/state` and `/app/data/ashby_cache`.
+
+## Node labels strategy
+
+- Label nodes by capability (for example `node.kubernetes.io/class=pi5` and `node.kubernetes.io/class=pi4`).
+- Keep heavier scrape/index workloads on Pi5-class nodes via `nodeSelector`/affinity in overlay patches.
+- Keep dashboard and lighter control-plane workloads schedulable on mixed nodes for resilience.
+
+## Rollback notes
+
+- Keep deploys declarative (`kubectl apply -k`) so rollback is a known-good git revision + re-apply.
+- For edge exposure rollback, use the Cloudflare rollback section in `ops/onprem/RUNBOOK_DEPLOY.md`.
+- For cluster/runtime rollback, follow `ops/onprem/RUNBOOK_UPGRADES.md`.
 
 ## GitOps-ready posture
 
 - All runtime manifests are kustomize resources in repo.
-- On-prem overlay path: `ops/k8s/jobintel/overlays/onprem`.
+- On-prem Pi overlay path: `ops/k8s/overlays/onprem-pi`.
 - This is Flux-compatible (`Kustomization` can target the overlay path directly).
 
 ## Next docs
