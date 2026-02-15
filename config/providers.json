@@ -5,14 +5,17 @@
       "provider_id": "anthropic",
       "name": "Anthropic",
       "careers_urls": [
+        "https://www.anthropic.com/careers",
         "https://jobs.ashbyhq.com/anthropic"
       ],
       "allowed_domains": [
+        "anthropic.com",
         "jobs.ashbyhq.com"
       ],
       "extraction_mode": "ashby",
       "mode": "snapshot",
       "snapshot_dir": "data/anthropic_snapshots",
+      "snapshot_path": "data/anthropic_snapshots/index.html",
       "live_enabled": false,
       "update_cadence": {
         "min_interval_hours": 24,
